@@ -208,6 +208,8 @@ public class ImageTiler {
                 ImageIO.write(image,  _tileFormat == TileFormat.PNG ? "PNG" : "JPEG", file);
             } catch (Exception ex) {
                 ex.printStackTrace();
+            } catch (Error error) {
+                error.printStackTrace();
             }
         }
 
