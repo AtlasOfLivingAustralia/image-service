@@ -33,9 +33,12 @@ public class DefaultZoomFactorStrategy implements ZoomFactorStrategy {
             throw new RuntimeException(ex);
         }
 
-        if (height < 3000 && width < 3000) {
+        if (height < 1000 && width < 1000) {
+            zoomLevels = 4;
+        } else if (height < 3000 && width < 3000) {
             zoomLevels = 5;
         }
+
         int[] pyramid = new int[zoomLevels];
 
         for (int i = 0; i < zoomLevels; ++i) {
