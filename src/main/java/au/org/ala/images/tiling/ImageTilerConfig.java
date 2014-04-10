@@ -9,10 +9,10 @@ public class ImageTilerConfig {
     private int _tileSize = 256;
     private int _maxColumnsPerStrip = 6;
     private TileFormat _tileFormat = TileFormat.JPEG;
-    private Color _tileBackgroundColor = Color.gray;
+    private Color _tileBackgroundColor = new Color(221, 221, 221);
+    private ZoomFactorStrategy _zoomFactorStrategy = new DefaultZoomFactorStrategy();
 
     public ImageTilerConfig() {
-
     }
 
     public ImageTilerConfig(int ioThreads, int levelThreads, int tileSize, int maxColumnsPerStrip, TileFormat tileFormat) {
@@ -48,5 +48,8 @@ public class ImageTilerConfig {
 
     public Color getTileBackgroundColor() { return _tileBackgroundColor; }
     public void setTileBackgroundColor(Color c) { _tileBackgroundColor = c; }
+
+    public ZoomFactorStrategy getZoomFactorStrategy() { return _zoomFactorStrategy; }
+    public void setZoomFactorStrategy(ZoomFactorStrategy strategy) { _zoomFactorStrategy = strategy; }
 
 }

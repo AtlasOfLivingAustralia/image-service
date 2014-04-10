@@ -6,6 +6,8 @@ import org.apache.commons.io.IOUtils;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
+import javax.imageio.ImageWriter;
+import javax.imageio.spi.IIORegistry;
 import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -24,6 +26,14 @@ public class ImageTiler {
     private int _maxLevelThreads = 2;
     private TileFormat _tileFormat = TileFormat.JPEG;
     private Color _tileBackgroundColor = Color.gray;
+    private boolean _exceptionOccurred =  false; // crude mechanism for the worker threads to communicate serious failure
+    private ZoomFactorStrategy _zoomFactorStrategy = new DefaultZoomFactorStrategy();
+
+    static {
+        ImageIO.scanForPlugins();
+        IIORegistry.getDefaultInstance();
+        ImageIO.setUseCache(false);
+    }
 
     public ImageTiler(ImageTilerConfig config) {
         if (config != null) {
@@ -33,31 +43,32 @@ public class ImageTiler {
             _maxColsPerStrip = config.getMaxColumnsPerStrip();
             _tileFormat = config.getTileFormat();
             _tileBackgroundColor = config.getTileBackgroundColor();
+            _zoomFactorStrategy = config.getZoomFactorStrategy();
         }
     }
 
     public ImageTilerResults tileImage(File imageFile, File destinationDirectory) throws IOException, InterruptedException {
 
         try {
+            _exceptionOccurred = false; // reset the error flag
             // Clean up existing tiles
             if (destinationDirectory.exists()) {
                 FileUtils.deleteDirectory(destinationDirectory);
             }
             // make sure dir exists
             destinationDirectory.mkdirs();
+            byte[] imageBytes = IOUtils.toByteArray(FileUtils.openInputStream(imageFile));
+            int[] pyramid = _zoomFactorStrategy.getZoomFactors(imageFile, imageBytes);
 
 
-            int[] pyramid = new int[] { 128, 64, 32, 16, 8, 4, 2, 1 };
+            //int[] pyramid = new int[] { 128, 64, 32, 16, 8, 4, 2, 1 };
 
-            if (imageFile.length() < 5*1024*1024) {
-                pyramid = new int[] { 16, 8, 4, 2, 1 };
-            }
+//            if (imageFile.length() < 5*1024*1024) {
+//                pyramid = new int[] { 16, 8, 4, 2, 1 };
+//            }
 
             ExecutorService levelThreadPool = Executors.newFixedThreadPool(Math.min(pyramid.length, _maxLevelThreads));
             ExecutorService ioThreadPool = Executors.newFixedThreadPool(_ioThreadCount);
-
-
-            byte[] imageBytes = IOUtils.toByteArray(FileUtils.openInputStream(imageFile));
 
             // Submit it reverse order so the big jobs get started first
             for (int level = pyramid.length - 1; level >= 0 ; level--) {
@@ -72,7 +83,12 @@ public class ImageTiler {
             ioThreadPool.shutdown();
             ioThreadPool.awaitTermination(30, TimeUnit.MINUTES);
 
-            return new ImageTilerResults(true, pyramid.length);
+            if (!_exceptionOccurred) {
+                return new ImageTilerResults(true, pyramid.length);
+            } else {
+                return new ImageTilerResults(false, 0);
+            }
+
         } catch (Throwable th) {
             th.printStackTrace();
         }
@@ -127,6 +143,8 @@ public class ImageTiler {
             bis.close();
             reader.dispose();
             System.gc();
+        } else {
+            throw new RuntimeException("No readers found suitable for file");
         }
     }
 
@@ -163,29 +181,30 @@ public class ImageTiler {
                 }
 
                 BufferedImage tile = strip.getSubimage(stripColOffset, rowOffset, tw, th);
+                BufferedImage destTile; // We copy the image to a fresh buffered image so that we don't copy over any incompatible color profiles
 
-                if (tile.getHeight() < _tileSize || tile.getWidth() < _tileSize) {
-                    BufferedImage blankTile = null;
 
-                    if (_tileFormat == TileFormat.PNG) {
-                        blankTile = new BufferedImage(_tileSize, _tileSize, BufferedImage.TYPE_4BYTE_ABGR);
-                    } else {
-                        blankTile = new BufferedImage(_tileSize, _tileSize, BufferedImage.TYPE_3BYTE_BGR);
-                    }
+                // PNG can support transparency, so use that rather than a background color
+                if (_tileFormat == TileFormat.PNG) {
+                    destTile = new BufferedImage(_tileSize, _tileSize, BufferedImage.TYPE_4BYTE_ABGR);
+                } else {
+                    destTile = new BufferedImage(_tileSize, _tileSize, BufferedImage.TYPE_3BYTE_BGR);
+                }
+                Graphics g = destTile.getGraphics();
 
-                    Graphics g = blankTile.getGraphics();
-                    // We have to create a blank tile, and transfer the clipped tile into the appropriate spot (bottom left)
-                    if (_tileFormat == TileFormat.JPEG) {
-                        // file the tile with a background color
-                        g.setColor(_tileBackgroundColor);
-                        g.fillRect(0,0, _tileSize, _tileSize);
-                    }
-
-                    g.drawImage(tile, 0, _tileSize - tile.getHeight(), null);
-                    g.dispose();
-                    tile = blankTile;
+                // We have to create a blank tile, and transfer the clipped tile into the appropriate spot (bottom left)
+                if (_tileFormat == TileFormat.JPEG && tile.getHeight() < _tileSize || tile.getWidth() < _tileSize) {
+                    // JPEG doesn't support transparency, and this tile is an edge tile so fill the tile with a background color first
+                    g.setColor(_tileBackgroundColor);
+                    g.fillRect(0, 0, _tileSize, _tileSize);
                 }
 
+                // Now blit the tile to the destTile
+                g.drawImage(tile, 0, _tileSize - tile.getHeight(), null);
+                // Clean up!
+                g.dispose();
+                tile = destTile;
+                // Shunt this off to the io writers.
                 File tileFile = new File(colDir.getPath() + String.format("/%d.png", (rows - y - 1)));
                 ioThreadPool.submit(new ImageTiler.SaveTileTask(tileFile, tile));
             }
@@ -205,10 +224,14 @@ public class ImageTiler {
 
         public void run() {
             try {
-                ImageIO.write(image,  _tileFormat == TileFormat.PNG ? "PNG" : "JPEG", file);
+                if (!ImageIO.write(image,  _tileFormat == TileFormat.PNG ? "png" : "jpg", file)) {
+                    throw new RuntimeException("Unable to find an appropriate writer!");
+                }
             } catch (Exception ex) {
+                _exceptionOccurred = true;
                 ex.printStackTrace();
             } catch (Error error) {
+                _exceptionOccurred = true;
                 error.printStackTrace();
             }
         }
@@ -234,10 +257,11 @@ public class ImageTiler {
             try {
                 tileImageAtSubSampleLevel(_bytes, _subSample, _destinationPath, _ioThreadPool);
             } catch (Exception ex) {
-                System.err.println(ex.getMessage());
+                _exceptionOccurred = true;
                 ex.printStackTrace();
             } catch (Error err) {
                 System.err.println(err.getMessage());
+                _exceptionOccurred = true;
                 err.printStackTrace();
             }
         }
