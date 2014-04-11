@@ -21,8 +21,6 @@ public class LocalTiler {
         dest.mkdirs();
 
         ImageTilerConfig config = new ImageTilerConfig();
-        // config.setTileFormat(TileFormat.PNG);
-        config.setTileBackgroundColor(Color.pink);
         ImageTiler tiler = new ImageTiler(config);
         try {
             ImageTilerResults results = tiler.tileImage(f, dest);
@@ -32,7 +30,6 @@ public class LocalTiler {
                 System.out.println(String.format("Tiling completed (%d zoom levels)", results.getZoomLevels()));
             }
         } catch (Exception ex) {
-            System.out.println("Here!");
             ex.printStackTrace();
         }
 

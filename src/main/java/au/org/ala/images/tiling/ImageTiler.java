@@ -3,16 +3,17 @@ package au.org.ala.images.tiling;
 import au.org.ala.images.util.FastByteArrayInputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReadParam;
-import javax.imageio.ImageReader;
-import javax.imageio.ImageWriter;
+
+import javax.imageio.*;
 import javax.imageio.spi.IIORegistry;
 import javax.imageio.stream.ImageInputStream;
+import javax.imageio.stream.ImageOutputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -224,9 +225,28 @@ public class ImageTiler {
 
         public void run() {
             try {
-                if (!ImageIO.write(image,  _tileFormat == TileFormat.PNG ? "png" : "jpg", file)) {
-                    throw new RuntimeException("Unable to find an appropriate writer!");
+
+                String format = _tileFormat == TileFormat.PNG ? "png" : "jpeg";
+                if (!ImageIO.write(image, format, file)) {
+                    _exceptionOccurred = true;
                 }
+
+//                if (_tileFormat == TileFormat.JPEG) {
+//                    ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+//                    ImageOutputStream ios = ImageIO.createImageOutputStream(file);
+//                    writer.setOutput(ios);
+//                    ImageWriteParam param = writer.getDefaultWriteParam();
+//                    param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+//                    param.setCompressionQuality(1.0F); // Highest quality
+//                    writer.write(image);
+//                    writer.dispose();
+//                    ios.close();
+//                } else {
+//                    if (!ImageIO.write(image,"png", file)) {
+//                        _exceptionOccurred = true;
+//                    }
+//                }
+
             } catch (Exception ex) {
                 _exceptionOccurred = true;
                 ex.printStackTrace();
