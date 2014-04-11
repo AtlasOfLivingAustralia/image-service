@@ -7,13 +7,10 @@ import org.apache.commons.io.IOUtils;
 import javax.imageio.*;
 import javax.imageio.spi.IIORegistry;
 import javax.imageio.stream.ImageInputStream;
-import javax.imageio.stream.ImageOutputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -61,13 +58,6 @@ public class ImageTiler {
             byte[] imageBytes = IOUtils.toByteArray(FileUtils.openInputStream(imageFile));
             int[] pyramid = _zoomFactorStrategy.getZoomFactors(imageFile, imageBytes);
 
-
-            //int[] pyramid = new int[] { 128, 64, 32, 16, 8, 4, 2, 1 };
-
-//            if (imageFile.length() < 5*1024*1024) {
-//                pyramid = new int[] { 16, 8, 4, 2, 1 };
-//            }
-
             ExecutorService levelThreadPool = Executors.newFixedThreadPool(Math.min(pyramid.length, _maxLevelThreads));
             ExecutorService ioThreadPool = Executors.newFixedThreadPool(_ioThreadCount);
 
@@ -76,11 +66,9 @@ public class ImageTiler {
                 submitLevelForProcessing(level, imageBytes, pyramid, destinationDirectory, levelThreadPool, ioThreadPool);
             }
 
-//            System.out.println("Waiting for Image Processing threads...");
             levelThreadPool.shutdown();
             levelThreadPool.awaitTermination(30, TimeUnit.MINUTES);
 
-//            System.out.println("Waiting for IO threads..." );
             ioThreadPool.shutdown();
             ioThreadPool.awaitTermination(30, TimeUnit.MINUTES);
 
