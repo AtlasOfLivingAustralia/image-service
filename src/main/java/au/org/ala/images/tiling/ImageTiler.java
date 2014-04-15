@@ -1,6 +1,7 @@
 package au.org.ala.images.tiling;
 
 import au.org.ala.images.util.FastByteArrayInputStream;
+import au.org.ala.images.util.ImageReaderUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 
@@ -96,10 +97,10 @@ public class ImageTiler {
 
         FastByteArrayInputStream bis = new FastByteArrayInputStream(bytes, bytes.length);
         ImageInputStream iis = ImageIO.createImageInputStream(bis);
-        Iterator<ImageReader> iter = ImageIO.getImageReaders(iis);
 
-        if (iter.hasNext()) {
-            ImageReader reader = iter.next();
+        ImageReader reader = ImageReaderUtils.findCompatibleImageReader(iis);
+
+        if (reader != null) {
             reader.setInput(iis);
 
             int srcHeight = reader.getHeight(0);
