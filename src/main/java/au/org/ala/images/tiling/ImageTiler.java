@@ -165,9 +165,14 @@ public class ImageTiler {
                     rowOffset = 0;
                 }
 
-                BufferedImage tile = strip.getSubimage(stripColOffset, rowOffset, tw, th);
-                BufferedImage destTile; // We copy the image to a fresh buffered image so that we don't copy over any incompatible color profiles
+                BufferedImage tile = null;
+                if (tw > 0 && th > 0) {
+                    // If height or width == 0 we can't actually take a subimage, so leave the tile blank
+                    tile = strip.getSubimage(stripColOffset, rowOffset, tw, th);
+                }
 
+
+                BufferedImage destTile; // We copy the image to a fresh buffered image so that we don't copy over any incompatible color profiles
 
                 // PNG can support transparency, so use that rather than a background color
                 if (_tileFormat == TileFormat.PNG) {
@@ -178,20 +183,21 @@ public class ImageTiler {
                 Graphics g = destTile.getGraphics();
 
                 // We have to create a blank tile, and transfer the clipped tile into the appropriate spot (bottom left)
-                if (_tileFormat == TileFormat.JPEG && tile.getHeight() < _tileSize || tile.getWidth() < _tileSize) {
+                if (_tileFormat == TileFormat.JPEG && tile != null && (tile.getHeight() < _tileSize || tile.getWidth() < _tileSize)) {
                     // JPEG doesn't support transparency, and this tile is an edge tile so fill the tile with a background color first
                     g.setColor(_tileBackgroundColor);
                     g.fillRect(0, 0, _tileSize, _tileSize);
                 }
 
-                // Now blit the tile to the destTile
-                g.drawImage(tile, 0, _tileSize - tile.getHeight(), null);
+                if (tile != null) {
+                    // Now blit the tile to the destTile
+                    g.drawImage(tile, 0, _tileSize - tile.getHeight(), null);
+                }
                 // Clean up!
                 g.dispose();
-                tile = destTile;
                 // Shunt this off to the io writers.
                 File tileFile = new File(colDir.getPath() + String.format("/%d.png", (rows - y - 1)));
-                ioThreadPool.submit(new ImageTiler.SaveTileTask(tileFile, tile));
+                ioThreadPool.submit(new ImageTiler.SaveTileTask(tileFile, destTile));
             }
         }
     }
