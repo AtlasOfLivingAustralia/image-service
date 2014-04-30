@@ -95,10 +95,7 @@ public class ImageTiler {
 
     private void tileImageAtSubSampleLevel(byte[] bytes, int subsample, String destinationPath, ExecutorService ioThreadPool) throws IOException {
 
-        FastByteArrayInputStream bis = new FastByteArrayInputStream(bytes, bytes.length);
-        ImageInputStream iis = ImageIO.createImageInputStream(bis);
-
-        ImageReader reader = ImageReaderUtils.findCompatibleImageReader(iis);
+        ImageReader reader = ImageReaderUtils.findCompatibleImageReader(bytes);
 
         if (reader != null) {
 
