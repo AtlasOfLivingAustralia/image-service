@@ -44,6 +44,11 @@ public class ImageTilerTest extends TestBase {
         Assert.assertTrue(tileImage("P1010763.JPG"));
     }
 
+    @Test
+    public void test7() throws Exception {
+        Assert.assertTrue(tileImage("Bearded_Heath.jpg"));
+    }
+
     private boolean tileImage(String filename) throws Exception {
         URL url = ImageTilerTest.class.getResource(String.format("/images/%s", filename));
         println("Tiling: %s", url);
