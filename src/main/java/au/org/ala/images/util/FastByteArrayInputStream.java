@@ -24,6 +24,11 @@ public class FastByteArrayInputStream extends InputStream {
 
     protected int mark = 0;
 
+    public FastByteArrayInputStream(byte[] buf) {
+        this.buf = buf;
+        this.count = buf.length;
+    }
+
     public FastByteArrayInputStream(byte[] buf, int count) {
         this.buf = buf;
         this.count = count;

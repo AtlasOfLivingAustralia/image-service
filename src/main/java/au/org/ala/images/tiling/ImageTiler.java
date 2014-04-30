@@ -101,7 +101,6 @@ public class ImageTiler {
         ImageReader reader = ImageReaderUtils.findCompatibleImageReader(iis);
 
         if (reader != null) {
-            reader.setInput(iis);
 
             int srcHeight = reader.getHeight(0);
             int srcWidth = reader.getWidth(0);
@@ -129,10 +128,9 @@ public class ImageTiler {
                 BufferedImage strip = reader.read(0, params);
                 splitStripIntoTiles(strip, levelDir, rows, stripIndex, ioThreadPool);
             }
-            iis.close();
-            bis.close();
+//            iis.close();
+//            bis.close();
             reader.dispose();
-            System.gc();
         } else {
             throw new RuntimeException("No readers found suitable for file");
         }
