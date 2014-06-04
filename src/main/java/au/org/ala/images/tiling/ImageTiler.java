@@ -125,8 +125,6 @@ public class ImageTiler {
                 BufferedImage strip = reader.read(0, params);
                 splitStripIntoTiles(strip, levelDir, rows, stripIndex, ioThreadPool);
             }
-//            iis.close();
-//            bis.close();
             reader.dispose();
         } else {
             throw new RuntimeException("No readers found suitable for file");
@@ -183,7 +181,7 @@ public class ImageTiler {
                 Graphics g = destTile.getGraphics();
 
                 // We have to create a blank tile, and transfer the clipped tile into the appropriate spot (bottom left)
-                if (_tileFormat == TileFormat.JPEG && tile != null && (tile.getHeight() < _tileSize || tile.getWidth() < _tileSize)) {
+                if (_tileFormat == TileFormat.JPEG && tile != null) {
                     // JPEG doesn't support transparency, and this tile is an edge tile so fill the tile with a background color first
                     g.setColor(_tileBackgroundColor);
                     g.fillRect(0, 0, _tileSize, _tileSize);
