@@ -1,5 +1,6 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.TestBase;
 import org.apache.commons.io.FileUtils;
 import org.junit.Assert;
 import org.junit.Test;

@@ -1,16 +1,11 @@
 package au.org.ala.images.util;
 
-import org.apache.commons.io.FileUtils;
-import sun.misc.IOUtils;
-
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 
 public class ImageReaderUtils {
 
