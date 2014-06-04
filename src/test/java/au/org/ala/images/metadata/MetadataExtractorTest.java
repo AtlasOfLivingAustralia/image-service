@@ -9,7 +9,7 @@ import org.junit.runners.JUnit4;
 import java.util.Map;
 
 @RunWith(JUnit4.class)
-public class MetadataExtractorTests extends TestBase {
+public class MetadataExtractorTest extends TestBase {
 
     @Test
     public void test1() throws Exception {
