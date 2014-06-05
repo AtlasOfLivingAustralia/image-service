@@ -59,14 +59,13 @@ public class ImageTilerTest extends TestBase {
         ImageTiler tiler = new ImageTiler(config);
 
         Path tempDir = Files.createTempDirectory("imagetests");
-
-        ImageTilerResults results = tiler.tileImage(imageFile, tempDir.toFile());
-
-        println("Result Success: %b", results.getSuccess());
-        println("Result Zoomlevels: %d", results.getZoomLevels());
-
-        FileUtils.deleteDirectory(tempDir.toFile());
-
-        return results.getSuccess();
+        try {
+            ImageTilerResults results = tiler.tileImage(imageFile, tempDir.toFile());
+            println("Result Success: %b", results.getSuccess());
+            println("Result Zoomlevels: %d", results.getZoomLevels());
+            return results.getSuccess();
+        } finally {
+            FileUtils.deleteDirectory(tempDir.toFile());
+        }
     }
 }
