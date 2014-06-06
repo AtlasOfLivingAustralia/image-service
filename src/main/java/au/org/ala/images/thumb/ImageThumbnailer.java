@@ -3,7 +3,6 @@ package au.org.ala.images.thumb;
 import au.org.ala.images.util.CodeTimer;
 import au.org.ala.images.util.ImageReaderUtils;
 import au.org.ala.images.util.ImageUtils;
-import org.apache.commons.lang.StringUtils;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -12,119 +11,99 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ImageThumbnailer {
 
-    private File createThumbnailFile(File parent) {
-        return new File(parent.getAbsolutePath() + "/thumbnail");
+    private static final int MAX_THUMB_SIZE = 1024;
+
+    public File createThumbnailFile(File parent, String name) {
+        return new File(String.format("%s/%s", parent.getAbsolutePath(), name));
     }
 
-    private File createSquareThumbnailFile(File parent, String backgroundColor) {
-        if (StringUtils.isEmpty(backgroundColor)) {
-            return new File(String.format("%s/thumbnail_square", parent.getAbsolutePath()));
-        } else {
-            return new File(String.format("%s/thumbnail_square_%s", parent.getAbsolutePath(), backgroundColor));
-        }
-    }
-
-    public ThumbnailingResults generateThumbnails(byte[] imageBytes, File destinationDirectory, int size, String[] backgroundColors) throws IOException {
+    public List<ThumbnailingResult> generateThumbnails(byte[] imageBytes, File destinationDirectory, List<ThumbDefinition> thumbDefs) throws IOException {
         CodeTimer t = new CodeTimer("Thumbnail generation");
         ImageReader reader = ImageReaderUtils.findCompatibleImageReader(imageBytes);
-        int thumbHeight = 0, thumbWidth = 0;
-        List<String> names = new ArrayList<String>();
+        List<ThumbnailingResult> results = new ArrayList<ThumbnailingResult>();
         if (reader != null) {
             ImageReadParam imageParams = reader.getDefaultReadParam();
             int height = reader.getHeight(0);
             int width = reader.getWidth(0);
-
-            BufferedImage thumbImage;
-
+            BufferedImage thumbSrc;
             // Big images need to be thumbed via ImageReader to maintain O(1) heap use
-            if (height > 1024 || width > 1024) {
-
+            if (height > MAX_THUMB_SIZE || width > MAX_THUMB_SIZE) {
                 // roughly scale (subsample) the image to a max dimension of 1024
                 int ratio;
                 if (height > width) {
-                    ratio = height / 1024;
+                    ratio = height / MAX_THUMB_SIZE;
                 } else {
-                    ratio = width / 1024;
+                    ratio = width / MAX_THUMB_SIZE;
                 }
 
                 imageParams.setSourceSubsampling(ratio, ratio == 0 ? 1 : ratio, 0, 0);
-                thumbImage = reader.read(0, imageParams);
+                thumbSrc = reader.read(0, imageParams);
 
                 // then finely scale the sub sampled image to get the final thumbnail
-                thumbImage = ImageUtils.scaleWidth(thumbImage, size);
+                thumbSrc = ImageUtils.scaleWidth(thumbSrc, MAX_THUMB_SIZE);
             } else {
                 // small images
-                thumbImage = reader.read(0);
-                thumbImage = ImageUtils.scaleWidth(thumbImage, size);
+                thumbSrc = reader.read(0);
+                thumbSrc = ImageUtils.scaleWidth(thumbSrc, MAX_THUMB_SIZE);
             }
 
-            if (thumbImage != null) {
-                thumbHeight = thumbImage.getHeight();
-                thumbWidth = thumbImage.getWidth();
+            if (thumbSrc != null) {
+                for (ThumbDefinition thumbDef : thumbDefs) {
+                    File thumbFile = createThumbnailFile(destinationDirectory, thumbDef.getName());
+                    // workout if we need to be a transparent png or if jpg will do...
+                    Color backgroundColor = thumbDef.getBackgroundColor();
+                    int size = thumbDef.getMaximumDimension();
+                    boolean isPNG = false;
+                    BufferedImage thumbImage;
 
-                File thumbFile = createThumbnailFile(destinationDirectory);
+                    BufferedImage scaledThumb = ImageUtils.scaleWidth(thumbSrc, size);
+                    int thumbHeight = scaledThumb.getHeight();
+                    int thumbWidth = scaledThumb.getWidth();
 
-                BufferedImage temp = new BufferedImage(thumbImage.getWidth(), thumbImage.getHeight(), BufferedImage.TYPE_3BYTE_BGR);
-                Graphics g = temp.getGraphics();
-                try {
-                    g.drawImage(thumbImage, 0, 0, null);
-                    ImageIO.write(temp, "JPG", thumbFile);
-                    names.add(thumbFile.getName());
-                } finally {
-                    g.dispose();
-                }
-
-                // for each background color (where empty string means transparent), create a squared thumb
-                // If not transparent, keep as jpeg for speed/space!
-                for (String colorName : backgroundColors) {
-                    Color backgroundColor = null;
-                    if (StringUtils.isNotEmpty(colorName)) {
-                        try {
-                            Field field = Color.class.getField(colorName);
-                            backgroundColor = (Color)field.get(null);
-                        } catch (Exception e) {
-                            backgroundColor = null; // Not defined
-                        }
-                    }
-
-                    if (backgroundColor == null) {
-                        temp = new BufferedImage(size, size, BufferedImage.TYPE_4BYTE_ABGR);
-                    } else {
-                        temp = new BufferedImage(size, size, BufferedImage.TYPE_3BYTE_BGR);
-                    }
-
-                    g = temp.getGraphics();
+                    Graphics g = null;
                     try {
-                        if (StringUtils.isNotEmpty(colorName) && backgroundColor != null) {
-                            g.setColor(backgroundColor);
-                            g.fillRect(0, 0, size, size);
-                        }
-
-                        if (thumbHeight < size) {
-                            int top = (size / 2) - (thumbHeight / 2);
-                            g.drawImage(thumbImage, 0, top, null);
-                        } else if (thumbWidth < size) {
-                            int left = (size / 2) - (thumbWidth / 2);
-                            g.drawImage(thumbImage, left, 0, null);
+                        if (!thumbDef.isSquare()) {
+                            // Need to paint anyway, as the source bytes might contain an alpha channel,
+                            // and this is going to JPG with no transparency - this avoids weird colouration effects.
+                            thumbImage = new BufferedImage(scaledThumb.getWidth(), scaledThumb.getHeight(), BufferedImage.TYPE_3BYTE_BGR);
+                            g = thumbImage.getGraphics();
+                            g.drawImage(scaledThumb, 0, 0, null);
                         } else {
-                            g.drawImage(thumbImage, 0, 0, null);
+                            if (backgroundColor == null) {
+                                isPNG = true;
+                                thumbImage = new BufferedImage(size, size, BufferedImage.TYPE_4BYTE_ABGR);
+                                g = thumbImage.getGraphics();
+                            } else {
+                                thumbImage = new BufferedImage(size, size, BufferedImage.TYPE_3BYTE_BGR);
+                                g = thumbImage.getGraphics();
+                                g.setColor(backgroundColor);
+                                g.fillRect(0, 0, size, size);
+                            }
+                            // Draw the non-square image centered on the square target
+                            if (thumbHeight < size) {
+                                int top = (size / 2) - (thumbHeight / 2);
+                                g.drawImage(scaledThumb, 0, top, null);
+                            } else if (thumbWidth < size) {
+                                int left = (size / 2) - (thumbWidth / 2);
+                                g.drawImage(scaledThumb, left, 0, null);
+                            } else {
+                                g.drawImage(scaledThumb, 0, 0, null);
+                            }
                         }
-
-                        thumbFile = createSquareThumbnailFile(destinationDirectory, colorName);
-                        if (StringUtils.isNotEmpty(colorName) && backgroundColor != null) {
-                            ImageIO.write(temp, "JPG", thumbFile);
-                        } else {
-                            ImageIO.write(temp, "PNG", thumbFile);
-                        }
-                        names.add(thumbFile.getName());
                     } finally {
-                        g.dispose();
+                        if (g != null) {
+                            g.dispose();
+                        }
+                    }
+
+                    if (thumbImage != null) {
+                        ImageIO.write(thumbImage, isPNG ? "PNG" : "JPG", thumbFile);
+                        results.add(new ThumbnailingResult(thumbImage.getWidth(), thumbImage.getHeight(), thumbDef.isSquare(), thumbDef.getName()));
                     }
                 }
             }
@@ -132,7 +111,7 @@ public class ImageThumbnailer {
             System.err.println("No image readers for image ${imageIdentifier}!");
         }
         t.stop(true);
-        return new ThumbnailingResults(thumbWidth, thumbHeight, size, names);
+        return results;
     }
 
 }
