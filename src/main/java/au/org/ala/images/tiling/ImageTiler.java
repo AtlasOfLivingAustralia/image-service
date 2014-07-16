@@ -136,7 +136,7 @@ public class ImageTiler {
         for (int col = 0; col < _maxColsPerStrip; col++) {
 
             int stripColOffset = col * _tileSize;
-            if (stripColOffset > strip.getWidth()) {
+            if (stripColOffset >= strip.getWidth()) {
                 continue;
             }
 
