@@ -12,6 +12,9 @@ import java.io.ByteArrayInputStream;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+/**
+ * A {@link au.org.ala.images.metadata.AbstractMetadataParser} that can extract metadata from most image types
+ */
 public class ImageMetadataExtractor extends AbstractMetadataParser {
 
     @Override

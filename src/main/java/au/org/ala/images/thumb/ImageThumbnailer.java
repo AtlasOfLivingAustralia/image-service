@@ -14,16 +14,18 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Utility class that can generate thumbnails of various sizes based on a {@link au.org.ala.images.thumb.ThumbDefinition} descriptor
+ */
 public class ImageThumbnailer {
 
     private static final int MAX_THUMB_SIZE = 1024;
 
-    public File createThumbnailFile(File parent, String name) {
+    protected File createThumbnailFile(File parent, String name) {
         return new File(String.format("%s/%s", parent.getAbsolutePath(), name));
     }
 
     public List<ThumbnailingResult> generateThumbnails(byte[] imageBytes, File destinationDirectory, List<ThumbDefinition> thumbDefs) throws IOException {
-        CodeTimer t = new CodeTimer("Thumbnail generation");
         ImageReader reader = ImageReaderUtils.findCompatibleImageReader(imageBytes);
         List<ThumbnailingResult> results = new ArrayList<ThumbnailingResult>();
         if (reader != null) {
@@ -110,7 +112,6 @@ public class ImageThumbnailer {
         } else {
             System.err.println("No image readers for image ${imageIdentifier}!");
         }
-        t.stop(true);
         return results;
     }
 

@@ -12,6 +12,9 @@ import java.io.InputStream;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+/**
+ * A {@link au.org.ala.images.metadata.AbstractMetadataParser} that can extract tags from MP3 audio files
+ */
 public class MP3MetadataParser extends AbstractMetadataParser {
     @Override
     public Pattern getContentTypePattern() {
