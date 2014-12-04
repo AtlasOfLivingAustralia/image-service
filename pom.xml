@@ -4,18 +4,16 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
+    <parent>
+        <groupId>au.org.ala</groupId>
+        <artifactId>ala-parent-pom</artifactId>
+        <version>1.0</version>
+    </parent>
+
     <groupId>au.org.ala</groupId>
     <artifactId>image-utils</artifactId>
     <version>1.8.2</version>
     <packaging>jar</packaging>
-
-    <repositories>
-        <repository>
-            <id>geotoolkit</id>
-            <name>Geotoolkit</name>
-            <url>http://maven.geotoolkit.org/</url>
-        </repository>
-    </repositories>
 
     <dependencies>
         <dependency>
@@ -30,8 +28,8 @@
         </dependency>
         <dependency>
             <groupId>javax.media</groupId>
-            <artifactId>jai_imageio</artifactId>
-            <version>1.1.1</version>
+            <artifactId>jai-imageio</artifactId>
+            <version>1.1</version>
         </dependency>
         <dependency>
             <groupId>com.twelvemonkeys.imageio</groupId>
@@ -75,21 +73,8 @@
         </dependency>
     </dependencies>
 
-    <distributionManagement>
-        <repository>
-            <id>ala-repo</id>
-            <name>Internal Releases</name>
-            <url>http://ala-wonder.it.csiro.au/nexus/content/repositories/releases/</url>
-        </repository>
-        <snapshotRepository>
-            <id>ala-repo</id>
-            <name>Internal Releases</name>
-            <url>http://ala-wonder.it.csiro.au/nexus/content/repositories/snapshots/</url>
-        </snapshotRepository>
-    </distributionManagement>
 
     <build>
-
         <extensions>
             <extension>
                 <groupId>org.apache.maven.wagon</groupId>
