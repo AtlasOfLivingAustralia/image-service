@@ -12,7 +12,7 @@
 
     <groupId>au.org.ala</groupId>
     <artifactId>image-utils</artifactId>
-    <version>1.8.2</version>
+    <version>1.8.3</version>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -27,24 +27,24 @@
             <version>2.4</version>
         </dependency>
         <dependency>
-            <groupId>javax.media</groupId>
-            <artifactId>jai-imageio</artifactId>
-            <version>1.1</version>
+            <groupId>com.github.jai-imageio</groupId>
+            <artifactId>jai-imageio-core</artifactId>
+            <version>1.4.0</version>
         </dependency>
         <dependency>
             <groupId>com.twelvemonkeys.imageio</groupId>
             <artifactId>imageio-jpeg</artifactId>
-            <version>3.0-rc5</version>
+            <version>3.3.2</version>
         </dependency>
         <dependency>
             <groupId>com.twelvemonkeys.imageio</groupId>
             <artifactId>imageio-tiff</artifactId>
-            <version>3.0-rc5</version>
+            <version>3.3.2</version>
         </dependency>
         <dependency>
             <groupId>com.twelvemonkeys.imageio</groupId>
             <artifactId>imageio-psd</artifactId>
-            <version>3.0-rc5</version>
+            <version>3.3.2</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -72,8 +72,6 @@
             <version>4.2</version>
         </dependency>
     </dependencies>
-
-
     <build>
         <extensions>
             <extension>

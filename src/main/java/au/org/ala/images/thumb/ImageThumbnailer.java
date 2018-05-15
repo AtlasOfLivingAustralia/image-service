@@ -1,6 +1,5 @@
 package au.org.ala.images.thumb;
 
-import au.org.ala.images.util.CodeTimer;
 import au.org.ala.images.util.ImageReaderUtils;
 import au.org.ala.images.util.ImageUtils;
 
