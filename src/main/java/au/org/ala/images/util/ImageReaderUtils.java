@@ -1,11 +1,11 @@
 package au.org.ala.images.util;
 
-import au.org.ala.images.metadata.ImageMetadataExtractor;
 import com.drew.imaging.ImageMetadataReader;
 import com.drew.metadata.Metadata;
 import com.drew.metadata.exif.ExifIFD0Directory;
 import com.drew.metadata.jpeg.JpegDirectory;
-import org.imgscalr.Scalr;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -13,14 +13,14 @@ import javax.imageio.stream.ImageInputStream;
 import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
-import java.awt.image.BufferedImageOp;
-import java.awt.image.DataBufferByte;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 
 public class ImageReaderUtils {
+
+    protected static Logger logger = LoggerFactory.getLogger("ImageReaderUtils");
 
     public static ImageReader findCompatibleImageReader(byte[] imageBytes) {
         return findCompatibleImageReader(imageBytes, new DefaultImageReaderSelectionStrategy());
@@ -60,10 +60,17 @@ public class ImageReaderUtils {
 
             try {
                 if (result != null) {
-                    result.setInput(rotate(imageBytes));
-                    return result;
+//                    if (true){
+                        result.setInput(rotate(imageBytes));
+                        return result;
+//                    } else {
+//                        FastByteArrayInputStream fbis2 = new FastByteArrayInputStream(imageBytes);
+//                        ImageInputStream iis2 =  ImageIO.createImageInputStream(fbis2);
+//                        result.setInput(iis2);
+//                        return result;
+//                    }
                 }
-            } catch (IOException ioex) {
+            } catch (Exception ioex) {
                 throw new RuntimeException(ioex);
             }
 
@@ -81,15 +88,15 @@ public class ImageReaderUtils {
             Collection<ExifIFD0Directory> exifIFD0 = metadata.getDirectoriesOfType(ExifIFD0Directory.class);
             JpegDirectory jpegDirectory = metadata.getFirstDirectoryOfType(JpegDirectory.class);
 
-            if(jpegDirectory == null || exifIFD0.isEmpty()){
+            if (jpegDirectory == null || exifIFD0.isEmpty()){
                 FastByteArrayInputStream fbis = new FastByteArrayInputStream(imageBytes);
                 return ImageIO.createImageInputStream(fbis);
             }
 
             int orientation = exifIFD0.iterator().next().getInt(ExifIFD0Directory.TAG_ORIENTATION);
-
             int width = jpegDirectory.getImageWidth();
             int height = jpegDirectory.getImageHeight();
+            logger.debug("orientation= " + orientation +", width=" + width + ", height=" + height);
 
             AffineTransform affineTransform = new AffineTransform();
 
@@ -130,23 +137,26 @@ public class ImageReaderUtils {
                     break;
             }
 
-            BufferedInputStream bis2 = new BufferedInputStream(new ByteArrayInputStream(imageBytes));
-            BufferedImage originalImage = ImageIO.read(bis2);
+            if (orientation > 1 && orientation < 9){
 
+                BufferedInputStream bis2 = new BufferedInputStream(new ByteArrayInputStream(imageBytes));
+                BufferedImage originalImage = ImageIO.read(bis2);
+                AffineTransformOp affineTransformOp = new AffineTransformOp(affineTransform, AffineTransformOp.TYPE_BILINEAR);
+                BufferedImage destinationImage = new BufferedImage(originalImage.getHeight(), originalImage.getWidth(), originalImage.getType());
+                destinationImage = affineTransformOp.filter(originalImage, destinationImage);
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                ImageIO.write(destinationImage, "jpg", baos);
+                baos.flush();
+                byte[] imageInByte = baos.toByteArray();
+                baos.close();
 
-            AffineTransformOp affineTransformOp = new AffineTransformOp(affineTransform, AffineTransformOp.TYPE_BILINEAR);
-            BufferedImage destinationImage = new BufferedImage(originalImage.getHeight(), originalImage.getWidth(), originalImage.getType());
-            destinationImage = affineTransformOp.filter(originalImage, destinationImage);
-
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
-            ImageIO.write(destinationImage, "jpg", baos);
-            baos.flush();
-            byte[] imageInByte = baos.toByteArray();
-            baos.close();
-
-            FastByteArrayInputStream fbis = new FastByteArrayInputStream(imageInByte);
-            return ImageIO.createImageInputStream(fbis);
+                logger.debug("Transformed - width=" + destinationImage.getWidth() + ", height=" + destinationImage.getHeight());
+                FastByteArrayInputStream fbis = new FastByteArrayInputStream(imageInByte);
+                return ImageIO.createImageInputStream(fbis);
+            } else {
+                FastByteArrayInputStream fbis = new FastByteArrayInputStream(imageBytes);
+                return ImageIO.createImageInputStream(fbis);
+            }
         } catch (Exception e){
             FastByteArrayInputStream fbis = new FastByteArrayInputStream(imageBytes);
             return ImageIO.createImageInputStream(fbis);
