@@ -5,7 +5,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Image Service API</title>
-    <link rel="stylesheet" type="text/css" href="/webjars/swagger-ui/3.20.9/swagger-ui.css" >
+    <link rel="stylesheet" type="text/css" href="./webjars/swagger-ui/3.20.9/swagger-ui.css" >
     <link href="${grailsApplication.config.skin.favicon}" rel="shortcut icon"  type="image/x-icon"/>
     <style>
     html
@@ -32,13 +32,13 @@
 
 <body>
 <div id="swagger-ui"></div>
-<script src="/webjars/swagger-ui/3.20.9/swagger-ui-bundle.js"> </script>
-<script src="/webjars/swagger-ui/3.20.9/swagger-ui-standalone-preset.js"> </script>
+<script src="./webjars/swagger-ui/3.20.9/swagger-ui-bundle.js"> </script>
+<script src="./webjars/swagger-ui/3.20.9/swagger-ui-standalone-preset.js"> </script>
 <script>
     window.onload = function() {
         // Begin Swagger UI call region
         const ui = SwaggerUIBundle({
-            url: "/ws/api",
+            url: "./ws/api",
             dom_id: '#swagger-ui',
             deepLinking: true,
             presets: [
