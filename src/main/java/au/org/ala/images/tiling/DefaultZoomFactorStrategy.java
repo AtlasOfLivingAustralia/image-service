@@ -10,7 +10,7 @@ import java.util.Iterator;
 
 public class DefaultZoomFactorStrategy implements ZoomFactorStrategy {
 
-    public int[] getZoomFactors(File imageFile, byte[] imageBytes) {
+    public int[] getZoomFactors(byte[] imageBytes) {
         int zoomLevels = 8;
 
         int height = 0;

@@ -1,7 +1,8 @@
 package au.org.ala.images.tiling;
 
-import au.org.ala.images.util.FastByteArrayInputStream;
+import au.org.ala.images.util.FileByteSinkFactory;
 import au.org.ala.images.util.ImageReaderUtils;
+import com.google.common.io.ByteSink;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
@@ -9,12 +10,12 @@ import org.slf4j.LoggerFactory;
 
 import javax.imageio.*;
 import javax.imageio.spi.IIORegistry;
-import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.util.Iterator;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -51,24 +52,22 @@ public class ImageTiler {
     }
 
     public ImageTilerResults tileImage(File imageFile, File destinationDirectory) throws IOException, InterruptedException {
+        return tileImage(FileUtils.openInputStream(imageFile), new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(destinationDirectory)));
+    }
+
+    public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink) throws IOException, InterruptedException {
 
         try {
             _exceptionOccurred = false; // reset the error flag
-            // Clean up existing tiles
-            if (destinationDirectory.exists()) {
-                FileUtils.deleteDirectory(destinationDirectory);
-            }
-            // make sure dir exists
-            destinationDirectory.mkdirs();
-            byte[] imageBytes = IOUtils.toByteArray(FileUtils.openInputStream(imageFile));
-            int[] pyramid = _zoomFactorStrategy.getZoomFactors(imageFile, imageBytes);
+            byte[] imageBytes = IOUtils.toByteArray(imageInputStream);
+            int[] pyramid = _zoomFactorStrategy.getZoomFactors(imageBytes);
 
             ExecutorService levelThreadPool = Executors.newFixedThreadPool(Math.min(pyramid.length, _maxLevelThreads));
             ExecutorService ioThreadPool = Executors.newFixedThreadPool(_ioThreadCount);
 
             // Submit it reverse order so the big jobs get started first
             for (int level = pyramid.length - 1; level >= 0 ; level--) {
-                submitLevelForProcessing(level, imageBytes, pyramid, destinationDirectory, levelThreadPool, ioThreadPool);
+                submitLevelForProcessing(level, imageBytes, pyramid, tilerSink.getLevelSink(level), levelThreadPool, ioThreadPool);
             }
 
             levelThreadPool.shutdown();
@@ -90,14 +89,12 @@ public class ImageTiler {
         return new ImageTilerResults(false, 0);
     }
 
-    private void submitLevelForProcessing(int level, byte[] imageBytes, int[] pyramid, File destinationDirectory, ExecutorService levelThreadPool, ExecutorService ioThreadPool) {
+    private void submitLevelForProcessing(int level, byte[] imageBytes, int[] pyramid, TilerSink.LevelSink levelSink, ExecutorService levelThreadPool, ExecutorService ioThreadPool) {
         int subSample = pyramid[level];
-        File levelDir = new File(destinationDirectory.getPath() + "/" + level);
-        levelDir.mkdirs();
-        levelThreadPool.submit(new TileImageTask(imageBytes, subSample, levelDir.getPath(), ioThreadPool));
+        levelThreadPool.submit(new TileImageTask(imageBytes, subSample, levelSink, ioThreadPool));
     }
 
-    private void tileImageAtSubSampleLevel(byte[] bytes, int subsample, String destinationPath, ExecutorService ioThreadPool) throws IOException {
+    private void tileImageAtSubSampleLevel(byte[] bytes, int subsample, TilerSink.LevelSink levelSink, ExecutorService ioThreadPool) throws IOException {
 
         ImageReader reader = ImageReaderUtils.findCompatibleImageReader(bytes);
 
@@ -108,9 +105,6 @@ public class ImageTiler {
 
             int height = (int) Math.ceil( ((double) reader.getHeight(0)) / ((double) subsample));
             int rows = (int) Math.ceil( ((double) height) / ((double) _tileSize));
-
-            File levelDir = new File(destinationPath);
-            levelDir.mkdirs();
 
             int stripWidth = _tileSize * subsample * _maxColsPerStrip;
             int numberOfStrips = (int) Math.ceil( ((double) srcWidth) / ((double) stripWidth));
@@ -127,7 +121,7 @@ public class ImageTiler {
                 params.setSourceRegion(stripRect);
                 params.setSourceSubsampling(subsample, subsample, 0, 0);
                 BufferedImage strip = reader.read(0, params);
-                splitStripIntoTiles(strip, levelDir, rows, stripIndex, ioThreadPool);
+                splitStripIntoTiles(strip, levelSink, rows, stripIndex, ioThreadPool);
             }
             reader.dispose();
         } else {
@@ -135,7 +129,7 @@ public class ImageTiler {
         }
     }
 
-    private void splitStripIntoTiles(BufferedImage strip, File levelDir, int rows, int stripIndex, ExecutorService ioThreadPool) {
+    private void splitStripIntoTiles(BufferedImage strip, TilerSink.LevelSink levelSink, int rows, int stripIndex, ExecutorService ioThreadPool) {
         // Now divide the strip up into tiles
         for (int col = 0; col < _maxColsPerStrip; col++) {
 
@@ -144,8 +138,7 @@ public class ImageTiler {
                 continue;
             }
 
-            File colDir = new File(levelDir.getPath() + "/" + (col + (stripIndex * _maxColsPerStrip)));
-            colDir.mkdirs();
+            TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, stripIndex, _maxColsPerStrip);
 
             int tw = _tileSize;
             if (tw + (col * _tileSize) > strip.getWidth()) {
@@ -198,8 +191,8 @@ public class ImageTiler {
                 // Clean up!
                 g.dispose();
                 // Shunt this off to the io writers.
-                File tileFile = new File(colDir.getPath() + String.format("/%d.png", (rows - y - 1)));
-                ioThreadPool.submit(new ImageTiler.SaveTileTask(tileFile, destTile));
+                ByteSink tileSink = columnSink.getTileSink(rows - y - 1);
+                ioThreadPool.submit(new ImageTiler.SaveTileTask(tileSink, destTile));
             }
         }
     }
@@ -207,11 +200,11 @@ public class ImageTiler {
     /************************************************************/
     class SaveTileTask implements Runnable {
 
-        protected File file;
+        protected ByteSink tileSink;
         protected BufferedImage image;
 
-        public SaveTileTask(File file, BufferedImage image) {
-            this.file = file;
+        public SaveTileTask(ByteSink tileSink, BufferedImage image) {
+            this.tileSink = tileSink;
             this.image = image;
         }
 
@@ -219,8 +212,10 @@ public class ImageTiler {
             try {
 
                 String format = _tileFormat == TileFormat.PNG ? "png" : "jpeg";
-                if (!ImageIO.write(image, format, file)) {
-                    _exceptionOccurred = true;
+                try (OutputStream tileStream = tileSink.openStream()) {
+                    if (!ImageIO.write(image, format, tileStream)) {
+                        _exceptionOccurred = true;
+                    }
                 }
 
 //                if (_tileFormat == TileFormat.JPEG) {
@@ -252,24 +247,20 @@ public class ImageTiler {
 
         private byte[] _bytes;
         private int _subSample;
-        private String _destinationPath;
+        private TilerSink.LevelSink _levelSink;
         private ExecutorService _ioThreadPool;
 
-        public TileImageTask(byte[] bytes, int subSample, String destinationPath, ExecutorService ioThreadPool) {
+        public TileImageTask(byte[] bytes, int subSample, TilerSink.LevelSink levelSink, ExecutorService ioThreadPool) {
             _bytes = bytes;
             _subSample = subSample;
-            _destinationPath = destinationPath;
+            _levelSink = levelSink;
             _ioThreadPool = ioThreadPool;
         }
 
         public void run() {
             try {
-                tileImageAtSubSampleLevel(_bytes, _subSample, _destinationPath, _ioThreadPool);
-            } catch (Exception ex) {
-                _exceptionOccurred = true;
-                ex.printStackTrace();
-            } catch (Error err) {
-                System.err.println(err.getMessage());
+                tileImageAtSubSampleLevel(_bytes, _subSample, _levelSink, _ioThreadPool);
+            } catch (Exception | Error ex) {
                 _exceptionOccurred = true;
                 log.error("Exception occurred during tiling image task", ex);
             }

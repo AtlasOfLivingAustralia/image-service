@@ -1,5 +1,7 @@
 package au.org.ala.images.thumb;
 
+import au.org.ala.images.util.ByteSinkFactory;
+import au.org.ala.images.util.FileByteSinkFactory;
 import au.org.ala.images.util.ImageReaderUtils;
 import au.org.ala.images.util.ImageUtils;
 import com.google.common.io.ByteSink;
@@ -13,6 +15,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -25,11 +28,11 @@ public class ImageThumbnailer {
 
     private static final int MAX_THUMB_SIZE = 1024;
 
-    protected File createThumbnailFile(File parent, String name) {
-        return new File(String.format("%s/%s", parent.getAbsolutePath(), name));
-    }
-
     public List<ThumbnailingResult> generateThumbnails(byte[] imageBytes, File destinationDirectory, List<ThumbDefinition> thumbDefs) throws IOException {
+        return generateThumbnails(imageBytes, new FileByteSinkFactory(destinationDirectory), thumbDefs);
+    }
+    public List<ThumbnailingResult> generateThumbnails(byte[] imageBytes, ByteSinkFactory byteSinkFactory, List<ThumbDefinition> thumbDefs) throws IOException {
+
         ImageReader reader = ImageReaderUtils.findCompatibleImageReader(imageBytes);
         List<ThumbnailingResult> results = new ArrayList<ThumbnailingResult>();
         if (reader != null) {
@@ -60,7 +63,7 @@ public class ImageThumbnailer {
 
             if (thumbSrc != null) {
                 for (ThumbDefinition thumbDef : thumbDefs) {
-                    File thumbFile = createThumbnailFile(destinationDirectory, thumbDef.getName());
+                    ByteSink destination = byteSinkFactory.getByteSinkForNames(thumbDef.getName());
                     // workout if we need to be a transparent png or if jpg will do...
                     Color backgroundColor = thumbDef.getBackgroundColor();
                     int size = thumbDef.getMaximumDimension();
@@ -108,7 +111,9 @@ public class ImageThumbnailer {
                     }
 
                     if (thumbImage != null) {
-                        ImageIO.write(thumbImage, isPNG ? "PNG" : "JPG", thumbFile);
+                        try (OutputStream thumbOutputStream = destination.openStream()) {
+                            ImageIO.write(thumbImage, isPNG ? "PNG" : "JPG", thumbOutputStream);
+                        }
                         results.add(new ThumbnailingResult(thumbImage.getWidth(), thumbImage.getHeight(), thumbDef.isSquare(), thumbDef.getName()));
                     }
                 }
