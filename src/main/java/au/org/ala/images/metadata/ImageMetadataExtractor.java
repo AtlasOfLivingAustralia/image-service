@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
  */
 public class ImageMetadataExtractor extends AbstractMetadataParser {
 
-    protected Logger logger = LoggerFactory.getLogger("ImageMetadataExtractor");
+    protected Logger logger = LoggerFactory.getLogger(ImageMetadataExtractor.class);
 
     @Override
     public Pattern getContentTypePattern() {

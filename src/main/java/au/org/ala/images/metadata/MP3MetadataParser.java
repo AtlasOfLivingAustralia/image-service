@@ -4,6 +4,8 @@ import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.parser.mp3.Mp3Parser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.helpers.DefaultHandler;
 
@@ -16,6 +18,9 @@ import java.util.regex.Pattern;
  * A {@link au.org.ala.images.metadata.AbstractMetadataParser} that can extract tags from MP3 audio files
  */
 public class MP3MetadataParser extends AbstractMetadataParser {
+
+    public static final Logger log = LoggerFactory.getLogger(MP3MetadataParser.class);
+
     @Override
     public Pattern getContentTypePattern() {
         return Pattern.compile("^audio/mp3$|^audio/mpeg$");
@@ -40,7 +45,7 @@ public class MP3MetadataParser extends AbstractMetadataParser {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Exception extracting MP3 metadata", e);
         }
 
     }

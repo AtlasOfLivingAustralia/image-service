@@ -1,5 +1,8 @@
 package au.org.ala.images.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.util.ArrayList;
@@ -11,6 +14,8 @@ import java.util.List;
  *
  */
 public class CodeTimer {
+
+    public static final Logger log = LoggerFactory.getLogger(CodeTimer.class);
 
     private static String EOL = System.getProperty("line.separator");
 
@@ -128,7 +133,7 @@ public class CodeTimer {
         try {
             _writer.write(msg + EOL);
         } catch (Exception ex) {
-            ex.printStackTrace();
+            log.error("Error writing to writer", ex);
         } finally {
             try {
                 _writer.flush();

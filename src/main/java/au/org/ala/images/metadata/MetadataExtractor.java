@@ -6,6 +6,8 @@ import org.apache.tika.detect.Detector;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.mime.MediaType;
 import org.apache.tika.parser.AutoDetectParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -15,6 +17,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 
 public class MetadataExtractor {
+
+    public static final Logger log = LoggerFactory.getLogger(MetadataExtractor.class);
 
     private static List<AbstractMetadataParser> _REGISTRY;
 
@@ -51,9 +55,9 @@ public class MetadataExtractor {
     }
 
     public String detectContentType(byte[] bytes, String filename) {
-        InputStream bais = new ByteArrayInputStream(bytes);
-        InputStream bis = new BufferedInputStream(bais);
-        try {
+        try (InputStream bais = new ByteArrayInputStream(bytes);
+             InputStream bis = new BufferedInputStream(bais)) {
+
             AutoDetectParser parser = new AutoDetectParser();
             Detector detector = parser.getDetector();
 
@@ -64,14 +68,7 @@ public class MetadataExtractor {
             MediaType mediaType = detector.detect(bis, md);
             return mediaType.toString();
         } catch (Exception ex) {
-            ex.printStackTrace();
-        } finally {
-            try {
-                bais.close();
-                bis.close();
-            } catch (Exception ex2) {
-                ex2.printStackTrace();
-            }
+            log.error("Exception occurred detecting content type", ex);
         }
         return null;
     }

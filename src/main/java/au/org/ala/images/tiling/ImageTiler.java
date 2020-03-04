@@ -4,6 +4,8 @@ import au.org.ala.images.util.FastByteArrayInputStream;
 import au.org.ala.images.util.ImageReaderUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.*;
 import javax.imageio.spi.IIORegistry;
@@ -18,6 +20,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class ImageTiler {
+
+    private static final Logger log = LoggerFactory.getLogger(ImageTiler.class);
 
     private int _tileSize = 256;
     private int _maxColsPerStrip = 6;
@@ -80,7 +84,7 @@ public class ImageTiler {
             }
 
         } catch (Throwable th) {
-            th.printStackTrace();
+            log.error("Exception occurred tiling image", th);
         }
 
         return new ImageTilerResults(false, 0);
@@ -235,12 +239,9 @@ public class ImageTiler {
 //                    }
 //                }
 
-            } catch (Exception ex) {
+            } catch (Exception | Error ex) {
                 _exceptionOccurred = true;
-                ex.printStackTrace();
-            } catch (Error error) {
-                _exceptionOccurred = true;
-                error.printStackTrace();
+                log.error("Exception occurred saving file task", ex);
             }
         }
 
@@ -270,7 +271,7 @@ public class ImageTiler {
             } catch (Error err) {
                 System.err.println(err.getMessage());
                 _exceptionOccurred = true;
-                err.printStackTrace();
+                log.error("Exception occurred during tiling image task", ex);
             }
         }
     }

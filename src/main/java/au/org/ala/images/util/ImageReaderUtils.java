@@ -20,7 +20,7 @@ import java.util.Iterator;
 
 public class ImageReaderUtils {
 
-    protected static Logger logger = LoggerFactory.getLogger("ImageReaderUtils");
+    protected static Logger logger = LoggerFactory.getLogger(ImageReaderUtils.class);
 
     public static ImageReader findCompatibleImageReader(byte[] imageBytes) {
         return findCompatibleImageReader(imageBytes, new DefaultImageReaderSelectionStrategy());
@@ -44,7 +44,7 @@ public class ImageReaderUtils {
                     // if we get here, this reader should work
                     candidates.add(candidate);
                 } catch (Exception ex) {
-                    ex.printStackTrace();
+                    logger.info("Exception evaluating ImageReader", ex);
                 }
             }
 

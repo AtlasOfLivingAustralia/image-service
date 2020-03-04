@@ -2,6 +2,9 @@ package au.org.ala.images.thumb;
 
 import au.org.ala.images.util.ImageReaderUtils;
 import au.org.ala.images.util.ImageUtils;
+import com.google.common.io.ByteSink;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -17,6 +20,8 @@ import java.util.List;
  * Utility class that can generate thumbnails of various sizes based on a {@link au.org.ala.images.thumb.ThumbDefinition} descriptor
  */
 public class ImageThumbnailer {
+
+    private static final Logger log = LoggerFactory.getLogger(ImageThumbnailer.class);
 
     private static final int MAX_THUMB_SIZE = 1024;
 
@@ -109,7 +114,7 @@ public class ImageThumbnailer {
                 }
             }
         } else {
-            System.err.println("No image readers for image ${imageIdentifier}!");
+            log.error("No image readers for image length {}!", imageBytes.length);
         }
         return results;
     }
