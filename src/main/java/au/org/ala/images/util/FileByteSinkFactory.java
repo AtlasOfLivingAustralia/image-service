@@ -39,7 +39,8 @@ public class FileByteSinkFactory implements ByteSinkFactory {
 
     public ByteSink getByteSinkForNames(String... names) {
         Path path = Paths.get(parentDir.getAbsolutePath(), names);
-        if (!path.getParent().toFile().mkdirs()) {
+        File parent = path.getParent().toFile();
+        if (!parent.exists() && !parent.mkdirs()) {
             log.error("Unable to create directories for {}", path);
         }
         return MoreFiles.asByteSink(path);
