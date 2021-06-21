@@ -11,6 +11,7 @@ class CheckOutsourcedTasksJob {
     def imageService
     def settingService
 
+    static concurrent = false
     static triggers = {
         simple repeatInterval: 30000l // execute job once every minute
     }

@@ -4,6 +4,7 @@ class PurgeCompletedBatchJob {
 
     def batchService
 
+    static concurrent = false
     static triggers = {
         simple repeatInterval: 24 * 60 * 60 * 1000; // once a day
     }

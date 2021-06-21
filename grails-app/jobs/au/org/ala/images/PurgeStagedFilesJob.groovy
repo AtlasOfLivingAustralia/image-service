@@ -6,6 +6,7 @@ class PurgeStagedFilesJob {
     def settingService
     def imageStagingService
 
+    static concurrent = false
     static triggers = {
         simple repeatInterval: 15 * 60 * 1000; // 15 minutes
     }

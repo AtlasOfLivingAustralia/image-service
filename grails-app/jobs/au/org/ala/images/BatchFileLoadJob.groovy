@@ -4,6 +4,7 @@ class BatchFileLoadJob {
 
     def batchService
 
+    static concurrent = false
     static triggers = {
         simple repeatInterval: 5000l
     }
