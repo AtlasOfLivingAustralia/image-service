@@ -157,7 +157,6 @@ class ImagesTagLib {
         mb.span(class: 'resource-name') {
             mkp.yield(valueToRender)
         }
-        out <<  "<span class='resource-name'>${valueToRender}</span>"
     }
 
     def sizeInBytes = { attrs, body ->
