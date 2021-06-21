@@ -4,6 +4,7 @@ import grails.gorm.transactions.Transactional
 import org.codehaus.groovy.runtime.StackTraceUtils
 
 import java.lang.reflect.Method
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * Settings service. Use reflection and annotations to ensure that settings are created at startup
@@ -154,12 +155,22 @@ class SettingService {
         return Long.parseLong(setting.value)
     }
 
-    private synchronized Setting getOrCreateSetting(String key, SettingType type, String defaultValue, String description) {
+    private ReentrantLock getOrCreateSettingLock = new ReentrantLock()
+
+    private Setting getOrCreateSetting(String key, SettingType type, String defaultValue, String description) {
         def setting = Setting.findByName(key)
 
         if (!setting) {
-            setting = new Setting(name: key, type: type, value: defaultValue, description: description)
-            setting.save(flush: true, failOnError: true)
+            getOrCreateSettingLock.lock()
+            try {
+                setting = Setting.findByName(key)
+                if (!setting) {
+                    setting = new Setting(name: key, type: type, value: defaultValue, description: description)
+                    setting.save(flush: true, failOnError: true)
+                }
+            } finally {
+                getOrCreateSettingLock.unlock()
+            }
         }
         return setting
     }
