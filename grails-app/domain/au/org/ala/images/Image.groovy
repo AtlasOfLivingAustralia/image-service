@@ -142,6 +142,7 @@ class Image {
 
         metadata cascade: 'all'
         cache true
+        storageLocation cache: true
     }
 
     byte[] retrieve() {
