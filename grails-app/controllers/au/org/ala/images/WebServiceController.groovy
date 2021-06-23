@@ -1748,6 +1748,26 @@ class WebServiceController {
     }
 
     @ApiOperation(
+            value = "Export Avro of entire image catalogue",
+            nickname = "exportAvro",
+            produces = "application/octet-stream",
+            consumes = "application/json",
+            httpMethod = "GET",
+            tags = ["Export"]
+    )
+    @ApiResponses([
+            @ApiResponse(code = 200, message = "OK"),
+            @ApiResponse(code = 405, message = "Method Not Allowed. Only GET is allowed")]
+    )
+    def exportAvro(){
+        response.setHeader("Content-disposition", "attachment;filename=images-export.avro")
+        response.contentType = "application/octet-stream"
+        def os = response.outputStream
+        imageService.exportAvro(os)
+        os.flush()
+    }
+
+    @ApiOperation(
             value = "Export CSV of URL to imageIdentifier mappings",
             nickname = "exportMapping",
             produces = "application/gzip",
@@ -1770,6 +1790,26 @@ class WebServiceController {
     }
 
     @ApiOperation(
+            value = "Export Avro of URL to imageIdentifier mappings",
+            nickname = "exportMappingAvro",
+            produces = "application/octet-stream",
+            consumes = "application/json",
+            httpMethod = "GET",
+            tags = ["Export"]
+    )
+    @ApiResponses([
+            @ApiResponse(code = 200, message = "OK"),
+            @ApiResponse(code = 405, message = "Method Not Allowed. Only GET is allowed")]
+    )
+    def exportMappingAvro(){
+        response.setHeader("Content-disposition", "attachment;filename=image-mapping.avro")
+        response.contentType = "application/octet-stream"
+        def os = response.outputStream
+        imageService.exportMappingAvro(os)
+        os.flush()
+    }
+
+    @ApiOperation(
             value = "Export CSV of URL to imageIdentifier mappings",
             nickname = "exportDatasetMapping/{dataResourceUid}",
             produces = "application/gzip",
@@ -1788,7 +1828,7 @@ class WebServiceController {
     ])
     def exportDatasetMapping(){
         if (!params.id){
-            renderResults([success: false, message: "Failed to store image!"], 400)
+            renderResults([success: false, message: "id param is missing"], 400)
         } else {
             response.setHeader("Content-disposition", "attachment;filename=image-mapping-${params.id}.csv.gz")
             response.contentType = "application/gzip"
@@ -1796,6 +1836,34 @@ class WebServiceController {
             imageService.exportDatasetMappingCSV(params.id, bos)
             bos.flush()
             bos.close()
+        }
+    }
+
+    @ApiOperation(
+            value = "Export Avro of URL to imageIdentifier mappings",
+            nickname = "exportDatasetMappingAvro/{dataResourceUid}",
+            produces = "application/octet-stream",
+            consumes = "application/json",
+            httpMethod = "GET",
+            tags = ["Export"]
+    )
+    @ApiResponses([
+            @ApiResponse(code = 200, message = "OK"),
+            @ApiResponse(code = 400, message = "Missing dataResourceUid parameter"),
+            @ApiResponse(code = 405, message = "Method Not Allowed. Only GET is allowed")]
+    )
+    @ApiImplicitParams([
+            @ApiImplicitParam(name = "dataResourceUid", paramType = "path", required = true, value = "Data resource UID", dataType = "string")
+    ])
+    def exportDatasetMappingAvro(){
+        if (!params.id){
+            renderResults([success: false, message: "id param is missing"], 400)
+        } else {
+            response.setHeader("Content-disposition", "attachment;filename=image-mapping-${params.id}.avro")
+            response.contentType = "application/octet-stream"
+            def os = response.outputStream
+            imageService.exportDatasetMappingAvro(params.id, os)
+            os.flush()
         }
     }
 
@@ -1835,7 +1903,7 @@ class WebServiceController {
     ])
     def exportDataset(){
         if (!params.id){
-            renderResults([success: false, message: "Failed to store image!"], 400)
+            renderResults([success: false, message: "id param is missing"], 400)
         } else {
             response.setHeader("Content-disposition", "attachment;filename=image-export-${params.id}.csv.gz")
             response.contentType = "application/gzip"
@@ -1843,6 +1911,51 @@ class WebServiceController {
             imageService.exportDatasetCSV(params.id, bos)
             bos.flush()
             bos.close()
+        }
+    }
+
+    @ApiOperation(
+            value = "Export Avro of URL to imageIdentifier mappings",
+            notes = """Exports the following fields in Avro:
+                image_identifier as "imageID"
+                identifier
+                audience
+                contributor
+                created
+                creator
+                description
+                format
+                license
+                publisher
+                references
+                rightsHolder
+                source
+                title
+                type
+            """,
+            nickname = "exportDatasetAvro/{dataResourceUid}",
+            produces = "application/octet-stream",
+            consumes = "application/json",
+            httpMethod = "GET",
+            tags = ["Export"]
+    )
+    @ApiResponses([
+            @ApiResponse(code = 200, message = "OK"),
+            @ApiResponse(code = 400, message = "Missing dataResourceUid parameter"),
+            @ApiResponse(code = 405, message = "Method Not Allowed. Only GET is allowed")]
+    )
+    @ApiImplicitParams([
+            @ApiImplicitParam(name = "dataResourceUid", paramType = "path", required = true, value = "Data resource UID", dataType = "string")
+    ])
+    def exportDatasetAvro(){
+        if (!params.id){
+            renderResults([success: false, message: "id param is missing"], 400)
+        } else {
+            response.setHeader("Content-disposition", "attachment;filename=image-export-${params.id}.avro")
+            response.contentType = "application/octet-stream"
+            def os = response.outputStream
+            imageService.exportDatasetAvro(params.id, os)
+            os.flush()
         }
     }
 }
