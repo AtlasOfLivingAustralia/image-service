@@ -1706,6 +1706,9 @@ SELECT
             case Types.SMALLINT:
                 value = rs.getInt(colIndex)
                 break
+            case Types.BLOB:
+                value = rs.getBlob(colIndex).binaryStream.bytes
+                break
             case Types.DATE:
                 value = handleDate(rs.getDate(colIndex), dateFormatString);
                 break
