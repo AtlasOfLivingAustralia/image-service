@@ -109,7 +109,7 @@ SELECT
     @Value('${http.default.connectTimeoutMs:120000}')
     int connectTimeoutMs = 120000 // 2 minutes
 
-    @Value('${http.default.user-agent}')
+    @Value('${http.default.user-agent:}')
     String userAgent
 
     @Value('${batch.purge.fetch.size:100}')
