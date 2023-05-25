@@ -109,8 +109,20 @@ SELECT
     @Value('${http.default.connectTimeoutMs:120000}')
     int connectTimeoutMs = 120000 // 2 minutes
 
+    @Value('${http.default.user-agent}')
+    String userAgent
+
     @Value('${batch.purge.fetch.size:100}')
     int purgeFetchSize = 100
+
+    @Value('${skin.orgNameShort:ALA}')
+    String orgNameShort
+
+    @Value('${info.app.name:image-service}')
+    String appName
+
+    @Value('${info.app.version:NaN}')
+    String version
 
     Map imagePropertyMap = null
 
@@ -136,6 +148,14 @@ SELECT
         fw.close()
     }
 
+    private String userAgent() {
+        def userAgent = this.userAgent
+        if (!userAgent) {
+            userAgent = "$orgNameShort-$appName/$version"
+        }
+        return userAgent
+    }
+
     ImageStoreResult storeImageFromUrl(String imageUrl, String uploader, Map metadata = [:]) {
         if (imageUrl) {
             try {
@@ -145,7 +165,7 @@ SELECT
                     return new ImageStoreResult(image, true, image.alternateFilename?.contains(imageUrl) ?: false)
                 }
                 def url = new URL(imageUrl)
-                def bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs)
+                def bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs, requestProperties: ['User-Agent': userAgent()])
 
                 def contentType = null
 
@@ -280,7 +300,7 @@ SELECT
                             def result = [success: false, alreadyStored: false]
                             try {
                                 def url = new URL(imageUrl)
-                                def bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs)
+                                def bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs, requestProperties: ['User-Agent': userAgent()])
                                 def contentType = detectMimeTypeFromBytes(bytes, imageUrl)
                                 ImageStoreResult storeResult = storeImageBytes(bytes, imageUrl, bytes.length,
                                         contentType, uploader, true, imageSource)
@@ -372,7 +392,7 @@ SELECT
                 def bytes
                 try {
                     def url = new URL(imageUrl)
-                    bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs)
+                    bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs, requestProperties: ['User-Agent': userAgent()])
                 } catch (Exception e){
                     log.error("Unable to load image from URL: {}. Logging as failed URL", imageUrl)
                     logBadUrl(imageUrl)
