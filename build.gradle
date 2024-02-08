@@ -17,7 +17,7 @@ plugins {
     id "org.flywaydb.flyway" version "5.2.4"
 }
 
-version "2.0.2-SNAPSHOT"
+version "3.0.0-AI-SNAPSHOT"
 
 group "au.org.ala"
 
@@ -99,6 +99,8 @@ dependencies {
     compile group: 'org.locationtech.spatial4j', name: 'spatial4j', version: '0.7'
     compile group: 'org.locationtech.jts', name: 'jts-core', version: '1.15.0'
     compile "com.amazonaws:aws-java-sdk-s3:$amazonAwsSdkVersion"
+    compile "com.amazonaws:aws-java-sdk-rekognition:$amazonAwsSdkVersion"
+    compile "com.amazonaws:aws-java-sdk-core:$amazonAwsSdkVersion"
     compile 'org.javaswift:joss:0.10.4'
     runtime 'org.postgresql:postgresql:42.3.3'
 
