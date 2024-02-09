@@ -22,9 +22,9 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     AWSCredentialsProvider awsCredentialsProvider() {
-        def accessKey = grailsApplication.config.getProperty('aws.gateway.access-key')
-        def secretKey = grailsApplication.config.getProperty('aws.gateway.secret-key')
-        def sessionToken = grailsApplication.config.getProperty('aws.gateway.session-token')
+        def accessKey = grailsApplication.config.getProperty('aws.access-key')
+        def secretKey = grailsApplication.config.getProperty('aws.secret-key')
+        def sessionToken = grailsApplication.config.getProperty('aws.session-token')
 
 
         if (accessKey && secretKey) {
