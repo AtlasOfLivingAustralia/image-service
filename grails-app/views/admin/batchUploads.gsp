@@ -221,7 +221,7 @@
 
 <h3>Uploads (${results.size()})</h3>
 <p>
-    Uploads with a <b>COMPLETE</b> will be removed from this list in ${grailsApplication.config.purgeCompletedAgeInDays}
+    Uploads with a <b>COMPLETE</b> will be removed from this list in ${grailsApplication.config.getProperty('purgeCompletedAgeInDays')}
 days.
 </p>
 <g:if test="${results}">

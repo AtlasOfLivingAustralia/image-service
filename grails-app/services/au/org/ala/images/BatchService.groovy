@@ -128,7 +128,7 @@ class BatchService {
         try {
             new ZipFile(uploadedFile).extractAll(uploadedFile.parentFile.absolutePath)
 
-            File newDir = new File(grailsApplication.config.imageservice.batchUpload + "/" + upload.getId() + "/")
+            File newDir = new File(grailsApplication.config.getProperty('imageservice.batchUpload') + "/" + upload.getId() + "/")
             if (!newDir.deleteDir()) {
                 log.warn("Couldn't delete existing directory {} for batch upload {}", newDir)
             }
@@ -522,7 +522,7 @@ class BatchService {
 
     def purgeCompletedJobs(){
         ZonedDateTime now = ZonedDateTime.now()
-        ZonedDateTime threeDaysAgo = now.minusDays(grailsApplication.config.purgeCompletedAgeInDays.toInteger())
+        ZonedDateTime threeDaysAgo = now.minusDays(grailsApplication.config.getProperty('purgeCompletedAgeInDays', Long))
 
         //remove batch files
         BatchFile.findAllByStatus(COMPLETE).each {

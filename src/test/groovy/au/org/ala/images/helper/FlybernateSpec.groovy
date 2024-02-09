@@ -1,16 +1,14 @@
 package au.org.ala.images.helper
 
-import com.opentable.db.postgres.junit.EmbeddedPostgresRules
-import com.opentable.db.postgres.junit.SingleInstancePostgresRule
 import grails.config.Config
 import groovy.transform.CompileStatic
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.flywaydb.core.Flyway
 import org.grails.config.PropertySourcesConfig
 import org.grails.orm.hibernate.HibernateDatastore
 import org.grails.orm.hibernate.cfg.Settings
 import org.hibernate.Session
 import org.hibernate.SessionFactory
-import org.junit.ClassRule
 import org.springframework.boot.env.PropertySourceLoader
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
@@ -35,14 +33,14 @@ import spock.lang.Specification
 @CompileStatic
 abstract class FlybernateSpec extends Specification {
 
-    @ClassRule @Shared SingleInstancePostgresRule postgresRule = EmbeddedPostgresRules.singleInstance().customize { builder ->
-        builder.port = getConfig().getProperty('dataSource.embeddedPort',  Integer.class, 6543)
-    }
+    @Shared @AutoCleanup EmbeddedPostgres embeddedPostgres = EmbeddedPostgres.builder()
+            .setPort(getConfig().getProperty('dataSource.embeddedPort',  Integer.class, 6543))
+            .setCleanDataDirectory(true)
+            .start()
 
     @Shared @AutoCleanup HibernateDatastore hibernateDatastore
     @Shared PlatformTransactionManager transactionManager
     @Shared Flyway flyway = null
-//    @Shared Flyway flyway = new Flyway()
 
     static Config getConfig() { // CHANGED extracted from setupSpec so postgresRule can access
 
@@ -68,15 +66,21 @@ abstract class FlybernateSpec extends Specification {
     void setupSpec() {
         Config config = getConfig()
         // CHANGED added flyway migrate
-        def flywayConfig = Flyway.configure()
-                .dataSource(config.getProperty('dataSource.url'), config.getProperty('dataSource.username'), config.getProperty('dataSource.password'))
+        this.flyway = Flyway.configure()
+                .cleanDisabled(false)
+                .table(config.getProperty('flyway.table'))
+                .baselineOnMigrate(config.getProperty('flyway.baselineOnMigrate', Boolean))
+                .baselineVersion(config.getProperty('flyway.baselineVersion'))
+                .outOfOrder(config.getProperty('flyway.outOfOrder', Boolean))
                 .placeholders([
                         'imageRoot': config.getProperty('imageservice.imagestore.root'),
                         'exportRoot': config.getProperty('imageservice.imagestore.exportDir', '/data/image-service/exports'),
                         'baseUrl': config.getProperty('grails.serverURL', 'https://devt.ala.org.au/image-service')
                 ])
                 .locations('db/migration')
-        flyway = new Flyway(flywayConfig)
+//                .dataSource(config.getProperty('dataSource.url'), config.getProperty('dataSource.username'), config.getProperty('dataSource.password'))
+                .dataSource(embeddedPostgres.getPostgresDatabase())
+                .load()
         flyway.clean()
         flyway.migrate()
         // END CHANGED
@@ -91,6 +95,10 @@ abstract class FlybernateSpec extends Specification {
             hibernateDatastore = new HibernateDatastore((PropertyResolver) config, domainClasses as Class[])
         }
         transactionManager = hibernateDatastore.getTransactionManager()
+    }
+
+    void cleanupSpec() {
+        flyway.clean()
     }
 
     /**
@@ -108,7 +116,6 @@ abstract class FlybernateSpec extends Specification {
         } else {
             transactionManager.commit(transactionStatus)
         }
-        flyway.clean() // CHANGED added flyway.clean() to drop all db content
     }
 
     /**

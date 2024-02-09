@@ -5,7 +5,7 @@ import org.springframework.beans.factory.config.BeanDefinition
 
 // Place your Spring DSL code here
 beans = {
-    if (application.config.flyway.enabled) {
+    if (application.config.getProperty('flyway.enabled', Boolean)) {
 
         flywayDataSource(PGSimpleDataSource) { bean ->
             url = application.config.getProperty('flyway.jdbcUrl') ?: application.config.getProperty('dataSource.url')
@@ -15,7 +15,7 @@ beans = {
 
         flywayConfiguration(ClassicConfiguration) { bean ->
             dataSource = ref('flywayDataSource')
-            table = application.config.flyway.table
+            table = application.config.getProperty('flyway.table')
             baselineOnMigrate = application.config.getProperty('flyway.baselineOnMigrate', Boolean, true)
             def outOfOrderProp = application.config.getProperty('flyway.outOfOrder', Boolean, false)
             outOfOrder = outOfOrderProp
@@ -24,8 +24,8 @@ beans = {
                     'exportRoot': application.config.getProperty('imageservice.imagestore.exportDir', '/data/image-service/exports'),
                     'baseUrl': application.config.getProperty('grails.serverURL')
             ]
-            locationsAsStrings = application.config.flyway.locations ?: 'classpath:db/migration'
-            if (application.config.flyway.baselineVersion) baselineVersionAsString = application.config.flyway.baselineVersion.toString()
+            locationsAsStrings = application.config.getProperty('flyway.locations', List<String>, ['classpath:db/migration'])
+            if (application.config.getProperty('flyway.baselineVersion')) baselineVersionAsString = application.config.getProperty('flyway.baselineVersion', String)
         }
 
         flyway(Flyway, ref('flywayConfiguration')) { bean ->

@@ -93,7 +93,8 @@ grails:
         convertEmptyStringsToNull: false
 
 server:
-    contextPath: ''
+    servlet:
+      context-path: ''
 
 ---
 flyway:
@@ -138,6 +139,9 @@ environments:
                 registerMbeans: true
                 connectionTimeout: 5000
     test:
+        grails:
+          config:
+            locations: []
         flyway:
             baselineOnMigrate: false
         dataSource:
@@ -155,43 +159,25 @@ environments:
             exportDir: '/tmp/image-service/exports'
             batchUpload: '/tmp/image-service/uploads'
     travis:
-        flyway:
-            baselineOnMigrate: false
-        dataSource:
-            embeddedPostgres: true
-            pooled: true
-            jmxExport: true
-            embeddedPort: 6543
-            username: postgres
-            password: postgres
-            url: jdbc:postgresql://localhost:6543/postgres?autoReconnect=true&connectTimeout=0&useUnicode=true&characterEncoding=UTF-8
-        imageservice:
-            imagestore:
-                root: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-store'
-                inbox: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-incoming'
-            exportDir: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-exports'
-            batchUpload: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-uploads'
-#    travis:
-#        flyway:
-#            baselineOnMigrate: false
-#        dataSource:
-#            dbCreate: update
-#            embeddedPostgres: false
-#            logSql: false
-#            embeddedPort: 5432
-#            url: jdbc:postgresql://localhost/images_travis?autoReconnect=true&connectTimeout=0&useUnicode=true&characterEncoding=UTF-8
-#            username: "postgres"
-#            password: "postgres"
-#            type: "com.zaxxer.hikari.HikariDataSource"
-#            properties:
-#                maximumPoolSize: 30
-#                registerMbeans: true
-#                connectionTimeout: 5000
-#        imageservice:
-#            imagestore:
-#                root: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-store'
-#                inbox: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-incoming'
-#            exportDir: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-exports'
+      grails:
+        config:
+          locations: [ ]
+      flyway:
+          baselineOnMigrate: false
+      dataSource:
+          embeddedPostgres: true
+          pooled: true
+          jmxExport: true
+          embeddedPort: 6543
+          username: postgres
+          password: postgres
+          url: jdbc:postgresql://localhost:6543/postgres?autoReconnect=true&connectTimeout=0&useUnicode=true&characterEncoding=UTF-8
+      imageservice:
+          imagestore:
+              root: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-store'
+              inbox: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-incoming'
+          exportDir: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-exports'
+          batchUpload: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-uploads'
     production:
         hibernate:
             dialect: net.kaleidos.hibernate.PostgresqlExtensionsDialect
@@ -237,7 +223,14 @@ security:
         enabled: true # default for backwards compat with v1
         fallbackToLegacyKeys: true # Reset to false once legacy api keys no longer supported
         discoveryUri: ${security.oidc.discoveryUri}
-
+    apikey:
+        auth:
+            serviceUrl: https://auth.ala.org.au/apikey/
+    ip:
+        whitelist:
+        - 127.0.0.1
+        - 0:0:0:0:0:0:0:1
+        - ::1
 imageservice:
     imagestore:
         root: '/data/image-service/store'

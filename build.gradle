@@ -2,19 +2,20 @@ buildscript {
     repositories {
         mavenLocal()
         maven { url "https://nexus.ala.org.au/content/groups/public/" }
+        maven { url "https://plugins.gradle.org/m2/" }
         maven { url "https://repo.grails.org/grails/core" }
     }
     dependencies {
-        classpath "org.grails:grails-gradle-plugin:$grailsVersion"
-        classpath "gradle.plugin.com.github.erdi.webdriver-binaries:webdriver-binaries-gradle-plugin:2.0"
-        classpath "org.grails.plugins:hibernate5:7.0.5"
-        classpath "com.bertramlabs.plugins:asset-pipeline-gradle:3.3.2"
+        classpath "org.grails:grails-gradle-plugin:$grailsGradlePluginVersion"
+        classpath "gradle.plugin.com.github.erdi.webdriver-binaries:webdriver-binaries-gradle-plugin:2.6"
+        classpath "org.grails.plugins:hibernate5:7.3.0"
+        classpath "com.bertramlabs.plugins:asset-pipeline-gradle:3.4.7"
     }
 }
 
 plugins {
     id "com.gorylenko.gradle-git-properties" version "2.3.2"
-    id "org.flywaydb.flyway" version "5.2.4"
+    id "org.flywaydb.flyway" version "9.4.0"
 }
 
 version "3.0.0-AI-SNAPSHOT"
@@ -26,9 +27,8 @@ apply plugin:"idea"
 apply plugin:"war"
 apply plugin:"org.grails.grails-web"
 apply plugin:"com.github.erdi.webdriver-binaries"
-apply plugin:"com.bertramlabs.asset-pipeline"
 apply plugin:"org.grails.grails-gsp"
-apply plugin: 'maven'
+apply plugin:"com.bertramlabs.asset-pipeline"
 apply plugin: 'maven-publish'
 
 
@@ -45,12 +45,11 @@ targetCompatibility = 1.11
 //    }
 //}
 
-
 repositories {
     mavenLocal()
     maven { url "https://nexus.ala.org.au/content/groups/public/" }
-    maven { url "https://repo.grails.org/grails/core" }
     mavenCentral()
+    maven { url "https://repo.grails.org/grails/core" }
 }
 
 configurations {
@@ -66,130 +65,126 @@ configurations.all {
 
 dependencies {
 
-    compile group: 'org.grails', name: 'grails-async'
-    compile group: 'org.grails', name: 'grails-async-gpars'
+    implementation group: 'org.grails', name: 'grails-async-gpars'
 
-    compile group: 'org.grails.plugins', name: 'grails-pretty-time', version: '4.0.0'
-    compile 'org.grails.plugins:csv:1.0.1'
+    implementation group: 'org.grails.plugins', name: 'grails-pretty-time', version: '4.0.0'
+    implementation 'org.grails.plugins:csv:1.0.1'
 
-    compile 'xml-apis:xml-apis:1.4.01'
+    implementation 'xml-apis:xml-apis:1.4.01' // TODO do we need these??
 
-    compile 'com.opencsv:opencsv:5.6'
-    compile group: 'com.googlecode.owasp-java-html-sanitizer', name: 'owasp-java-html-sanitizer', version: '20200713.1'
+    implementation 'com.opencsv:opencsv:5.7.1'
+    implementation group: 'com.googlecode.owasp-java-html-sanitizer', name: 'owasp-java-html-sanitizer', version: '20211018.1'
 
     // ALA plugins
-    compile group: 'org.grails.plugins', name: 'ala-ws-plugin', version: alaSecurityVersion, classifier: 'plain', changing: true
-    compile group: 'org.grails.plugins', name: 'ala-auth', version: alaSecurityVersion, classifier: 'plain', changing: true
-    compile group: 'org.grails.plugins', name: 'ala-ws-security-plugin', version: alaSecurityVersion, classifier: 'plain', changing: true
-    compile group: 'org.grails.plugins', name: 'ala-admin-plugin', version: '2.3.0', changing: true
-    compile group: 'org.grails.plugins', name: 'ala-bootstrap3', version: '4.4.0', changing: true
-    compile group: 'au.org.ala.plugins.grails', name:'images-client-plugin', version: '1.1', changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-auth', version: alaSecurityLibsVersion, changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-ws-plugin', version: alaSecurityLibsVersion, changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-ws-security-plugin', version: alaSecurityLibsVersion, changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-bootstrap3', version: '4.1.0', changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-admin-plugin', version: '2.3.0', changing: true
+    implementation group: 'au.org.ala.plugins.grails', name:'images-client-plugin', version: '1.1', changing: true
 
     // Added dependencies
-    runtime 'com.zaxxer:HikariCP:5.0.1'
-    compile 'org.grails.plugins:postgresql-extensions:7.0.0'
-    compile "org.flywaydb:flyway-core:5.2.4"
-    compile 'org.grails.plugins:cache-headers:2.0.2'
-    runtime 'org.codehaus.groovy:groovy-dateutil'
-    compile 'dk.glasius:external-config:2.0.1'
+    runtimeOnly 'com.zaxxer:HikariCP:5.0.1'
+    implementation 'org.grails.plugins:postgresql-extensions:7.0.0'
+    implementation "org.flywaydb:flyway-core:9.4.0"
+    implementation 'org.grails.plugins:cache-headers:2.0.2'
+    runtimeOnly 'org.codehaus.groovy:groovy-dateutil'
+    implementation 'dk.glasius:external-config:3.1.1'
 
-    compile 'org.grails.plugins:quartz:2.0.13'
+    implementation 'org.grails.plugins:quartz:2.0.13'
     implementation 'org.quartz-scheduler:quartz:2.2.1' // Is not pulled in by default
 
-    // Remove this for grails 5
-    compile 'org.grails.plugins:http-builder-helper:1.1.0'
-    compile('org.codehaus.groovy.modules.http-builder:http-builder:0.7.1') {
-        exclude module: "commons-logging"
-        exclude module: "groovy"
-    }
-    // end remove this from grails 5
+    implementation group: 'org.locationtech.spatial4j', name: 'spatial4j', version: '0.7'
+    implementation group: 'org.locationtech.jts', name: 'jts-core', version: '1.15.0'
+    implementation "com.amazonaws:aws-java-sdk-s3:$amazonAwsSdkVersion"
+    implementation "com.amazonaws:aws-java-sdk-rekognition:$amazonAwsSdkVersion"
+    implementation "com.amazonaws:aws-java-sdk-core:$amazonAwsSdkVersion"
 
-    compile group: 'org.locationtech.spatial4j', name: 'spatial4j', version: '0.7'
-    compile group: 'org.locationtech.jts', name: 'jts-core', version: '1.15.0'
-    compile "com.amazonaws:aws-java-sdk-s3:$amazonAwsSdkVersion"
-    compile "com.amazonaws:aws-java-sdk-rekognition:$amazonAwsSdkVersion"
-    compile "com.amazonaws:aws-java-sdk-core:$amazonAwsSdkVersion"
-    compile 'org.javaswift:joss:0.10.4'
-    runtime 'org.postgresql:postgresql:42.3.3'
+    implementation 'org.javaswift:joss:0.10.4'
+    runtimeOnly 'org.postgresql:postgresql:42.5.4'
 
-    compile 'org.elasticsearch:elasticsearch:7.0.1'
-    compile 'org.elasticsearch.client:elasticsearch-rest-high-level-client:7.0.1'
+    implementation 'org.elasticsearch:elasticsearch:7.17.1'
+    implementation 'org.elasticsearch.client:elasticsearch-rest-high-level-client:7.17.1'
     // override log4j in elasticsearch plugin
     // TODO remove this once no log4j vulnerable transitive deps are used.
-    runtime group: 'org.apache.logging.log4j', name: 'log4j-api', version: '2.17.1'
-    runtime group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.17.1'
+//    runtimeOnly group: 'org.apache.logging.log4j', name: 'log4j-api', version: '2.17.1'
+//    runtimeOnly group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.17.1'
 
-    compile 'org.imgscalr:imgscalr-lib:4.2'
-    compile 'org.apache.commons:commons-imaging:1.0-SNAPSHOT'
-    compile 'org.apache.tika:tika-core:2.0.0'
-    compile 'com.github.jai-imageio:jai-imageio-core:1.4.0'
-    compile 'au.org.ala:image-utils:1.9.0'
+    implementation 'org.imgscalr:imgscalr-lib:4.2'
+    implementation 'org.apache.commons:commons-imaging:1.0-SNAPSHOT'
+    implementation 'org.apache.tika:tika-core:2.5.0'
+    implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
+    implementation 'au.org.ala:image-utils:1.9.0'
 
-    compile 'net.lingala.zip4j:zip4j:2.9.1'
-    compile 'com.google.guava:guava:31.1-jre'
-    compile 'org.apache.avro:avro:1.11.0'
+    implementation 'net.lingala.zip4j:zip4j:2.10.0'
+    implementation 'com.google.guava:guava:31.1-jre'
+    implementation 'org.apache.avro:avro:1.11.0'
     implementation 'org.xerial.snappy:snappy-java:1.1.8.4'
 
     // Swagger
-    compile('au.org.ala.plugins:openapi:1.1.0')
+    implementation 'au.org.ala.plugins:openapi:1.1.0'
 
     // Google analytics requirement
-    compile 'com.google.api-client:google-api-client:1.33.2'
-    compile 'com.google.apis:google-api-services-analytics:v3-rev20190807-1.32.1'
+    implementation 'com.google.api-client:google-api-client:1.33.2'
+    implementation 'com.google.apis:google-api-services-analytics:v3-rev20190807-1.32.1'
 
     // Standard grails
     developmentOnly("org.springframework.boot:spring-boot-devtools")
-    compile "org.springframework.boot:spring-boot-starter-logging"
-    compile "org.springframework.boot:spring-boot-autoconfigure"
-    compile "org.grails:grails-core"
-    compile "org.springframework.boot:spring-boot-starter-actuator"
-    compile "org.springframework.boot:spring-boot-starter-tomcat"
-    compile "org.grails:grails-web-boot"
-    compile "org.grails:grails-logging"
-    compile "org.grails:grails-plugin-rest"
-    compile "org.grails:grails-plugin-databinding"
-    compile "org.grails:grails-plugin-i18n"
-    compile "org.grails:grails-plugin-services"
-    compile "org.grails:grails-plugin-url-mappings"
-    compile "org.grails:grails-plugin-interceptors"
-    compile "org.grails.plugins:cache"
-    compile "org.grails.plugins:cache-ehcache:3.0.0"
-    compile "org.grails.plugins:async"
-    compile "org.grails.plugins:scaffolding"
-    compile "org.grails.plugins:events"
-    compile "org.grails.plugins:hibernate5"
-//    compile "org.hibernate:hibernate-core:5.4.18.Final"
-    compile "org.hibernate:hibernate-jcache"
-    runtime 'org.ehcache:ehcache'
-
-    compile "org.grails.plugins:gsp"
     compileOnly "io.micronaut:micronaut-inject-groovy"
     console "org.grails:grails-console"
+    implementation "org.springframework.boot:spring-boot-starter-logging"
+    implementation "org.springframework.boot:spring-boot-starter-validation"
+    implementation "org.springframework.boot:spring-boot-autoconfigure"
+    implementation "org.grails:grails-core"
+    implementation "org.springframework.boot:spring-boot-starter-actuator"
+    implementation "org.springframework.boot:spring-boot-starter-tomcat"
+    implementation "org.grails:grails-web-boot"
+    implementation "org.grails:grails-logging"
+    implementation "org.grails:grails-plugin-rest"
+    implementation "org.grails:grails-plugin-databinding"
+    implementation "org.grails:grails-plugin-i18n"
+    implementation "org.grails:grails-plugin-services"
+    implementation "org.grails:grails-plugin-url-mappings"
+    implementation "org.grails:grails-plugin-interceptors"
+    implementation "org.grails.plugins:cache"
+    implementation "org.grails.plugins:async"
+    implementation "org.grails.plugins:scaffolding"
+    implementation "org.grails.plugins:hibernate5"
+    implementation "org.hibernate:hibernate-core:5.6.11.Final"
+    implementation "org.grails.plugins:events"
+    implementation "org.grails.plugins:gsp"
     profile "org.grails.profiles:web"
-    runtime "org.glassfish.web:el-impl:2.1.2-b03"
-//    runtime "com.h2database:h2"
-//    runtime "org.apache.tomcat:tomcat-jdbc"
-    runtime "javax.xml.bind:jaxb-api:2.3.1"
-    runtime 'com.bertramlabs.plugins:asset-pipeline-grails:3.3.2'
-    testCompile "io.micronaut:micronaut-inject-groovy"
-    testCompile "org.grails:grails-gorm-testing-support"
-    testCompile "org.mockito:mockito-core"
-    testCompile "org.grails:grails-web-testing-support"
-    testCompile "org.grails.plugins:geb"
-    testCompile "org.seleniumhq.selenium:selenium-remote-driver:3.14.0"
-    testCompile "org.seleniumhq.selenium:selenium-api:3.14.0"
-    testCompile "org.seleniumhq.selenium:selenium-support:3.14.0"
-    testRuntime "org.seleniumhq.selenium:selenium-chrome-driver:3.14.0"
-    testRuntime "org.seleniumhq.selenium:selenium-firefox-driver:3.14.0"
+    runtimeOnly "org.glassfish.web:el-impl:2.2.1-b05"
+//    runtimeOnly "com.h2database:h2"
+//    runtimeOnly "org.apache.tomcat:tomcat-jdbc"
+    runtimeOnly "javax.xml.bind:jaxb-api:2.3.1"
+    runtimeOnly "com.bertramlabs.plugins:asset-pipeline-grails:3.4.7"
+    testImplementation "io.micronaut:micronaut-inject-groovy"
+    testImplementation "org.grails:grails-gorm-testing-support"
+    testImplementation "org.mockito:mockito-core"
+    testImplementation "org.grails:grails-web-testing-support"
+    testImplementation "org.grails.plugins:geb"
+    testImplementation "org.seleniumhq.selenium:selenium-remote-driver:4.0.0"
+    testImplementation "org.seleniumhq.selenium:selenium-api:4.0.0"
+    testImplementation "org.seleniumhq.selenium:selenium-support:4.0.0"
+    testRuntimeOnly "org.seleniumhq.selenium:selenium-chrome-driver:4.0.0"
+    testRuntimeOnly "org.seleniumhq.selenium:selenium-firefox-driver:4.0.0"
 
-    testCompile 'io.micronaut:micronaut-http-client'
+    implementation "org.grails.plugins:cache-ehcache:3.0.0"
+    implementation "org.hibernate:hibernate-jcache"
+    runtimeOnly 'org.ehcache:ehcache'
+
+    testImplementation 'io.micronaut:micronaut-http-client'
 
     // Testing
-    testCompile 'org.grails.plugins:embedded-postgres:1.1.2'
-    testCompile "com.opentable.components:otj-pg-embedded:0.13.0" // required transitive dependency from the plugin.
-    testCompile 'cloud.localstack:localstack-utils:0.2.20'
-    testCompile "com.amazonaws:aws-java-sdk:$amazonAwsSdkVersion" // full AWS SDK included in test scope for localstack config
-    testCompile 'com.palantir.docker.compose:docker-compose-rule-junit4:1.7.0'
+    testImplementation 'ru.vyarus:spock-junit5:1.0.1'
+    testImplementation 'io.zonky.test:embedded-postgres:2.0.3'
+    testImplementation enforcedPlatform('io.zonky.test.postgres:embedded-postgres-binaries-bom:11.19.0')
+//    testImplementation "com.opentable.components:otj-pg-embedded:1.0.1" // required transitive dependency from the plugin.
+    testImplementation 'cloud.localstack:localstack-utils:0.2.22'
+    testImplementation "com.amazonaws:aws-java-sdk:$amazonAwsSdkVersion" // full AWS SDK included in test scope for localstack config
+    testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:1.8.0'
+
 }
 
 bootJar {
@@ -226,10 +221,33 @@ tasks.withType(GroovyCompile) {
 }
 
 tasks.withType(Test) {
+    useJUnitPlatform()
+}
+
+webdriverBinaries {
+    if (!System.getenv().containsKey('GITHUB_ACTIONS')) {
+        chromedriver {
+            version = '2.45.0'
+            fallbackTo32Bit = true
+        }
+        geckodriver '0.30.0'
+    }
+}
+
+tasks.withType(Test) {
     systemProperty "geb.env", System.getProperty('geb.env')
     systemProperty "geb.build.reportsDir", reporting.file("geb/integrationTest")
-    systemProperty "webdriver.chrome.driver", System.getProperty('webdriver.chrome.driver')
-    systemProperty "webdriver.gecko.driver", System.getProperty('webdriver.gecko.driver')
+    if (!System.getenv().containsKey('GITHUB_ACTIONS')) {
+        systemProperty 'webdriver.chrome.driver', System.getProperty('webdriver.chrome.driver')
+        systemProperty 'webdriver.gecko.driver', System.getProperty('webdriver.gecko.driver')
+    } else {
+        systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
+        systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
+    }
+}
+
+test {
+    testLogging.showStandardStreams = true
 }
 
 assets {
@@ -251,19 +269,6 @@ publishing {
     }
     publications {
         mavenJar(MavenPublication) {
-            pom.withXml {
-                def pomNode = asNode()
-                pomNode.dependencyManagement.replaceNode {}
-
-                // simply remove dependencies without a version
-                // version-less dependencies are handled with dependencyManagement
-                // see https://github.com/spring-gradle-plugins/dependency-management-plugin/issues/8 for more complete solutions
-                pomNode.dependencies.dependency.findAll {
-                    it.version.text().isEmpty()
-                }.each {
-                    it.replaceNode {}
-                }
-            }
             artifact bootJar
         }
     }

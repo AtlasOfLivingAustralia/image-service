@@ -11,9 +11,9 @@ class MetaDataValueFormatRules  {
     }
 
     private List<MetaDataValueFormatter> RULES = [
-        MatchName("occurrenceId") { "<a href=\"${grailsApplication.config.biocache.baseURL}/occurrences/${it}\">${it}</a>" },
-        MatchName("dataResourceUid") { "<a href=\"${grailsApplication.config.collectory.baseURL}/public/show/${it}\">${it}</a>" },
-        MatchName("scientificName") { "<a href=\"${grailsApplication.config.bie.baseURL}/search?q=${it?.encodeAsURL()}\">${it}</a>"},
+        MatchName("occurrenceId") { "<a href=\"${grailsApplication.config.getProperty('biocache.baseURL')}/occurrences/${it}\">${it}</a>" },
+        MatchName("dataResourceUid") { "<a href=\"${grailsApplication.config.getProperty('collectory.baseURL')}/public/show/${it}\">${it}</a>" },
+        MatchName("scientificName") { "<a href=\"${grailsApplication.config.getProperty('bie.baseURL')}/search?q=${it?.encodeAsURL()}\">${it}</a>"},
         MatchValueRegex("http://.*") { "<a href=\"${it}\">${it}</a>" },
         MatchValueRegex("https://.*") { "<a href=\"${it}\">${it}</a>" }
     ]

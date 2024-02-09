@@ -55,7 +55,7 @@ class ImageStagingService {
     }
 
     private String getStagingDirectory(String userId) {
-        def basedir = grailsApplication.config.imageservice.imagestore.staging as String
+        def basedir = grailsApplication.config.getProperty('imageservice.imagestore.staging') as String
         def userdir = new File(combine(basedir, userId))
         if (!userdir.exists()) {
             userdir.mkdirs()

@@ -357,7 +357,7 @@ class AdminController {
     def reindexImages() {
         flash.message = "Reindexing scheduled. Monitor progress using the search interface."
         imageService.scheduleBackgroundTask(new ScheduleReindexAllImagesTask(imageService, elasticSearchService,
-                grailsApplication.config.elasticsearch.batchIndexSize))
+                grailsApplication.config.getProperty('elasticsearch.batchIndexSize', Integer)))
         redirect(action:'tools')
     }
 
@@ -523,8 +523,8 @@ class AdminController {
     }
 
     def checkForMissingImages(){
-        imageService.scheduleBackgroundTask(new ScheduleMissingImagesBackgroundTask(imageStoreService, grailsApplication.config.imageservice.exportDir))
-        flash.message = "Check for missing images started......Output: " + grailsApplication.config.imageservice.exportDir + "/missing-images.csv";
+        imageService.scheduleBackgroundTask(new ScheduleMissingImagesBackgroundTask(imageStoreService, grailsApplication.config.getProperty('imageservice.exportDir')))
+        flash.message = "Check for missing images started......Output: " + grailsApplication.config.getProperty('imageservice.exportDir') + "/missing-images.csv";
         redirect(action:'tools', message: flash.message)
     }
 

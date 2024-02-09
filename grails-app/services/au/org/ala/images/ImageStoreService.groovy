@@ -174,7 +174,7 @@ class ImageStoreService {
     private List<ThumbnailingResult> generateThumbnailsImpl(byte[] imageBytes, Image image) {
         def t = new ImageThumbnailer()
         def imageIdentifier = image.imageIdentifier
-        int size = grailsApplication.config.imageservice.thumbnail.size as Integer
+        int size = grailsApplication.config.getProperty('imageservice.thumbnail.size') as Integer
         def thumbDefs = [
             new ThumbDefinition(size, false, null, "thumbnail"),
             new ThumbDefinition(size, true, null, "thumbnail_square"),

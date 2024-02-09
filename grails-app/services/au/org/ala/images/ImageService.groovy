@@ -23,8 +23,6 @@ import org.apache.commons.io.FilenameUtils
 import org.apache.commons.lang.StringUtils
 import org.apache.tika.mime.MimeType
 import org.apache.tika.mime.MimeTypes
-import org.grails.plugins.codecs.MD5CodecExtensionMethods
-import org.grails.plugins.codecs.SHA1CodecExtensionMethods
 import org.hibernate.FlushMode
 import org.hibernate.ScrollMode
 import org.springframework.beans.factory.annotation.Value
@@ -257,14 +255,10 @@ SELECT
         return imageID
     }
 
-    boolean isImageServiceUrl(String url){
-        boolean isRecognised = false
-        grailsApplication.config.imageServiceUrls.each { imageServiceUrl ->
-            if (url.startsWith(imageServiceUrl)) {
-                isRecognised = true
-            }
-        }
-        isRecognised
+    boolean isImageServiceUrl(String url) {
+        def imageServiceUrls = grailsApplication.config.getProperty('imageServiceUrls', List, [])
+        boolean isRecognised = imageServiceUrls.any { imageServiceUrl -> url.startsWith(imageServiceUrl) }
+        return isRecognised
     }
 
     /**
@@ -514,14 +508,14 @@ SELECT
         try {
             lock.lock()
 
-            def md5Hash = MD5CodecExtensionMethods.encodeAsMD5(bytes)
+            def md5Hash = bytes.encodeAsMD5()
 
             //check for existing image using MD5 hash
             def image = Image.findByContentMD5Hash(md5Hash)
             def preExisting = false
             def isDuplicate = false
             if (!image) {
-                def sha1Hash = SHA1CodecExtensionMethods.encodeAsSHA1(bytes)
+                def sha1Hash = bytes.encodeAsSHA1()
 
                 Long defaultStorageLocationID = settingService.getStorageLocationDefault()
 
@@ -1021,7 +1015,7 @@ SELECT
 
     List<File> listStagedImages() {
         def files = []
-        def inboxLocation = grailsApplication.config.imageservice.imagestore.inbox as String
+        def inboxLocation = grailsApplication.config.getProperty('imageservice.imagestore.inbox') as String
         def inboxDirectory = new File(inboxLocation)
         inboxDirectory.eachFile { File file ->
             files << file
@@ -1077,7 +1071,7 @@ SELECT
     }
 
     def pollInbox(String batchId, String userId) {
-        def inboxLocation = grailsApplication.config.imageservice.imagestore.inbox as String
+        def inboxLocation = grailsApplication.config.getProperty('imageservice.imagestore.inbox') as String
         def inboxDirectory = new File(inboxLocation)
 
         inboxDirectory.eachFile { File file ->
@@ -1599,8 +1593,8 @@ SELECT
      * @return
      */
     File exportIndexToFile(){
-        FileUtils.forceMkdir(new File(grailsApplication.config.imageservice.exportDir))
-        def exportFile = grailsApplication.config.imageservice.exportDir + "/images-index.csv"
+        FileUtils.forceMkdir(new File(grailsApplication.config.getProperty('imageservice.exportDir')))
+        def exportFile = grailsApplication.config.getProperty('imageservice.exportDir') + "/images-index.csv"
         def file = new File(exportFile)
         file.withWriter("UTF-8") { writer ->
             eachRowToCSV(writer, """SELECT * FROM export_index;""", [])

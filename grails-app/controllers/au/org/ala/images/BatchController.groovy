@@ -83,7 +83,7 @@ class BatchController {
 
         // move zip file from tmp working directory to uploads directory
         File uploadDir = new File(
-                grailsApplication.config.imageservice.batchUpload +
+                grailsApplication.config.getProperty('imageservice.batchUpload') +
                 "/tmp-" + System.currentTimeMillis() + "/")
         FileUtils.forceMkdir(uploadDir)
         File tmpFile = new File(uploadDir, zipFile.originalFilename)

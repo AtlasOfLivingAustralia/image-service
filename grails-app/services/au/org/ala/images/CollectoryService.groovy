@@ -32,7 +32,7 @@ class CollectoryService {
         }
 
         //if there no collectory configured, move on
-        if(!grailsApplication.config.collectory.baseURL){
+        if (!grailsApplication.config.getProperty('collectory.baseURL')) {
             return
         }
 
@@ -54,7 +54,7 @@ class CollectoryService {
         _uidLookupCache.clear()
     }
 
-    def getResourceLevelMetadata(dataResourceUid){
+    def getResourceLevelMetadata(dataResourceUid) {
 
         def metadata = [:]
 
@@ -64,7 +64,7 @@ class CollectoryService {
 
         //lookup the resource UID
         if(!_lookupCache.containsKey(dataResourceUid)){
-            def url = grailsApplication.config.collectory.baseURL + "/ws/dataResource/" + dataResourceUid
+            def url = grailsApplication.config.getProperty('collectory.baseURL') + "/ws/dataResource/" + dataResourceUid
             try {
                 def js = new JsonSlurper()
                 def json = js.parseText(new URL(url).text)
@@ -90,7 +90,7 @@ class CollectoryService {
 
         //lookup the resource UID
         if(!_uidLookupCache.containsKey(uid)){
-            def url = grailsApplication.config.collectory.baseURL + "/ws/lookup/name/" + uid
+            def url = grailsApplication.config.getProperty('collectory.baseURL') + "/ws/lookup/name/" + uid
             try {
                 def js = new JsonSlurper()
                 def json = js.parseText(new URL(url).text)

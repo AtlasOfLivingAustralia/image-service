@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.utils.ImagesIntegrationSpec
 import grails.core.GrailsApplication
 import grails.testing.mixin.integration.Integration
 import grails.gorm.transactions.*
@@ -9,8 +10,8 @@ import io.micronaut.http.HttpRequest
 import io.micronaut.http.HttpResponse
 import io.micronaut.http.HttpStatus
 import io.micronaut.http.client.BlockingHttpClient
-import io.micronaut.http.client.DefaultHttpClient
 import io.micronaut.http.client.DefaultHttpClientConfiguration
+import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.HttpClientConfiguration
 import io.micronaut.http.client.exceptions.HttpClientResponseException
 import io.micronaut.http.client.multipart.MultipartBody
@@ -22,7 +23,7 @@ import java.time.Duration
 
 @Integration(applicationClass = Application.class)
 @Rollback
-class ImageUploadSpec extends Specification {
+class ImageUploadSpec extends ImagesIntegrationSpec {
 
     GrailsApplication grailsApplication
 
@@ -39,7 +40,7 @@ class ImageUploadSpec extends Specification {
     private BlockingHttpClient getRest() {
         HttpClientConfiguration configuration = new DefaultHttpClientConfiguration()
         configuration.readTimeout = Duration.ofSeconds(30)
-        new DefaultHttpClient(baseUrl, configuration).toBlocking()
+        HttpClient.create(baseUrl, configuration).toBlocking()
     }
 
     @Ignore

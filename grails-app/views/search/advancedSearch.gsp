@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
     <head>
-        <meta name="layout" content="${grailsApplication.config.skin.layout}"/>
+        <meta name="layout" content="${grailsApplication.config.getProperty('skin.layout')}"/>
         <meta name="section" content="home"/>
         <title><g:message code="advanced.search.title" /></title>
         <meta name="breadcrumbs" content="${g.createLink( controller: 'image', action: 'list')}, Images"/>

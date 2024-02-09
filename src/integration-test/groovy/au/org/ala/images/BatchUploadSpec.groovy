@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.utils.ImagesIntegrationSpec
 import grails.core.GrailsApplication
 import grails.testing.mixin.integration.Integration
 import grails.gorm.transactions.Rollback
@@ -11,7 +12,6 @@ import io.micronaut.http.HttpStatus
 import io.micronaut.http.client.BlockingHttpClient
 import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.multipart.MultipartBody
-import spock.lang.Specification
 
 import static au.org.ala.images.AvroUtils.AUDIENCE
 import static au.org.ala.images.AvroUtils.CREATED
@@ -20,11 +20,10 @@ import static au.org.ala.images.AvroUtils.IDENTIFIER
 
 @Integration(applicationClass = Application.class)
 @Rollback
-class BatchUploadSpec extends Specification {
+class BatchUploadSpec extends ImagesIntegrationSpec {
 
     static final int TIMEOUT_SECONDS = 60
     static final String TEST_DR_UID = 'test-123'
-
 
     GrailsApplication grailsApplication
 
@@ -33,8 +32,11 @@ class BatchUploadSpec extends Specification {
     }
 
     private URL getBaseUrl() {
-        def serverContextPath = grailsApplication.config.getProperty('server.servlet.contextPath', String, '')
+        def serverContextPath = grailsApplication.config.getProperty('server.servlet.context-path', String, '')
         def url = "http://localhost:${serverPort}${serverContextPath}"
+        if (!url.endsWithAny('/')) {
+            url += '/'
+        }
         return url.toURL()
     }
 
@@ -49,7 +51,7 @@ class BatchUploadSpec extends Specification {
 
         when:
 
-        def request = HttpRequest.create(HttpMethod.POST, "/batch/upload")
+        def request = HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)
@@ -100,7 +102,7 @@ class BatchUploadSpec extends Specification {
 
         when:
 
-        HttpResponse uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "/batch/upload")
+        HttpResponse uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)
@@ -158,7 +160,7 @@ class BatchUploadSpec extends Specification {
 
         when:
 
-        HttpResponse uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "/batch/upload")
+        HttpResponse uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)
@@ -213,7 +215,7 @@ class BatchUploadSpec extends Specification {
 
         when:
 
-        HttpResponse uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "/batch/upload")
+        HttpResponse uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)
@@ -246,7 +248,7 @@ class BatchUploadSpec extends Specification {
 
         when: "uploading a duplicate image again, the duplicate is detected before it is downloaded again"
 
-        uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "/batch/upload")
+        uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)
@@ -290,7 +292,7 @@ class BatchUploadSpec extends Specification {
 
         when:
 
-        HttpResponse uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "/batch/upload")
+        HttpResponse uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)
@@ -327,7 +329,7 @@ class BatchUploadSpec extends Specification {
 
         when:
 
-        def request = HttpRequest.create(HttpMethod.POST, "/batch/upload")
+        def request = HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)
@@ -353,7 +355,7 @@ class BatchUploadSpec extends Specification {
 
         when:
 
-        def request = HttpRequest.create(HttpMethod.POST, "/batch/upload")
+        def request = HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)

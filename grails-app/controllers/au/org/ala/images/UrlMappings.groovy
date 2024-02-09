@@ -1,3 +1,5 @@
+package au.org.ala.images
+
 class UrlMappings {
 
 	static mappings = {

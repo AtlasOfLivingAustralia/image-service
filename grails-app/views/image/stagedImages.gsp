@@ -2,8 +2,8 @@
 <!doctype html>
 <html>
     <head>
-        <meta name="layout" content="${grailsApplication.config.skin.layout}"/>
-        <title><g:message code="staged.images.image.service.title" /> | ${grailsApplication.config.skin.orgNameLong}</title>
+        <meta name="layout" content="${grailsApplication.config.getProperty('skin.layout')}"/>
+        <title><g:message code="staged.images.image.service.title" /> | ${grailsApplication.config.getProperty('skin.orgNameLong')}</title>
         <style>
         .numberCircle {
             border-radius: 50%;

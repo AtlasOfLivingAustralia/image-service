@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title><g:message code="viewer.image.title" args="[imageInstance.originalFilename]" /> | <g:message code="viewer.image.service.title" /> | ${grailsApplication.config.skin.orgNameLong}</title>
+        <title><g:message code="viewer.image.title" args="[imageInstance.originalFilename]" /> | <g:message code="viewer.image.service.title" /> | ${grailsApplication.config.getProperty('skin.orgNameLong')}</title>
         <style>
         html, body {
             height:100%;

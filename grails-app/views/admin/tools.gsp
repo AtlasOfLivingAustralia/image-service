@@ -24,7 +24,7 @@
                 <button id="btnImportFromLocalInbox" class="btn btn-default">Import images from local incoming directory</button>
             </td>
             <td>
-                Imports image files from the designated incoming server directory ("${grailsApplication.config.imageservice.imagestore.inbox}")
+                Imports image files from the designated incoming server directory ("${grailsApplication.config.getProperty('imageservice.imagestore.inbox')}")
             </td>
         </tr>
         <tr>

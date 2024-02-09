@@ -1,8 +1,10 @@
 package au.org.ala.images
 
+import au.org.ala.images.utils.ImagesIntegrationSpec
 import grails.testing.mixin.integration.Integration
 import grails.gorm.transactions.Rollback
 import groovy.json.JsonSlurper
+import io.micronaut.core.type.Argument
 import io.micronaut.http.HttpMethod
 import io.micronaut.http.HttpRequest
 import io.micronaut.http.HttpResponse
@@ -13,8 +15,7 @@ import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.exceptions.HttpClientResponseException
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
-import groovyx.net.http.HTTPBuilder
-import groovyx.net.http.Method
+
 import spock.lang.Specification
 
 import java.security.MessageDigest
@@ -24,7 +25,7 @@ import java.security.MessageDigest
  */
 @Integration(applicationClass = Application.class)
 @Rollback
-class ContentNegotiationSpec extends Specification {
+class ContentNegotiationSpec extends ImagesIntegrationSpec {
 
     def imageId
     def grailsApplication
@@ -121,12 +122,12 @@ class ContentNegotiationSpec extends Specification {
     void "Test accept: image/jpeg"() {
         when:
 
-        def imageInBytes = new HTTPBuilder("${baseUrl}/image/${imageId}").request(Method.GET, "image/jpeg") {
-            requestContentType = "image/jpeg"
-            response.success = { resp, binary ->
-                return binary.bytes
-            }
-        }
+        def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/${imageId}")
+                .accept("image/jpeg")
+
+        def resp = rest.exchange(request, byte[])
+        def imageInBytes = resp.body()
+
         MessageDigest md = MessageDigest.getInstance("MD5")
         def md5Hash = md.digest(imageInBytes)
 
@@ -145,15 +146,14 @@ class ContentNegotiationSpec extends Specification {
      */
     void "Test accept: image/jpeg - 404"() {
         when:
-        def failresp
-        def imageInBytes = new HTTPBuilder("${baseUrl}/image/ABC").request(Method.GET, "image/jpeg") {
-            requestContentType = "image/jpeg"
-            response.failure = { failresp_inner ->
-                failresp = failresp_inner
-            }
-        }
+
+        def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/ABC")
+                .accept("image/jpeg")
+
+        def resp = rest.exchange(request, byte[])
 
         then:
-        assert failresp.status == 404
+        def e = thrown(HttpClientResponseException)
+        assert e.status.code == 404
     }
 }

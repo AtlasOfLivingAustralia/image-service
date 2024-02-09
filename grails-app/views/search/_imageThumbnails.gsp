@@ -78,7 +78,7 @@
         </g:each>
     </div>
 
-    <g:set var="maxOffsetLimit" value="${grailsApplication.config.elasticsearch.maxOffset as int}" />
+    <g:set var="maxOffsetLimit" value="${grailsApplication.config.getProperty('elasticsearch.maxOffset', Integer)}" />
     <tb:paginate total="${totalImageCount > maxOffsetLimit ? maxOffsetLimit : totalImageCount}" max="100"
                  action="list"
                  controller="search"

@@ -3,7 +3,7 @@
 <!doctype html>
 <html>
     <head>
-        <meta name="layout" content="${grailsApplication.config.skin.layout}"/>
+        <meta name="layout" content="${grailsApplication.config.getProperty('skin.layout')}"/>
         <title>${mediaTitle} - ${imageInstance.title ? imageInstance.title : imageInstance.imageIdentifier}</title>
         <meta name="breadcrumbs" content="${g.createLink( controller: 'search', action: 'list')}, Images"/>
         <asset:stylesheet src="application.css" />

@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.utils.ImagesIntegrationSpec
 import grails.testing.mixin.integration.Integration
 import grails.gorm.transactions.Rollback
 import groovy.json.JsonSlurper
@@ -13,7 +14,7 @@ import spock.lang.Specification
 
 @Integration(applicationClass = Application.class)
 @Rollback
-class SearchSpec extends Specification {
+class SearchSpec extends ImagesIntegrationSpec {
 
     def grailsApplication
 

@@ -766,7 +766,7 @@ class ImageController {
             response.sendError(404)
             return
         }
-        if (grailsApplication.config.analytics.trackLargeViewer.toBoolean()) {
+        if (grailsApplication.config.getProperty('analytics.trackLargeViewer', Boolean)) {
             analyticsService.sendAnalytics(imageInstance, 'imagelargeviewer', request.getHeader("User-Agent"))
         }
         [imageInstance: imageInstance, auxDataUrl: params.infoUrl]
@@ -804,7 +804,7 @@ class ImageController {
     }
 
     private getUserIdForRequest(HttpServletRequest request) {
-        if (grailsApplication.config.security.cas.disableCAS.toBoolean()){
+        if (grailsApplication.config.getProperty('security.cas.disableCAS', Boolean, false)){
             return "-1"
         }
         authService.getUserId()

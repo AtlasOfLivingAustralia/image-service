@@ -31,7 +31,7 @@
                     Refresh file list
                 </button>
             </div>
-            <h4>File List - Reading local server directory: ${grailsApplication.config.imageservice.imagestore.inbox}</h4>
+            <h4>File List - Reading local server directory: ${grailsApplication.config.getProperty('imageservice.imagestore.inbox')}</h4>
 
             <div id="fileList"></div>
         </div>

@@ -6,7 +6,7 @@
         <tr>
             <td class="property-name"><g:message code="core.image.metadata.data.resource" /></td>
             <td class="property-value">
-                <a href="${grailsApplication.config.collectory.baseURL}/public/show/${imageInstance.dataResourceUid}">
+                <a href="${grailsApplication.config.getProperty('collectory.baseURL')}/public/show/${imageInstance.dataResourceUid}">
                     ${resourceLevel.name}
                 </a>
             </td>
@@ -209,10 +209,10 @@
 
             for (var i = 0; i < occurrences.length; ++i) {
                 var occurrenceId = occurrences[i].uuid
-                ul.append($('<li></li>').append($('<a></a>').attr('href', '${grailsApplication.config.biocache.baseURL}/occurrences/' + encodeURIComponent(occurrenceId)).text(occurrenceId)));
+                ul.append($('<li></li>').append($('<a></a>').attr('href', '${grailsApplication.config.getProperty('biocache.baseURL')}/occurrences/' + encodeURIComponent(occurrenceId)).text(occurrenceId)));
             }
             if (startIndex + pageSize < totalRecords) {
-                ul.append($('<li></li>').append($('<a href="${grailsApplication.config.biocache.baseURL}/occurrences/search?q=${images_param_name}:${imageInstance.imageIdentifier}"><g:message code="core.image.metadata.find.all.records"/>...</a>')));
+                ul.append($('<li></li>').append($('<a href="${grailsApplication.config.getProperty('biocache.baseURL')}/occurrences/search?q=${images_param_name}:${imageInstance.imageIdentifier}"><g:message code="core.image.metadata.find.all.records"/>...</a>')));
             }
             $('#occurrences_container').append(ul);
         }).always(function() {

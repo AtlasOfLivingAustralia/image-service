@@ -17,7 +17,7 @@
             <div class="alert alert-danger" style="display: block">${flash.errorMessage}</div>
         </g:if>
 
-        <g:if test="${grailsApplication.config.security.cas.disableCAS.toBoolean()}">
+        <g:if test="${grailsApplication.config.getProperty('security.cas.disableCAS', Boolean, false)}">
             <div class="alert alert-warning" style="display: block">WARNING: CAS authentication disabled - this means admin functions are exposed!</div>
         </g:if>
 

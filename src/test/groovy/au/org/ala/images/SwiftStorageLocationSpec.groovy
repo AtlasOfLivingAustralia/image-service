@@ -1,18 +1,21 @@
 package au.org.ala.images
 
-import com.palantir.docker.compose.DockerComposeRule
+import com.palantir.docker.compose.DockerComposeExtension
+
 import com.palantir.docker.compose.connection.waiting.HealthChecks
 import grails.testing.gorm.DomainUnitTest
 import org.javaswift.joss.client.factory.AuthenticationMethod
-import org.junit.ClassRule
-import spock.lang.Shared
+import org.junit.jupiter.api.extension.RegisterExtension
 
 
 class SwiftStorageLocationSpec extends StorageLocationSpec implements DomainUnitTest<SwiftStorageLocation> {
 
-    @ClassRule @Shared DockerComposeRule docker = DockerComposeRule.builder()
+    @RegisterExtension
+    static DockerComposeExtension docker = DockerComposeExtension.builder()
             .file("swift-aio.yml")
-            .waitingForService("swift", HealthChecks.toRespond2xxOverHttp(8080) { port -> port.inFormat('http://$HOST:$EXTERNAL_PORT/healthcheck') })
+            .waitingForService("swift", HealthChecks.toRespond2xxOverHttp(8080) {
+                port -> port.inFormat('http://$HOST:$EXTERNAL_PORT/healthcheck')
+            })
             .build()
 
     @Override

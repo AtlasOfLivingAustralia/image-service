@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
     <head>
-        <meta name="layout" content="${grailsApplication.config.skin.layout}"/>
+        <meta name="layout" content="${grailsApplication.config.getProperty('skin.layout')}"/>
         <title><g:message code="list.title.images" /></title>
         <asset:stylesheet src="application.css" />
         <asset:stylesheet src="search.css" />

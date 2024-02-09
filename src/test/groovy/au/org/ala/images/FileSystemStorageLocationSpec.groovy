@@ -2,14 +2,13 @@ package au.org.ala.images
 
 import grails.testing.gorm.DomainUnitTest
 import groovy.util.logging.Slf4j
-import org.junit.ClassRule
-import org.junit.rules.TemporaryFolder
 import spock.lang.Shared
+import spock.lang.TempDir
 
 @Slf4j
 class FileSystemStorageLocationSpec extends StorageLocationSpec implements DomainUnitTest<FileSystemStorageLocation> {
 
-    @ClassRule @Shared TemporaryFolder tempFolder = new TemporaryFolder()
+    @TempDir @Shared File tempFolder
     @Shared File tempDir
     @Shared File tempDir2
     @Shared File altTempDir
@@ -21,9 +20,9 @@ class FileSystemStorageLocationSpec extends StorageLocationSpec implements Domai
     FileSystemStorageLocation alternateStorageLocation
 
     def setupSpec() {
-        tempDir = tempFolder.newFolder('storage')
-        tempDir2 = tempFolder.newFolder('storage2')
-        altTempDir = tempFolder.newFolder('altStorage')
+        tempDir = new File(tempFolder, 'storage').tap { mkdir() }
+        tempDir2 = new File(tempFolder, 'storage2').tap { mkdir() }
+        altTempDir = new File(tempFolder, 'altStorage').tap { mkdir() }
     }
 
     def setup() {

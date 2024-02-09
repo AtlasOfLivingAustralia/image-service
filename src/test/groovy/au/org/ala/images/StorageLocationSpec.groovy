@@ -4,15 +4,14 @@ import com.google.common.io.Resources
 import grails.testing.gorm.DomainUnitTest
 import net.lingala.zip4j.ZipFile
 import org.apache.commons.io.FileUtils
-import org.junit.Rule
-import org.junit.rules.TemporaryFolder
 import spock.lang.Specification
+import spock.lang.TempDir
 import spock.lang.Unroll
 
 abstract class StorageLocationSpec extends Specification implements DomainUnitTest<StorageLocation> {
 
-    @Rule
-    TemporaryFolder zipFolder = new TemporaryFolder()
+    @TempDir
+    File zipFolder
 
     URL resource
     URLConnection connection
@@ -228,7 +227,7 @@ abstract class StorageLocationSpec extends Specification implements DomainUnitTe
     def "test unzip #storageLocation"(StorageLocation storageLocation) {
         setup:
         def zipUrl = Resources.getResource('test.zip')
-        def zipFile = zipFolder.newFile('test.zip')
+        def zipFile = new File(zipFolder, 'test.zip')
         FileUtils.copyURLToFile(zipUrl, zipFile)
         def zip = new ZipFile(zipFile)
         def tileHeader = zip.getFileHeader('0/0/0.png')
