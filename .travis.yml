@@ -10,6 +10,7 @@ branches:
     - develop
     - /^feature\/.*$/
     - /^hotfix\/.*$/
+    - feature/image_upload_AI
 services:
   - docker
 before_cache:
