@@ -342,6 +342,48 @@ class BatchUploadSpec extends Specification {
 
     }
 
+    /**
+     * Test an AVRO upload without rights field in the AVRO file
+     */
+    def uploadImageAvroWithoutRightsField() {
+        given:
+        def imageUrl = 'https://www.ala.org.au/app/uploads/2019/05/palm-cockatoo-by-Alan-Pettigrew-1920-1200-CCBY-28072018-640x480.jpg'
+        def imageUrls = [[[(IDENTIFIER): imageUrl, (CREATOR): 'creator', (CREATED): '2021-01-01 00:00:00']]]
+        def avro = AvroUtils.generateTestArchiveWithMetadata(imageUrls, true, false, true)
+
+        when:
+
+        def request = HttpRequest.create(HttpMethod.POST, "/batch/upload")
+                .contentType("multipart/form-data")
+                .body(MultipartBody.builder()
+                        .addPart("dataResourceUid", TEST_DR_UID)
+                        .addPart('archive', avro)
+                        .build())
+        HttpResponse uploadResponse = rest.exchange(request, String)
+
+        def response = new JsonSlurper().parseText(uploadResponse.body())
+
+        // wait for batch files and images to be created
+        int start = System.currentTimeSeconds()
+        // Poll until the image tiler has run on the last image in the batch upload
+        def upload = findBatchFileUpload(response.batchID, start)
+        def image = findImage(imageUrl, true, start)
+
+        then:
+        checkCommonResponse(uploadResponse, response, imageUrls, TEST_DR_UID)
+
+        checkBatchFileUpload(upload, TEST_DR_UID, 1)
+
+        // Check that the image was created
+        image.originalFilename == imageUrl
+        image.mimeType == 'image/jpeg'
+        image.dateDeleted == null
+        image.creator == 'creator'
+        image.created == '2021-01-01 00:00:00'
+        image.zoomLevels > 0 // Indicates that the tiler ran
+
+    }
+
     // TODO Use a notification / event bus to signal that batch / images are complete?
     private BatchFileUpload findBatchFileUpload(int batchFileUploadId, int startTimeSeconds) {
         def upload = BatchFileUpload.get(batchFileUploadId)

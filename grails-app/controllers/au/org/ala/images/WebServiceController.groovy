@@ -3,7 +3,6 @@ package au.org.ala.images
 import au.ala.org.ws.security.RequireApiKey
 import au.org.ala.plugins.openapi.Path
 import au.org.ala.web.SSO
-import au.org.ala.ws.security.ApiKeyInterceptor
 import com.google.common.base.Suppliers
 import grails.converters.JSON
 import grails.converters.XML
@@ -32,8 +31,9 @@ import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
 
 class WebServiceController {
 
-    static allowedMethods = [findImagesByMetadata: 'POST', getImageInfoForIdList: 'POST']
+    static String LEGACY_API_KEY_HEADER_NAME = 'apiKey'
 
+    static allowedMethods = [findImagesByMetadata: 'POST', getImageInfoForIdList: 'POST']
     def imageService
     def imageStoreService
     def tagService
@@ -88,10 +88,11 @@ class WebServiceController {
     def deleteImageService() {
 
         def success = false
-        def userId = request.getHeader(ApiKeyInterceptor.API_KEY_HEADER_NAME)
+
+        def userId = request.remoteUser ?: request.getHeader(LEGACY_API_KEY_HEADER_NAME)
 
         if(!userId) {
-            response.sendError(HttpStatus.SC_BAD_REQUEST, "Must include API key")
+            response.sendError(HttpStatus.SC_BAD_REQUEST, "Must send authentication")
         } else {
             def message = ""
             def image = Image.findByImageIdentifier(params.imageID as String, [ cache: true])
@@ -237,7 +238,7 @@ class WebServiceController {
     def scheduleArtifactGeneration() {
 
         def imageInstance = Image.findByImageIdentifier(params.id as String, [ cache: true])
-        def userId = request.getHeader(ApiKeyInterceptor.API_KEY_HEADER_NAME)
+        def userId = request.remoteUser ?: request.getHeader(LEGACY_API_KEY_HEADER_NAME)
         def results = [success: true]
 
         if (params.id && !imageInstance) {
@@ -306,7 +307,7 @@ class WebServiceController {
     @SSO
     def scheduleKeywordRegeneration() {
         def imageInstance = Image.findByImageIdentifier(params.id as String, [ cache: true])
-        def userId = request.getHeader(ApiKeyInterceptor.API_KEY_HEADER_NAME)
+        def userId = request.remoteUser ?: request.getHeader(LEGACY_API_KEY_HEADER_NAME)
         def results = [success:true]
         if (params.id && !imageInstance) {
             results.success = false

@@ -78,11 +78,11 @@ dependencies {
     compile group: 'com.googlecode.owasp-java-html-sanitizer', name: 'owasp-java-html-sanitizer', version: '20200713.1'
 
     // ALA plugins
-    compile group: 'org.grails.plugins', name: 'ala-ws-plugin', version: '3.1.2', changing: true
-    compile group: 'org.grails.plugins', name: 'ala-bootstrap3', version: '4.1.0', changing: true
+    compile group: 'org.grails.plugins', name: 'ala-ws-plugin', version: alaSecurityVersion, classifier: 'plain', changing: true
+    compile group: 'org.grails.plugins', name: 'ala-auth', version: alaSecurityVersion, classifier: 'plain', changing: true
+    compile group: 'org.grails.plugins', name: 'ala-ws-security-plugin', version: alaSecurityVersion, classifier: 'plain', changing: true
     compile group: 'org.grails.plugins', name: 'ala-admin-plugin', version: '2.3.0', changing: true
-    compile group: 'org.grails.plugins', name: 'ala-auth', version: '5.1.1', changing: true
-    compile group: 'org.grails.plugins', name: 'ala-ws-security-plugin', version: '4.1.2', changing: true
+    compile group: 'org.grails.plugins', name: 'ala-bootstrap3', version: '4.4.0', changing: true
     compile group: 'au.org.ala.plugins.grails', name:'images-client-plugin', version: '1.1', changing: true
 
     // Added dependencies
@@ -95,6 +95,14 @@ dependencies {
 
     compile 'org.grails.plugins:quartz:2.0.13'
     implementation 'org.quartz-scheduler:quartz:2.2.1' // Is not pulled in by default
+
+    // Remove this for grails 5
+    compile 'org.grails.plugins:http-builder-helper:1.1.0'
+    compile('org.codehaus.groovy.modules.http-builder:http-builder:0.7.1') {
+        exclude module: "commons-logging"
+        exclude module: "groovy"
+    }
+    // end remove this from grails 5
 
     compile group: 'org.locationtech.spatial4j', name: 'spatial4j', version: '0.7'
     compile group: 'org.locationtech.jts', name: 'jts-core', version: '1.15.0'

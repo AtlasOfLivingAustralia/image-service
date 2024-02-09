@@ -1,7 +1,10 @@
 ---
 info:
-    app:
-        name: 'image-service'
+  app:
+    name: '@info.app.name@'
+    version: '@info.app.version@'
+    grailsVersion: '@info.app.grailsVersion@'
+
 grails:
     serverURL: 'http://dev.ala.org.au:8080'
     profile: web

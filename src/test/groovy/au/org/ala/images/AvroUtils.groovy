@@ -56,13 +56,14 @@ class AvroUtils {
         generateTestArchiveWithMetadata(urls.collect { it.collect { url -> ['identifier': url ]}}, false, setCodec)
     }
 
-    static File generateTestArchiveWithMetadata(List<List<Map<String,String>>> records, boolean useSingleRecordIfAble, boolean setCodec = false) {
+    static File generateTestArchiveWithMetadata(List<List<Map<String,String>>> records, boolean useSingleRecordIfAble, boolean setCodec = false, boolean skipRightsField = false) {
         try {
             File newArchiveDir = new File("/tmp/image-service-avro-test")
             newArchiveDir.mkdir()
             File newArchive = new File(newArchiveDir, "data.avro.zip");
             FileOutputStream fos = new FileOutputStream(newArchive);
             ZipOutputStream zipOut = new ZipOutputStream(fos);
+            List<String> optionalKeys = skipRightsField ? AvroUtils.OPTIONAL_KEYS.findAll {it != RIGHTS } : AvroUtils.OPTIONAL_KEYS
 
             for (int i = 0; i < records.size(); ++i) {
 
@@ -72,7 +73,7 @@ class AvroUtils {
                         .fields()
                         .requiredString("identifier")
                         .with {assembler ->
-                            AvroUtils.OPTIONAL_KEYS.each { key ->
+                            optionalKeys.each { key ->
                                 assembler.optionalString(key)
                             }
                             assembler
@@ -92,7 +93,7 @@ class AvroUtils {
                     new GenericRecordBuilder(multimediaSchema)
                             .set("identifier", record.identifier)
                             .with {builder ->
-                                AvroUtils.OPTIONAL_KEYS.each { key ->
+                                optionalKeys.each { key ->
                                     if (record.containsKey(key)) {
                                         builder.set(key, record[key])
                                     }
