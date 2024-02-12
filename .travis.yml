@@ -29,7 +29,7 @@ before_install:
   - mkdir -p ~/.docker/cli-plugins/
   - cp docker-compose ~/.docker/cli-plugins/docker-compose
   - sudo cp docker-compose /usr/local/bin
-  - docker-compose CI=true -f elastic.yml up -d
+  - docker-compose -f elastic.yml up -d
   - 'export GRADLE_OPTS="-Dgrails.env=travis"'
 
 after_success:
