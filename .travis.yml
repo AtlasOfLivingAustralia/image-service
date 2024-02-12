@@ -33,7 +33,7 @@ before_install:
   - 'export GRADLE_OPTS="-Dgrails.env=travis"'
 
 after_success:
-  - '[ "${TRAVIS_PULL_REQUEST}" = "false" ] && GRADLE_OPTS="-Dgrails.env=production" travis_retry ./gradlew clean assemble publish --stacktrace'
+  - '[ "${TRAVIS_PULL_REQUEST}" = "false" ] && GRADLE_OPTS="-Dgrails.env=production" travis_retry travis_wait ./gradlew clean assemble publish --stacktrace'
 
 after_script:
   - docker-compose -f elastic.yml kill
