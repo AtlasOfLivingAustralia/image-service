@@ -2035,13 +2035,18 @@ class WebServiceController {
             renderResults([success: false, message: "No url parameter, therefore expected multipart request!"], HttpStatus.SC_BAD_REQUEST)
             return
         }
-        List inappropriateLabels = imageRecognitionService.checkImageContent(file, url)
-        if(inappropriateLabels) {
-            renderResults([success: false, message: "Detected inappropriate content: $inappropriateLabels"], HttpStatus.SC_BAD_REQUEST)
-            return
+        try {
+            List inappropriateLabels = imageRecognitionService.checkImageContent(file, url)
+            if (inappropriateLabels) {
+                renderResults([success: false, message: "Detected inappropriate content: $inappropriateLabels"], HttpStatus.SC_BAD_REQUEST)
+                return
+            } else {
+                uploadImage()
+            }
         }
-        else {
-            uploadImage()
+        catch (Exception e) {
+            log.error("Problem storing image " + e.getMessage(), e)
+            renderResults([success: false, message: "Failed to store image!"],  HttpStatus.SC_INTERNAL_SERVER_ERROR)
         }
     }
 

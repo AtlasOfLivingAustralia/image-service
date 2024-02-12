@@ -18,23 +18,24 @@ class ImageRecognitionService {
 
     AmazonRekognitionClient rekognitionClient
     AmazonS3Client s3Client
+    def grailsApplication
 
-    private addImageToS3FromUrl(String filePath) {
+    private addImageToS3FromUrl(String filePath, String bucket, String tempFileName) {
 
         URL url = new URL(filePath);
         BufferedImage img = ImageIO.read(url)
-        File file = new File("/tmp/temp-image.jpg")
+        File file = new File("/tmp/${tempFileName}.jpg")
         ImageIO.write(img, "jpg", file)
-        s3Client.putObject("temp-upload-images","temp-image", file)
+        s3Client.putObject(bucket, tempFileName, file)
     }
 
-    private addImageToS3FromFile(MultipartFile file) {
-        s3Client.putObject("temp-upload-images","temp-image", new ByteArrayInputStream(file?.bytes),
+    private addImageToS3FromFile(MultipartFile file, String bucket, String tempFileName) {
+        s3Client.putObject(bucket, tempFileName, new ByteArrayInputStream(file?.bytes),
                 generateMetadata(file.contentType, null, file.size))
     }
 
-    private deleteImageS3(String filename) {
-        s3Client.deleteObject("temp-upload-images", filename)
+    private deleteImageS3(String bucket, String filename) {
+        s3Client.deleteObject(bucket, filename)
     }
 
     private deleteImageFile(String filename) {
@@ -44,27 +45,35 @@ class ImageRecognitionService {
 
     def checkImageContent(MultipartFile file, String filePath) {
 
-        if(filePath){
-            addImageToS3FromUrl(filePath)
-        }
-        else{
-            addImageToS3FromFile(file)
-        }
+        String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "temp-upload-images")
+        String tempImageName = grailsApplication.config.getProperty('aws.tempImageName', String, "temp-image")
 
-        List labels = detectModLabels()
-        if(filePath){
-            deleteImageFile("temp-image.jpg")
-        }
-        deleteImageS3("temp-image")
+        try {
+            if (filePath) {
+                addImageToS3FromUrl(filePath, tempImageBucket, tempImageName)
+            } else {
+                addImageToS3FromFile(file, tempImageBucket, tempImageName)
+            }
 
-        return labels
+            List labels = detectModLabels(tempImageBucket, tempImageName)
+            return labels
+        }
+        catch (Exception e) {
+            throw e
+        }
+        finally {
+            if (filePath) {
+                deleteImageFile("${tempImageName}.jpg")
+            }
+            deleteImageS3(tempImageBucket, tempImageName)
+        }
     }
 
-    private detectModLabels() {
+    private detectModLabels(String bucket, String tempFileName) {
         try {
             List labels = []
             DetectModerationLabelsRequest request = new DetectModerationLabelsRequest()
-                    .withImage(new Image().withS3Object(new S3Object().withBucket("temp-upload-images").withName("temp-image")))
+                    .withImage(new Image().withS3Object(new S3Object().withBucket(bucket).withName(tempFileName)))
 
             DetectModerationLabelsResult result = rekognitionClient.detectModerationLabels(request);
 
