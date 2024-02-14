@@ -12,7 +12,7 @@ import io.micronaut.http.HttpStatus
 import io.micronaut.http.client.BlockingHttpClient
 import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.multipart.MultipartBody
-import org.junit.Ignore
+import spock.lang.Ignore
 
 import static au.org.ala.images.AvroUtils.AUDIENCE
 import static au.org.ala.images.AvroUtils.CREATED
