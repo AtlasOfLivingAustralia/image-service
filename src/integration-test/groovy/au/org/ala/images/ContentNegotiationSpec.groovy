@@ -13,7 +13,7 @@ import io.micronaut.http.MediaType
 import io.micronaut.http.client.BlockingHttpClient
 import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.exceptions.HttpClientResponseException
-import org.junit.Ignore
+import spock.lang.Ignore
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
 
