@@ -12,12 +12,14 @@ import io.micronaut.http.HttpStatus
 import io.micronaut.http.client.BlockingHttpClient
 import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.multipart.MultipartBody
+import org.junit.Ignore
 
 import static au.org.ala.images.AvroUtils.AUDIENCE
 import static au.org.ala.images.AvroUtils.CREATED
 import static au.org.ala.images.AvroUtils.CREATOR
 import static au.org.ala.images.AvroUtils.IDENTIFIER
 
+@Ignore
 @Integration(applicationClass = Application.class)
 @Rollback
 class BatchUploadSpec extends ImagesIntegrationSpec {

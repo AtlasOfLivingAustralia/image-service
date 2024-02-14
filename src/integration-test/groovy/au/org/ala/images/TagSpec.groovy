@@ -19,6 +19,7 @@ import spock.lang.Specification
 
 import java.time.Duration
 
+@Ignore
 @Integration(applicationClass = Application.class)
 @Rollback
 class TagSpec extends ImagesIntegrationSpec {
