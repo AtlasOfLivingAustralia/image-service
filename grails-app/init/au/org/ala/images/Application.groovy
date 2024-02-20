@@ -9,11 +9,13 @@ import com.amazonaws.regions.Region
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.rekognition.AmazonRekognitionClient
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
+import com.amazonaws.services.sagemakerruntime.AmazonSageMakerRuntime
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
 import org.springframework.context.annotation.Bean
 import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.rekognition.AmazonRekognitionClientBuilder
+import com.amazonaws.services.sagemakerruntime.AmazonSageMakerRuntimeClientBuilder
 
 class Application extends GrailsAutoConfiguration {
     static void main(String[] args) {
@@ -60,6 +62,11 @@ class Application extends GrailsAutoConfiguration {
                 .withCredentials(awsCredentialsProvider)
                 .withRegion(awsRegion.toString())
                 .build();
+    }
+
+    @Bean
+    AmazonSageMakerRuntime sageMakerRuntime() {
+        return AmazonSageMakerRuntimeClientBuilder.defaultClient()
     }
 
 }

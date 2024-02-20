@@ -99,6 +99,7 @@ dependencies {
     implementation "com.amazonaws:aws-java-sdk-s3:$amazonAwsSdkVersion"
     implementation "com.amazonaws:aws-java-sdk-rekognition:$amazonAwsSdkVersion"
     implementation "com.amazonaws:aws-java-sdk-core:$amazonAwsSdkVersion"
+    implementation "com.amazonaws:aws-java-sdk-sagemakerruntime:$amazonAwsSdkVersion"
 
     implementation 'org.javaswift:joss:0.10.4'
     runtimeOnly 'org.postgresql:postgresql:42.5.4'

@@ -2036,9 +2036,9 @@ class WebServiceController {
             return
         }
         try {
-            List inappropriateLabels = imageRecognitionService.checkImageContent(file, url)
-            if (inappropriateLabels) {
-                renderResults([success: false, message: "Detected inappropriate content: $inappropriateLabels"], HttpStatus.SC_BAD_REQUEST)
+            Map response = imageRecognitionService.checkImageContent(file, url)
+            if (!response.success) {
+                renderResults([success: false, message: response.message], HttpStatus.SC_BAD_REQUEST)
                 return
             } else {
                 uploadImage()

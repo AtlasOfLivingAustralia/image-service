@@ -1,28 +1,38 @@
 package au.org.ala.images
 
+import com.amazonaws.services.rekognition.model.DetectFacesRequest
+import com.amazonaws.services.rekognition.model.DetectFacesResult
 import com.amazonaws.services.rekognition.model.DetectModerationLabelsRequest
 import com.amazonaws.services.rekognition.model.DetectModerationLabelsResult
 import com.amazonaws.services.rekognition.model.ModerationLabel
 import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.rekognition.AmazonRekognitionClient
 import com.amazonaws.services.s3.model.CannedAccessControlList
+import com.amazonaws.services.s3.model.GetObjectRequest
 import com.amazonaws.services.s3.model.ObjectMetadata
 import com.amazonaws.services.rekognition.model.Image
+import com.amazonaws.services.sagemakerruntime.AmazonSageMakerRuntime
+import com.amazonaws.services.sagemakerruntime.model.InvokeEndpointRequest
+import com.amazonaws.services.sagemakerruntime.model.InvokeEndpointResult
 import org.springframework.web.multipart.MultipartFile
+
 import javax.imageio.ImageIO
-import com.amazonaws.services.rekognition.model.S3Object;
+import com.amazonaws.services.rekognition.model.S3Object
+import org.apache.commons.io.IOUtils
 
 import java.awt.image.BufferedImage
+import java.nio.ByteBuffer
 
 class ImageRecognitionService {
 
     AmazonRekognitionClient rekognitionClient
     AmazonS3Client s3Client
     def grailsApplication
+    AmazonSageMakerRuntime sageMakerRuntime
 
     private addImageToS3FromUrl(String filePath, String bucket, String tempFileName) {
 
-        URL url = new URL(filePath);
+        URL url = new URL(filePath)
         BufferedImage img = ImageIO.read(url)
         File file = new File("/tmp/${tempFileName}.jpg")
         ImageIO.write(img, "jpg", file)
@@ -56,7 +66,19 @@ class ImageRecognitionService {
             }
 
             List labels = detectModLabels(tempImageBucket, tempImageName)
-            return labels
+            if (labels) {
+                return [success: false, message: "Detected inappropriate content: $labels"]
+            }
+
+            List faces = detectFaces(tempImageBucket, tempImageName)
+            if (faces) {
+                return [success: false, message: "Detected faces"]
+            }
+            boolean ifRoadKill = detectRoadkill(tempImageBucket, tempImageName)
+            if (ifRoadKill) {
+                return [success: false, message: "Detected road kill"]
+            }
+            return [success: true]
         }
         catch (Exception e) {
             throw e
@@ -75,17 +97,46 @@ class ImageRecognitionService {
             DetectModerationLabelsRequest request = new DetectModerationLabelsRequest()
                     .withImage(new Image().withS3Object(new S3Object().withBucket(bucket).withName(tempFileName)))
 
-            DetectModerationLabelsResult result = rekognitionClient.detectModerationLabels(request);
+            DetectModerationLabelsResult result = rekognitionClient.detectModerationLabels(request)
 
             for (ModerationLabel label : result.moderationLabels) {
                 labels.add(label.getName())
-                System.out.println(label.getName() + " : " + label.getConfidence());
+                System.out.println(label.getName() + " : " + label.getConfidence())
             }
             return labels
 
         } catch (Exception e) {
             e.printStackTrace()
         }
+    }
+
+    private detectFaces(String bucket, String tempFileName) {
+
+        DetectFacesRequest faceDetectRequest = new DetectFacesRequest()
+                .withImage(new Image().withS3Object(new S3Object().withBucket(bucket).withName(tempFileName)))
+
+        DetectFacesResult faceDetectResult = rekognitionClient.detectFaces(faceDetectRequest)
+
+        return faceDetectResult.faceDetails
+    }
+
+    private detectRoadkill(String bucket, String tempFileName) {
+
+        def object = s3Client.getObject(new GetObjectRequest(bucket, tempFileName))
+        InputStream objectData = object.getObjectContent()
+        byte[] byteArray = IOUtils.toByteArray(objectData)
+
+        InvokeEndpointRequest invokeEndpointRequest = new InvokeEndpointRequest()
+        invokeEndpointRequest.setContentType("application/octet-stream")
+        ByteBuffer buf = ByteBuffer.wrap(byteArray)
+        invokeEndpointRequest.setBody(buf)
+        invokeEndpointRequest.setEndpointName(grailsApplication.config.getProperty('aws.sagemaker.endpointName', String, ""))
+        invokeEndpointRequest.setAccept("application/json")
+
+        InvokeEndpointResult invokeEndpointResult = sageMakerRuntime.invokeEndpoint(invokeEndpointRequest)
+        objectData.close()
+        String response = new String(invokeEndpointResult.getBody().array())
+        return response == "Roadkill"
     }
 
     private ObjectMetadata generateMetadata(String contentType, String contentDisposition = null, Long length = null) {
