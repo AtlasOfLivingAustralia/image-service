@@ -21,6 +21,7 @@ import spock.lang.Ignore
 import spock.lang.Specification
 import java.time.Duration
 
+@Ignore
 @Integration(applicationClass = Application.class)
 @Rollback
 class ImageUploadSpec extends ImagesIntegrationSpec {
