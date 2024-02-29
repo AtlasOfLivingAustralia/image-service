@@ -2048,6 +2048,9 @@ class WebServiceController {
             log.error("Problem storing image " + e.getMessage(), e)
             renderResults([success: false, message: "Failed to store image!"],  HttpStatus.SC_INTERNAL_SERVER_ERROR)
         }
+        finally {
+            imageRecognitionService.cleanup(url)
+        }
     }
 
     @Operation(

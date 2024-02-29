@@ -51,6 +51,7 @@ class ImageService {
     def elasticSearchService
     def settingService
     def collectoryService
+    def imageRecognitionService
 
     final static List<String> SUPPORTED_UPDATE_FIELDS = [
         "audience",
@@ -507,6 +508,13 @@ SELECT
 
         try {
             lock.lock()
+
+            String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "temp-upload-images")
+            String tempImageName = grailsApplication.config.getProperty('aws.tempImageName', String, "temp-image")
+            List faces = imageRecognitionService.detectFaces(tempImageBucket, tempImageName)
+            if (faces) {
+                bytes = imageRecognitionService.blurFaces(tempImageBucket, tempImageName, faces)
+            }
 
             def md5Hash = bytes.encodeAsMD5()
 

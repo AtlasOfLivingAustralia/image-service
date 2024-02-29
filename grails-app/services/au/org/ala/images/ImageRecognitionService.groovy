@@ -4,6 +4,7 @@ import com.amazonaws.services.rekognition.model.DetectFacesRequest
 import com.amazonaws.services.rekognition.model.DetectFacesResult
 import com.amazonaws.services.rekognition.model.DetectModerationLabelsRequest
 import com.amazonaws.services.rekognition.model.DetectModerationLabelsResult
+import com.amazonaws.services.rekognition.model.FaceDetail
 import com.amazonaws.services.rekognition.model.ModerationLabel
 import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.rekognition.AmazonRekognitionClient
@@ -20,7 +21,12 @@ import javax.imageio.ImageIO
 import com.amazonaws.services.rekognition.model.S3Object
 import org.apache.commons.io.IOUtils
 
+import javax.imageio.stream.ImageInputStream
 import java.awt.image.BufferedImage
+import java.awt.image.BufferedImageOp
+import java.awt.image.ColorModel
+import java.awt.image.ConvolveOp
+import java.awt.image.Kernel
 import java.nio.ByteBuffer
 
 class ImageRecognitionService {
@@ -53,6 +59,15 @@ class ImageRecognitionService {
         file.delete()
     }
 
+    def cleanup(filePath) {
+        String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "temp-upload-images")
+        String tempImageName = grailsApplication.config.getProperty('aws.tempImageName', String, "temp-image")
+        if (filePath) {
+            deleteImageFile("${tempImageName}.jpg")
+        }
+        deleteImageS3(tempImageBucket, tempImageName)
+    }
+
     def checkImageContent(MultipartFile file, String filePath) {
 
         String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "temp-upload-images")
@@ -70,30 +85,25 @@ class ImageRecognitionService {
                 return [success: false, message: "Detected inappropriate content: $labels"]
             }
 
-            List faces = detectFaces(tempImageBucket, tempImageName)
-            if (faces) {
-                return [success: false, message: "Detected faces"]
-            }
-            boolean ifRoadKill = detectRoadkill(tempImageBucket, tempImageName)
-            if (ifRoadKill) {
-                return [success: false, message: "Detected road kill"]
+            def roadkillEndpointEnabled = grailsApplication.config.getProperty('aws.sagemaker.enabled', boolean, false)
+
+            if(roadkillEndpointEnabled) {
+                boolean ifRoadKill = detectRoadkill(tempImageBucket, tempImageName)
+                if (ifRoadKill) {
+                    return [success: false, message: "Detected road kill"]
+                }
             }
             return [success: true]
         }
         catch (Exception e) {
             throw e
         }
-        finally {
-            if (filePath) {
-                deleteImageFile("${tempImageName}.jpg")
-            }
-            deleteImageS3(tempImageBucket, tempImageName)
-        }
     }
 
     private detectModLabels(String bucket, String tempFileName) {
         try {
             List labels = []
+            def acceptingLabel = "Blood & Gore"
             DetectModerationLabelsRequest request = new DetectModerationLabelsRequest()
                     .withImage(new Image().withS3Object(new S3Object().withBucket(bucket).withName(tempFileName)))
 
@@ -101,7 +111,9 @@ class ImageRecognitionService {
 
             for (ModerationLabel label : result.moderationLabels) {
                 labels.add(label.getName())
-                System.out.println(label.getName() + " : " + label.getConfidence())
+            }
+            if(labels.contains(acceptingLabel)) {
+                labels = []
             }
             return labels
 
@@ -110,7 +122,7 @@ class ImageRecognitionService {
         }
     }
 
-    private detectFaces(String bucket, String tempFileName) {
+    def detectFaces(String bucket, String tempFileName) {
 
         DetectFacesRequest faceDetectRequest = new DetectFacesRequest()
                 .withImage(new Image().withS3Object(new S3Object().withBucket(bucket).withName(tempFileName)))
@@ -152,5 +164,44 @@ class ImageRecognitionService {
         metadata.setHeader('x-amz-acl', acl.toString())
         metadata.cacheControl = ('private') + ',max-age=31536000'
         return metadata
+    }
+
+    def blurFaces(String bucket, String tempFileName, List<FaceDetail> faceDetails) {
+
+        def o = s3Client.getObject(bucket, tempFileName)
+        ImageInputStream iin = ImageIO.createImageInputStream(o.getObjectContent())
+        BufferedImage image = ImageIO.read(iin)
+
+        int radius = 20
+        int size = radius + (image.width/50) as int
+        float weight = 1.0f / (size * size);
+        float[] matrix = new float[size * size];
+
+        for (int i = 0; i < matrix.length; i++) {
+            matrix[i] = weight;
+        }
+
+        BufferedImageOp op = new ConvolveOp(new Kernel(size, size, matrix), ConvolveOp.EDGE_NO_OP, null)
+
+        faceDetails.each { face ->
+            def fullWidth = image.width
+            def fullHeight = image.height
+            def margin = 10
+            def dest = image.getSubimage(
+                    ((face.boundingBox.left * fullWidth) as int) - margin,
+                    ((face.boundingBox.top * fullHeight) as int) - margin,
+                    ((face.boundingBox.width * fullWidth) as int) + margin * 2,
+                    ((face.boundingBox.height * fullHeight) as int) + margin * 2)
+            ColorModel cm = dest.getColorModel()
+            def src = new BufferedImage(cm, dest.copyData(dest.getRaster().createCompatibleWritableRaster()), cm.isAlphaPremultiplied(),
+                    null).getSubimage(0,0,dest.getWidth(), dest.getHeight())
+            op.filter(src, dest)
+        }
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream()
+        ImageIO.write(image, "jpg", baos)
+        byte[] bytes = baos.toByteArray()
+        baos.close()
+        return bytes
     }
 }
