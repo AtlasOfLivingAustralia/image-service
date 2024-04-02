@@ -34,10 +34,6 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         return url.toURL()
     }
 
-    def setup() {}
-
-    def cleanup() {}
-
     private BlockingHttpClient getRest() {
         HttpClientConfiguration configuration = new DefaultHttpClientConfiguration()
         configuration.readTimeout = Duration.ofSeconds(30)

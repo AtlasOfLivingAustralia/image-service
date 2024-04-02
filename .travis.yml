@@ -10,9 +10,9 @@ branches:
     - develop
     - /^feature\/.*$/
     - /^hotfix\/.*$/
-    - feature/image_upload_AI
 services:
   - docker
+  - postgresql
 before_cache:
   - rm -f  $HOME/.gradle/caches/modules-2/modules-2.lock
 
@@ -37,7 +37,7 @@ install:
   - './gradlew assemble'
 
 after_success:
-  - '[ "${TRAVIS_PULL_REQUEST}" = "false" ] && GRADLE_OPTS="-Dgrails.env=production" travis_retry ./gradlew publish'
+  - '[ "${TRAVIS_PULL_REQUEST}" = "false" ] && GRADLE_OPTS="-Dgrails.env=production" travis_retry ./gradlew publish --stacktrace'
 
 after_script:
   - docker-compose -f elastic.yml kill

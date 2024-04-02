@@ -1,6 +1,5 @@
 package au.org.ala.images
 
-import au.ala.org.ws.security.SkipApiKeyCheck
 import au.org.ala.images.utils.ImagesIntegrationSpec
 import grails.testing.mixin.integration.Integration
 import grails.gorm.transactions.Rollback
@@ -11,10 +10,7 @@ import io.micronaut.http.HttpResponse
 import io.micronaut.http.HttpStatus
 import io.micronaut.http.client.BlockingHttpClient
 import io.micronaut.http.client.HttpClient
-import spock.lang.Ignore
-import spock.lang.Specification
 
-@Ignore
 @Integration(applicationClass = Application.class)
 @Rollback
 class SearchSpec extends ImagesIntegrationSpec {
@@ -26,10 +22,6 @@ class SearchSpec extends ImagesIntegrationSpec {
         def url = "http://localhost:${serverPort}${serverContextPath}"
         return url.toURL()
     }
-
-    def setup() {}
-
-    def cleanup() {}
 
     private BlockingHttpClient getRest() {
         HttpClient.create(baseUrl).toBlocking()
