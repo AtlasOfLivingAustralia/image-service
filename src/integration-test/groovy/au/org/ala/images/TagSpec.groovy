@@ -14,12 +14,10 @@ import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.HttpClientConfiguration
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
-import spock.lang.Ignore
 import spock.lang.Specification
 
 import java.time.Duration
 
-@Ignore
 @Integration(applicationClass = Application.class)
 @Rollback
 class TagSpec extends ImagesIntegrationSpec {
@@ -42,7 +40,6 @@ class TagSpec extends ImagesIntegrationSpec {
         HttpClient.create(baseUrl, configuration).toBlocking()
     }
 
-    @Ignore
     //Fail in the jenkins
     void "test home page"() {
         when:

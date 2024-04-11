@@ -24,8 +24,8 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     AWSCredentialsProvider awsCredentialsProvider() {
-        def accessKey = grailsApplication.config.getProperty('aws.access-key')
-        def secretKey = grailsApplication.config.getProperty('aws.secret-key')
+        def accessKey = grailsApplication.config.getProperty('aws.access-key') ?: System.getenv('AWS_ACCESS_KEY_ID')
+        def secretKey = grailsApplication.config.getProperty('aws.secret-key') ?: System.getenv('AWS_SECRET_ACCESS_KEY')
         def sessionToken = grailsApplication.config.getProperty('aws.session-token')
 
 
@@ -44,7 +44,7 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean('awsRegion')
     Region awsRegion() {
-        def region = grailsApplication.config.getProperty('aws.region')
+        def region = grailsApplication.config.getProperty('aws.region', String, "ap-southeast-2")
         return region ? Region.getRegion(Regions.fromName(region)) : Regions.currentRegion
     }
 

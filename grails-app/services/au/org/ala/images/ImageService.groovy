@@ -511,6 +511,7 @@ SELECT
 
             String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "temp-upload-images")
             String tempImageName = grailsApplication.config.getProperty('aws.tempImageName', String, "temp-image")
+            imageRecognitionService.addImageToS3FromBytes(bytes, tempImageBucket, tempImageName, contentType)
             List faces = imageRecognitionService.detectFaces(tempImageBucket, tempImageName)
             if (faces) {
                 bytes = imageRecognitionService.blurFaces(tempImageBucket, tempImageName, faces)

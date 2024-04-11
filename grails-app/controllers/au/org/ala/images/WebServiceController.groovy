@@ -2017,6 +2017,9 @@ class WebServiceController {
             log.error("Problem storing image " + e.getMessage(), e)
             renderResults([success: false, message: "Failed to store image!"], 500)
         }
+        finally {
+            imageRecognitionService.cleanup(null)
+        }
     }
 
     @RequireApiKey(scopes=["image-service/write"])

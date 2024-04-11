@@ -13,7 +13,6 @@ import io.micronaut.http.MediaType
 import io.micronaut.http.client.BlockingHttpClient
 import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.exceptions.HttpClientResponseException
-import spock.lang.Ignore
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
 
@@ -24,7 +23,6 @@ import java.security.MessageDigest
 /**
  * Content negotiation tests for /image/<UUID> URLs
  */
-@Ignore
 @Integration(applicationClass = Application.class)
 @Rollback
 class ContentNegotiationSpec extends ImagesIntegrationSpec {

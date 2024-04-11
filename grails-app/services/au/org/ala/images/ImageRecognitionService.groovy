@@ -50,6 +50,11 @@ class ImageRecognitionService {
                 generateMetadata(file.contentType, null, file.size))
     }
 
+    def addImageToS3FromBytes(byte[] bytes, String bucket, String tempFileName, String contentType) {
+        s3Client.putObject(bucket, tempFileName, new ByteArrayInputStream(bytes),
+                generateMetadata(contentType))
+    }
+
     private deleteImageS3(String bucket, String filename) {
         s3Client.deleteObject(bucket, filename)
     }
