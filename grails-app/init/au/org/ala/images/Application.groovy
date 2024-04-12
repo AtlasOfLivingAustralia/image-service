@@ -65,8 +65,11 @@ class Application extends GrailsAutoConfiguration {
     }
 
     @Bean
-    AmazonSageMakerRuntime sageMakerRuntime() {
-        return AmazonSageMakerRuntimeClientBuilder.defaultClient()
+    AmazonSageMakerRuntime sageMakerRuntime(AWSCredentialsProvider awsCredentialsProvider, Region awsRegion) {
+        return AmazonSageMakerRuntimeClientBuilder.standard()
+        .withRegion(awsRegion.toString())
+        .withCredentials(awsCredentialsProvider)
+        .build()
     }
 
 }
