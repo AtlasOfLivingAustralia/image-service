@@ -65,7 +65,7 @@ class ImageRecognitionService {
     }
 
     def cleanup(filePath) {
-        String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "temp-upload-images")
+        String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "ala-image-service-test-uploads-production")
         String tempImageName = grailsApplication.config.getProperty('aws.tempImageName', String, "temp-image")
         if (filePath) {
             deleteImageFile("${tempImageName}.jpg")
@@ -75,7 +75,7 @@ class ImageRecognitionService {
 
     def checkImageContent(MultipartFile file, String filePath) {
 
-        String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "temp-upload-images")
+        String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "ala-image-service-test-uploads-production")
         String tempImageName = grailsApplication.config.getProperty('aws.tempImageName', String, "temp-image")
 
         try {

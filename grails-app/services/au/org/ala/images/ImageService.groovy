@@ -509,7 +509,7 @@ SELECT
         try {
             lock.lock()
 
-            String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "temp-upload-images")
+            String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "ala-image-service-test-uploads-production")
             String tempImageName = grailsApplication.config.getProperty('aws.tempImageName', String, "temp-image")
             imageRecognitionService.addImageToS3FromBytes(bytes, tempImageBucket, tempImageName, contentType)
             List faces = imageRecognitionService.detectFaces(tempImageBucket, tempImageName)
