@@ -25,9 +25,11 @@ import org.apache.tika.mime.MimeType
 import org.apache.tika.mime.MimeTypes
 import org.hibernate.FlushMode
 import org.hibernate.ScrollMode
+import org.imgscalr.Scalr
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.multipart.MultipartFile
 
+import java.awt.image.BufferedImage
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -36,11 +38,7 @@ import java.text.SimpleDateFormat
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantLock
 
-import org.imgscalr.Scalr
-
 import javax.imageio.ImageIO
-
-import java.awt.image.BufferedImage
 
 import static grails.web.http.HttpHeaders.USER_AGENT
 
