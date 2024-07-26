@@ -48,13 +48,16 @@ import org.codehaus.groovy.runtime.StackTraceUtils
 import org.hibernate.FlushMode
 import org.hibernate.ScrollMode
 import org.hibernate.StaleStateException
+import org.imgscalr.Scalr
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.orm.hibernate5.HibernateOptimisticLockingFailureException
 import org.springframework.transaction.TransactionStatus
 import org.springframework.web.multipart.MultipartFile
 
+import java.awt.image.BufferedImage
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
+import javax.imageio.ImageIO
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -67,12 +70,6 @@ import java.time.Duration
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.Lock
 import java.util.function.Supplier
-
-import org.imgscalr.Scalr
-import org.springframework.beans.factory.annotation.Value
-
-import java.awt.image.BufferedImage
-import javax.imageio.ImageIO
 
 import static grails.web.http.HttpHeaders.USER_AGENT
 
@@ -812,7 +809,6 @@ unnest(all_urls) AS unnest_url;
             }
 
             //check for existing image using MD5 hash
-            def image = Image.findByContentMD5Hash(md5Hash)
             def preExisting = false
             def isDuplicate = false
             // On final retry failure, just return that it's a duplicate without updating
