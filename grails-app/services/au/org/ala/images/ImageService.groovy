@@ -68,6 +68,14 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.Lock
 import java.util.function.Supplier
 
+import org.imgscalr.Scalr
+import org.springframework.beans.factory.annotation.Value
+
+import java.awt.image.BufferedImage
+import javax.imageio.ImageIO
+
+import static grails.web.http.HttpHeaders.USER_AGENT
+
 @Slf4j
 class ImageService implements MetricsSupport {
 
@@ -190,6 +198,9 @@ unnest(all_urls) AS unnest_url;
 
     @Value('${batch.optimisticLocking.stripes:250}')
     int optimisticLockingStripes = 250
+
+    @Value('${imageservice.images.maxWidth:-1}')
+    int maxImageWidth = -1 // -1 to disable resizing
 
     Map imagePropertyMap = null
 
@@ -794,6 +805,14 @@ unnest(all_urls) AS unnest_url;
         def lock = md5HashLocks.get(md5Hash)
         lock.lock()
         try {
+            if (maxImageWidth != -1) {
+                bytes = resizeImageIfNeeded(bytes.openStream().bytes, contentType, maxImageWidth) as ByteSource
+                filesize = (long) bytes.size()
+                md5Hash = bytes.hash(Hashing.md5()).asBytes().encodeAsHex()
+            }
+
+            //check for existing image using MD5 hash
+            def image = Image.findByContentMD5Hash(md5Hash)
             def preExisting = false
             def isDuplicate = false
             // On final retry failure, just return that it's a duplicate without updating
@@ -931,7 +950,8 @@ unnest(all_urls) AS unnest_url;
                     return new ImageStoreResult(image, preExisting, isDuplicate)
                 }
             }
-
+        } catch (Exception ex) {
+            log.error("Problem storing image ${originalFilename} - " + ex.getMessage())
         } finally {
             lock.unlock()
         }
@@ -2319,4 +2339,39 @@ unnest(all_urls) AS unnest_url;
             source.deleteStored(imageIdentifier)
         }
     }
+
+    private byte[] resizeImageIfNeeded(byte[] imageData, String contentType, int maxWidth) throws IOException {
+        if (!shouldResize(contentType)) {
+            return imageData
+        }
+
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(imageData)) {
+            BufferedImage originalImage = ImageIO.read(bais);
+
+            int originalWidth = originalImage.getWidth();
+            int originalHeight = originalImage.getHeight();
+
+            if (originalWidth > maxWidth) {
+                int newWidth = maxWidth;
+                int newHeight = (newWidth * originalHeight) / originalWidth;
+
+                BufferedImage resizedImage = Scalr.resize(originalImage, Scalr.Method.QUALITY, newWidth, newHeight);
+
+                try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                    ImageIO.write(resizedImage, contentType.split("/")[1], baos);
+                    return baos.toByteArray();
+                }
+            }
+
+            return imageData;
+        } catch (Exception e) {
+            log.error("Error resizing image", e);
+            return imageData;
+        }
+    }
+
+    private boolean shouldResize(String contentType) {
+        return contentType.startsWith("image/")
+    }
+
 }
