@@ -28,8 +28,8 @@ Please see the [Upgrading from 1.0 to 1.1](https://github.com/AtlasOfLivingAustr
 
 ## Architecture
 
-* Grails 3 web application ran as standalone executable jar
-* Open JDK 8
+* Grails 6.1.0 web application ran as standalone executable jar
+* Open JDK ii
 * Postgres database (9.6 or above)
 * Elastic search 7
 * Debian package install
