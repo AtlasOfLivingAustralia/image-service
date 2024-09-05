@@ -25,9 +25,11 @@ import org.apache.tika.mime.MimeType
 import org.apache.tika.mime.MimeTypes
 import org.hibernate.FlushMode
 import org.hibernate.ScrollMode
+import org.imgscalr.Scalr
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.multipart.MultipartFile
 
+import java.awt.image.BufferedImage
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -35,6 +37,8 @@ import java.sql.SQLException
 import java.text.SimpleDateFormat
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantLock
+
+import javax.imageio.ImageIO
 
 import static grails.web.http.HttpHeaders.USER_AGENT
 
@@ -123,6 +127,9 @@ SELECT
 
     @Value('${info.app.version:NaN}')
     String version
+
+    @Value('${imageservice.images.maxWidth:-1}')
+    int maxImageWidth = -1 // -1 to disable resizing
 
     Map imagePropertyMap = null
 
@@ -508,6 +515,11 @@ SELECT
         try {
             lock.lock()
 
+            if (maxImageWidth != -1) {
+                bytes = resizeImageIfNeeded(bytes, contentType, maxImageWidth)
+                filesize = (long) bytes.length
+            }
+
             def md5Hash = bytes.encodeAsMD5()
 
             //check for existing image using MD5 hash
@@ -590,6 +602,8 @@ SELECT
             }
 
             new ImageStoreResult(image, preExisting, isDuplicate)
+        } catch (Exception ex) {
+            log.error("Problem storing image ${originalFilename} - " + ex.getMessage())
         } finally {
             lock.unlock()
         }
@@ -1625,4 +1639,39 @@ SELECT
             source.deleteStored(imageIdentifier)
         }
     }
+
+    private byte[] resizeImageIfNeeded(byte[] imageData, String contentType, int maxWidth) throws IOException {
+        if (!shouldResize(contentType)) {
+            return imageData
+        }
+
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(imageData)) {
+            BufferedImage originalImage = ImageIO.read(bais);
+
+            int originalWidth = originalImage.getWidth();
+            int originalHeight = originalImage.getHeight();
+
+            if (originalWidth > maxWidth) {
+                int newWidth = maxWidth;
+                int newHeight = (newWidth * originalHeight) / originalWidth;
+
+                BufferedImage resizedImage = Scalr.resize(originalImage, Scalr.Method.QUALITY, newWidth, newHeight);
+
+                try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                    ImageIO.write(resizedImage, contentType.split("/")[1], baos);
+                    return baos.toByteArray();
+                }
+            }
+
+            return imageData;
+        } catch (Exception e) {
+            log.error("Error resizing image", e);
+            return imageData;
+        }
+    }
+
+    private boolean shouldResize(String contentType) {
+        return contentType.startsWith("image/")
+    }
+
 }
