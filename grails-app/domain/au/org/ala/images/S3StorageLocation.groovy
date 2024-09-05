@@ -6,8 +6,10 @@ import com.amazonaws.ClientConfiguration
 import com.amazonaws.HttpMethod
 import com.amazonaws.Protocol
 import com.amazonaws.SdkClientException
+import com.amazonaws.auth.AWSCredentialsProvider
 import com.amazonaws.auth.AWSStaticCredentialsProvider
 import com.amazonaws.auth.BasicAWSCredentials
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
 import com.amazonaws.client.builder.AwsClientBuilder
 import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
@@ -56,10 +58,21 @@ class S3StorageLocation extends StorageLocation {
 
     private AmazonS3 _s3Client
 
+    private AWSCredentialsProvider getAwsCredentialsProvider() {
+
+        AWSCredentialsProvider credentialsProvider
+        if (accessKey && secretKey) {
+            credentialsProvider = new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey))
+        } else {
+            credentialsProvider = DefaultAWSCredentialsProviderChain.getInstance()
+        }
+        return credentialsProvider
+    }
+
     private AmazonS3 getS3Client() {
         if (!_s3Client) {
             def builder = AmazonS3ClientBuilder.standard()
-                    .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey)))
+                    .withCredentials(getAwsCredentialsProvider())
                     .withClientConfiguration(buildClientConfiguration([:], [:]))
             if (pathStyleAccess) {
                 builder.pathStyleAccessEnabled = true
