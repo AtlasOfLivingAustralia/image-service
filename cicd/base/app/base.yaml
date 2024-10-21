@@ -1,0 +1,182 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Base resources for the Images service
+
+Parameters:
+  pBuild:
+    Type: String
+    Description: The build number
+  pBackupBucket:
+    Type: String
+    Description: The backup bucket
+  pCleanBranch:
+    Type: String
+    Description: The clean branch, can be used in resource names
+  pEnvironment:
+    Type: String
+    Description: The AWS environment this belongs to
+  pProductComponent:
+    Type: String
+    Description: The product component
+  pProductName:
+    Type: String
+    Description: The name of the product
+  pOidcConnectProvider:
+    Type: String
+    Description: The OIDC connect provider
+  pClusterOidcIssuerUrl:
+    Type: String
+    Description: The OIDC issuer URL for the cluster
+
+Conditions:
+
+  IsDev: !Equals
+    - !Ref pEnvironment
+    - development
+  NotProd: !Not
+    - !Equals
+      - !Ref pEnvironment
+      - production
+  IsFirstBuild: !Equals [!Ref pBuild, "1"]
+
+Resources:
+
+  ImagesRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: !If [ NotProd, true, false ]
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      RepositoryName: !Sub
+                         - ${pProductName}-${ResourceName}
+                         - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      RepositoryPolicyText:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowPublicPull
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+      Tags:
+        - Key: Environment
+          Value: !Ref pEnvironment
+        - Key: Branch
+          Value: !Ref pCleanBranch
+
+  ImagesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+              {
+                  "Effect": "Allow",
+                  "Principal": {
+                      "Federated": "${pOidcConnectProvider}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                      "StringEquals": {
+                                        "${pClusterOidcIssuerUrl}:sub": "system:serviceaccount:${pProductName}:images-service-account",
+                                        "${pClusterOidcIssuerUrl}:aud": "sts.amazonaws.com"
+                      }
+                  }
+              },
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service":  "ec2.amazonaws.com"
+                
+                },
+                "Action": "sts:AssumeRole"
+              }
+          ]
+        }
+      Description: !Sub 'Ec2 instance profile role for ${AWS::StackName} ${pEnvironment} build ${pBuild}'
+      ManagedPolicyArns:
+        - !Sub arn:aws:iam::${AWS::AccountId}:policy/cpt/cptSSMInstanceCoreCloudWatchPatch
+      Policies:
+        - PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            - Effect: Allow
+              Action:
+                - 'secretsmanager:getsecretvalue'
+              Resource:
+                - !Sub ${ImagesSecret}-??????
+          PolicyName: secrets
+        - PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            - Effect: Allow
+              Action:
+                - s3:DeleteObject
+                - s3:DeleteObjectVersion
+                - s3:GetBucketLocation
+                - s3:GetObject
+                - s3:ListBucket
+                - s3:PutObject
+              Resource:
+                - !Sub arn:aws:s3:::${pBackupBucket}
+                - !Sub arn:aws:s3:::${pBackupBucket}/*
+          PolicyName: backups
+        - PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendTemplatedEmail
+                - ses:SendRawEmail
+              Resource:
+                - '*'
+          PolicyName: email
+      RoleName: !Sub '${AWS::StackName}--${pEnvironment}--${pBuild}'
+      Tags:
+        - Key: Name
+          Value: !Sub 
+              - ${pProductName}-${ResourceName}
+              - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+ 
+
+  ImagesSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub 
+              - ${pProductName}-${ResourceName}
+              - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      Description: !Sub Images app ${pEnvironment} secrets
+      SecretString: !If
+              - IsFirstBuild
+              - |
+                {
+                   "oidc_secret" : "",
+                   "db-password" : "",
+                }
+              - !Ref "AWS::NoValue"
+
+
+
+Outputs:
+
+  ImagesRepositoryArn:
+    Description: The ECR repository ARN for the Images service
+    Value: !GetAtt ImagesRepository.Arn
+
+  ImagesRepositoryName:
+    Description: The ECR repository ARN for the Images service
+    Value: !Ref ImagesRepository
+
+  ImagesSecret:
+    Description: The Secrets name for Images
+    Value: !Ref ImagesSecret
+
+  ImagesRoleArn:
+    Description: The role ARN for the Images service
+    Value: !GetAtt ImagesRole.Arn

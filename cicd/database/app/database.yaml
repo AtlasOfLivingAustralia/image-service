@@ -1,0 +1,247 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: 'An Aurora PostgreSQL RDS Instance with AutoScaling'
+
+Parameters:
+  pAdminUser:
+    Description: The username for the RDS admin user
+    Type: String
+    Default: admin
+  pBacktrackWindow:
+    Description: Backtrack window in seconds
+    Type: Number
+  pBackupRetention:
+    Description: Backup retention period in days
+    Type: Number
+  pBuild:
+    Description: The CodeBuild build number
+    Type: Number
+  pCleanBranch:
+    Description: The clean branch
+    Type: String
+  pCreateReplica:
+    Description: Create a read replica
+    Type: String
+    AllowedValues:
+      - true
+      - false
+  pDbInstanceName:
+    Description: The db instance name. This gets used as part of the hostname to connect to the db
+    Type: String
+  pDbVersion:
+    Type: String
+    Description: The version of PostgreSQL for the RDS instance
+  pDeletionProtection:
+    Description: Enable deletion protection
+    Type: String
+    AllowedValues:
+      - true
+      - false
+  pEnvironment:
+    Description: Environment for this RDS instance
+    AllowedValues:
+      - development
+      - testing
+      - staging
+      - production
+    Type: String
+  pInstanceClass:
+    Description: The RDS instance class
+    Type: String
+  pProductName:
+    Description: The product name
+    Type: String
+  pPerformanceInsights:
+    Description: Enable performance insights
+    Type: String
+    AllowedValues:
+      - true
+      - false
+  pRdsSnapshotRestore:
+    Description: The snapshot to restore from
+    Type: String
+    Default: false
+  pVpcStackName:
+    Description: The name of the Bedrock VPC stack
+    Type: String
+
+Conditions: 
+  CreateReplica: !Equals
+                    - !Ref pCreateReplica
+                    - true
+  IsDev: !Equals
+            - !Ref pEnvironment
+            - development
+  IsProd: !Equals
+            - !Ref pEnvironment
+            - production
+  RestoreFromSnapshot: !Not
+                          - !Equals
+                              - !Ref pRdsSnapshotRestore
+                              - false
+
+Resources:
+
+  DbParamGrp:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Images DB instance parameter grp
+      Family: aurora-postgresql111
+
+  ClusterParamGrp:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties: 
+      Description: Images cluster param group
+      Family: aurora-postgresql111
+      Parameters: 
+        character_set_client: utf8mb4
+        character_set_connection: utf8mb4
+        character_set_database: utf8mb4
+        character_set_results: utf8mb4
+        character_set_server: utf8mb4
+        collation_connection: utf8mb4_unicode_ci
+        collation_server: utf8mb4_unicode_ci
+        time_zone: Australia/Sydney
+
+  DbSubnetGrp:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: RDS subnet group
+      SubnetIds: !Split 
+                   - ',' 
+                   - Fn::ImportValue:
+                       Fn::Sub: ${pVpcStackName}-PriSubnets
+
+  DbSecurityGrp:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow access from the VPC
+      VpcId:
+         Fn::ImportValue:
+           Fn::Sub: ${pVpcStackName}-Vpc
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 5432
+        ToPort: 5432
+        CidrIp: 
+          Fn::ImportValue:
+            Fn::Sub: ${pVpcStackName}-VpcCidr
+      Tags:
+      - Key: Name
+        Value: images RDS SG
+
+  DbCluster:
+    Type: "AWS::RDS::DBCluster"
+    UpdateReplacePolicy: !If [ IsProd, "Snapshot", "Delete" ]
+    DeletionPolicy: !If [ IsProd, "Snapshot", "Delete" ]
+    DependsOn:
+         - LogGroup
+    Properties:
+      BacktrackWindow: !Ref pBacktrackWindow
+      BackupRetentionPeriod: !Ref pBackupRetention
+      CopyTagsToSnapshot: true
+      DatabaseName: !Sub ${pProductName}${pEnvironment}
+      DBClusterIdentifier: !Sub ${pDbInstanceName}-cluster
+      DBClusterParameterGroupName: !Ref ClusterParamGrp
+      DBSubnetGroupName: !Ref DbSubnetGrp
+      DeletionProtection: !Ref pDeletionProtection
+      EnableCloudwatchLogsExports:
+        - postgresql
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      EngineVersion: !Ref pDbVersion
+      MasterUsername: !Ref pAdminUser
+      MasterUserPassword: !Sub
+                            - '{{resolve:secretsmanager:images-${ResourceName}:SecretString:db-password}}'
+                            - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      Port: 5432
+      PreferredBackupWindow: 16:00-17:00
+      PreferredMaintenanceWindow: tue:17:00-tue:19:00
+      SnapshotIdentifier: !If [ RestoreFromSnapshot, !Ref pRdsSnapshotRestore, !Ref "AWS::NoValue" ]
+      Tags:
+        - Key: Name
+          Value: Images DB Cluster
+      VpcSecurityGroupIds:
+        - !Ref DbSecurityGrp
+
+  RdsPrimary:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      DBInstanceClass: !Ref pInstanceClass
+      DBInstanceIdentifier: !Sub ${pDbInstanceName}-primary
+      DBParameterGroupName: !Ref DbParamGrp
+      DBSubnetGroupName: !Ref DbSubnetGrp
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref DbCluster
+      PubliclyAccessible: false
+      EnablePerformanceInsights: !Ref pPerformanceInsights
+      Tags:
+      - Key: Name
+        Value: Images DB primary
+
+  RdsReplica:
+    Type: AWS::RDS::DBInstance
+    Condition: CreateReplica
+    DependsOn:
+      - RdsPrimary
+    Properties:
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      DBInstanceClass: !Ref pInstanceClass
+      DBInstanceIdentifier: !Sub ${pDbInstanceName}-replica
+      DBParameterGroupName: !Ref DbParamGrp
+      DBSubnetGroupName: !Ref DbSubnetGrp
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref DbCluster
+      PubliclyAccessible: false
+      EnablePerformanceInsights: !Ref pPerformanceInsights
+      Tags:
+      - Key: Name
+        Value: Images DB replica
+
+  RdsScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn:
+      - DbCluster
+    Properties:
+      MaxCapacity: 15
+      MinCapacity: 1
+      ResourceId: !Sub cluster:${pDbInstanceName}-cluster
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/rds.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_RDSCluster
+      ScalableDimension: rds:cluster:ReadReplicaCount
+      ServiceNamespace: rds
+
+  AuroraScalingPolicy:
+    Type : "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: Images Aurora scaling policy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref RdsScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: RDSReaderAverageCPUUtilization
+        ScaleInCooldown: 600
+        ScaleOutCooldown: 300
+        TargetValue: 60.0
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: !Sub /aws/rds/cluster/${pDbInstanceName}-cluster/logs
+      RetentionInDays: 30
+
+
+Outputs:
+  WriteEndpoint:
+    Description: The write endpoint of the database
+    Value: !GetAtt DbCluster.Endpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-WriteEndpoint
+  ReadEndpoint:
+    Description: The read endpoint of the database
+    Value: !GetAtt DbCluster.ReadEndpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-ReadEndpoint
+

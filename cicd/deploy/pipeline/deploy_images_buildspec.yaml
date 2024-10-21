@@ -1,0 +1,52 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+  secrets-manager:
+    DB_PASSWORD: $IMAGES_SECRET_NAME:db-password
+
+phases:
+  install:
+    commands:
+      - echo Installing dependencies...
+      - apt update -y
+        && cat /etc/lsb-release
+        && apt-get -q -y install openjdk-11-jdk
+        && apt-get -q -y install unzip
+        && apt-get -q -y install zip
+        && apt-get -q -y install curl
+        && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+        && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+        && apt-get update
+        && apt-get install -y docker-ce
+        && curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        && chmod 700 get_helm.sh
+        && ./get_helm.sh
+        && curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        && chmod +x kubectl
+        && mv kubectl /usr/local/bin/
+        && ARCH=amd64
+        && PLATFORM=$(uname -s)_$ARCH
+        && curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
+        && tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
+        && mv /tmp/eksctl /usr/local/bin
+
+  build:
+    commands:
+      - echo Build started on $(date)
+      - aws eks --region ap-southeast-2 update-kubeconfig --name $EKS_CLUSTER_NAME
+      - export REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGES_ECR_REPOSITORY_NAME
+      - IMAGES_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesRoleArn'].OutputValue" --output text)
+      - kubectl config set-context --current --namespace=images
+      - printf "$(kubectl config current-context)\n"
+      - eksctl create iamserviceaccount --name images-service-account --namespace images --cluster $EKS_CLUSTER_NAME --attach-role-arn $IMAGES_ROLE_ARN --approve --override-existing-serviceaccounts --tags "product=images,environment=development,branch=${CLEAN_BRANCH}"
+      - cd helm
+      - export CERTIFICATE_ARN=$(aws acm list-certificates --region ap-southeast-2 --query "CertificateSummaryList[?DomainName=='*.dev.ala.org.au' && Status=='ISSUED'].CertificateArn" --output text)
+      - helm upgrade --install ala-images . -n images --set image.repository=$REPO --set image.tag=$IMAGE_TAG --set ingress.hostname=images.dev.ala.org.au --set rds.externalName=$DB_WRITE_ENDPOINT --set ingress.certificateArn=$CERTIFICATE_ARN
+
+  post_build:
+    commands:
+      - echo Post-build phase...
+      - echo Build completed on $(date)

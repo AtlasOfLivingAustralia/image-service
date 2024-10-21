@@ -1,0 +1,77 @@
+version: 0.2
+###
+# This build project exports any variables needed for later stages and actions,
+# builds the template configs used to launch the CloudFormation templates
+
+env:
+  shell: bash
+  git-credential-helper: yes
+  variables:
+    DEBIAN_FRONTEND: "noninteractive"
+  exported-variables:
+    - CODEBUILD_BUILD_NUMBER
+    - PRODUCT_NAME
+    - PRODUCT_COMPONENT
+    - SLACK_DEPLOY_NOTIFICATION
+    - SLACK_ALERT_CHANNEL
+    - IMAGES_ECR_REPOSITORY_NAME
+
+phases:
+
+  install:
+    commands:
+      - echo Running on $(lsb_release -d | cut -f2)
+      - echo aws-cli version $(aws --version)
+      - pip install jinja2
+      - export CUR_PIPELINE_FINGERPRINT=$(md5sum cicd/$PRODUCT_COMPONENT/pipeline/pipeline.yaml | awk '{print $1}')
+      - # This next bit checks if the running pipeline is out of sync with the pipeline in the
+      - # current code revision. If it is it re-launches itself! For a normal branch commit the
+      - # pipeline is set to autorun on update so it will restart automatically and launch the
+      - # latest revision on the branch. For a rollback we dont want it to restart automatically as
+      - # we need to run a specific commit, not the latest. In this case the pipeline is set NOT to
+      - # autorun on update. It will have to be manually started after the rollback pipeline
+      - # has finished launching
+      - | 
+          if [[ $PIPELINE_FINGERPRINT != $CUR_PIPELINE_FINGERPRINT ]]; then
+            echo existing pipeline is out of sync with current code revision, relaunching!
+            cd cicd/$PRODUCT_COMPONENT/pipeline/
+            ./deploy_pipeline.sh -e ${ENVIRONMENT:0:4} -b $SRC_BRANCH
+            # pipeline execution should now stop if this is a rollback, 
+            # or restart automatically if this a normal branch deploy
+            exit 1
+          else
+            echo existing pipeline is in sync with current code revision, proceeding with the deploy!
+          fi
+    finally:
+      - #echo This always runs even if the update or install command fails
+
+  pre_build:
+    commands:
+      - echo Entered the pre_build phase...
+      - echo source branch is $SRC_BRANCH
+      - echo clean branch is $CLEAN_BRANCH
+      - echo Environment is $ENVIRONMENT
+      - echo generating environment vars...
+      - cicd/gen_env_vars.py --env $ENVIRONMENT --clean-branch $CLEAN_BRANCH --conf cicd/$PRODUCT_COMPONENT/config.ini > env.txt
+      - echo loading config..
+      - set -a ; source env.txt ; set +a
+      # import stack export from the base cloudformation stack
+      - echo importing stack output...
+      - IMAGES_ECR_REPOSITORY_NAME=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesRepositoryName'].OutputValue" --output text)
+      - IMAGES_SECRETS=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesSecrets'].OutputValue" --output text)
+      - echo IMAGES_ECR_REPOSITORY_NAME=$IMAGES_ECR_REPOSITORY_NAME
+      - echo IMAGES_SECRETS=$IMAGES_SECRETS
+    finally:
+      - #echo This always runs
+
+  build:
+    commands:
+      - echo Entered the build phase...
+      # package templates and generate the template configs
+    finally:
+      - #echo This always runs
+
+
+  post_build:
+    commands:
+      - #echo Entered the post_build phase...

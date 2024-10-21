@@ -1,0 +1,53 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+
+phases:
+  install:
+    commands:
+      - echo Installing dependencies...
+      - apt update -y
+        && cat /etc/lsb-release
+        && apt-get -q -y install openjdk-11-jdk
+        && apt-get -q -y install unzip
+        && apt-get -q -y install zip
+        && apt-get -q -y install curl
+        && curl -s "https://get.sdkman.io" | bash
+        && chmod a+x /root/.sdkman/bin/sdkman-init.sh
+        && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails 6.0.0 /root/.sdkman/candidates/grails/6.0.0
+        && apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+        && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+        && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+        && apt-get update
+        && apt-get install -y docker-ce
+      - ./gradlew clean
+      - ./gradlew assemble
+
+  build:
+    commands:
+      - echo Build started on $(date)
+      - echo Building the project...
+      - ./gradlew build
+      - ./gradlew bootWar
+
+  post_build:
+    commands:
+      - echo Post-build phase...
+      - echo Build completed on $(date)
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - rm -rf build/libs/*-plain.war
+      - echo Building the Docker image...
+      - docker build -t ala-images .
+      - echo Tagging the Docker image...
+      - export REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGES_ECR_REPOSITORY_NAME
+      - echo REPO=$REPO
+      - echo tagging
+      - docker tag ala-images:latest $REPO:$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER
+      - docker tag ala-images:latest $REPO:latest
+      - echo Pushing the Docker image to Amazon ECR...
+      - docker push $REPO:$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER
+      - docker push $REPO:latest

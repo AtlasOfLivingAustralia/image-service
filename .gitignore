@@ -1,6 +1,6 @@
 out
 .gradle
-build
+/build
 .slcache
 /target
 /.idea

@@ -1,0 +1,59 @@
+version: 0.2
+###
+# This build project sends out the various deploy notifications
+
+env:
+  shell: bash
+  variables:
+    DEBIAN_FRONTEND: "noninteractive"
+  exported-variables:
+    - CODEBUILD_BUILD_NUMBER
+  secrets-manager:
+    DD_API_KEY: ala-secrets-production:datadog-api-key
+    SLACK_OAUTH_TOKEN: ala-secrets-production:slack-oauth-token
+
+phases:
+
+  install:
+    commands:
+      - echo Running on $(lsb_release -d | cut -f2)
+      - echo aws-cli version $(aws --version)
+    finally:
+      - #echo This always runs even if the update or install command fails
+
+
+  pre_build:
+    commands:
+      - echo Entered the pre_build phase...
+      - # have to get the commit message here because passing it as an env var from
+      - # the pipeline doesn't work when the commit message contains json breaking characters
+      - export PIPELINE_NAME=$(echo $CODEBUILD_INITIATOR | cut -d'/' -f2)
+      - export COMMIT_MSG=$(aws codepipeline list-pipeline-executions --pipeline-name $PIPELINE_NAME --max-items 1 --query 'pipelineExecutionSummaries[0].sourceRevisions[0].revisionSummary' | jq -r '. | fromjson | .CommitMessage')
+      - echo source branch is $SRC_BRANCH
+      - echo clean branch is $CLEAN_BRANCH
+      - echo Environment is $ENVIRONMENT
+      - echo commit msg is $COMMIT_MSG
+      - echo commit id is $COMMIT_ID
+      - echo Repo is $REPO
+      - export DEPLOY_MSG="$AUTHOR has released a $ENVIRONMENT update to $PRODUCT_NAME $PRODUCT_COMPONENT."
+      - echo $DEPLOY_MSG
+    finally:
+      - #echo This always runs
+
+  build:
+    commands:
+      - echo Datadog deploy notification
+      - cicd/dd_notification.sh
+      - echo Slack Deploy notification
+      - |
+        if [ "$SLACK_DEPLOY_NOTIFICATION" == "true" ] ; then
+          cicd/slack_notification.sh
+        fi
+
+    finally:
+      - #echo This always runs
+
+
+  post_build:
+    commands:
+      - #echo Entered the post_build phase...

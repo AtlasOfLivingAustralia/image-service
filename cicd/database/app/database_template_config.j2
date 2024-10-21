@@ -1,0 +1,37 @@
+{
+  "Parameters" : {
+    "pAdminUser"           : "{{ admin_user }}",
+    "pBacktrackWindow"     : "{{ backtrack_window }}",
+    "pBackupRetention"     : "{{ backup_retention }}",
+    "pBuild"               : "{{ codebuild_build_number }}",
+    "pCleanBranch"         : "{{ clean_branch }}",
+    "pCreateReplica"       : "{{ create_replica }}",
+    "pDbInstanceName"      : "{{ db_instance_name }}",
+    "pDbVersion"           : "{{ db_version }}",
+    "pDeletionProtection"  : "{{ deletion_protection }}",
+    "pEnvironment"         : "{{ environment }}",
+    "pInstanceClass"       : "{{ instance_class }}",
+    "pPerformanceInsights" : "{{ performance_insights }}",
+    "pProductName"         : "{{ product_name }}",
+    "pRdsSnapshotRestore"  : "{{ rds_snapshot_restore }}",
+    "pVpcStackName"        : "{{ vpc_stack_name }}"
+  },
+  "Tags" : {
+    "product"     : "{{ product_name }}",
+    "component"   : "{{ product_component }}",
+    "environment" : "{{ environment }}",
+    "branch"      : "{{ src_branch }}",
+    "version"     : "{{ commit_id }}",
+    "build"       : "{{ codebuild_build_number }}"
+  },
+  "StackPolicy" : {
+    "Statement" : [
+      {
+        "Effect" : "Allow",
+        "Action" : "Update:*",
+        "Principal": "*",
+        "Resource" : "*"
+      }
+    ]
+  }
+}
