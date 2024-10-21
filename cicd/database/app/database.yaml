@@ -93,8 +93,8 @@ Resources:
     Properties: 
       Description: Images cluster param group
       Family: aurora-postgresql11
-      Parameters: 
-        time_zone: Australia/Sydney
+      Parameters:
+        timezone: Australia/Sydney
 
   DbSubnetGrp:
     Type: AWS::RDS::DBSubnetGroup
