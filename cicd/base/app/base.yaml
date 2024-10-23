@@ -155,10 +155,10 @@ Resources:
       SecretString: !If
               - IsFirstBuild
               - |
-                {
+                '{
                    "oidc_secret" : "",
-                   "db-password" : "",
-                }
+                   "db-password" : ""
+                }'
               - !Ref "AWS::NoValue"
 
 
