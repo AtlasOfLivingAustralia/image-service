@@ -147,6 +147,7 @@ Resources:
 
   ImagesSecret:
     Type: AWS::SecretsManager::Secret
+    Condition: IsFirstBuild
     Properties:
       Name: !Sub 
               - ${pProductName}-${ResourceName}
