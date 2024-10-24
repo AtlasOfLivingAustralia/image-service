@@ -152,11 +152,7 @@ Resources:
               - ${pProductName}-${ResourceName}
               - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
       Description: !Sub Images app ${pEnvironment} secrets
-      SecretString: !If
-              - IsFirstBuild
-              - |
-                '{\"oidc_secret\": \"\", \"db-password\": \"\"}'
-              - !Ref "AWS::NoValue"
+      SecretString: "{\"oidc_secret\": \"\", \"db-password\": \"\"}"
 
 
 
