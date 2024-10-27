@@ -7,9 +7,6 @@ Parameters:
     Description: The username for the RDS admin user
     Type: String
     Default: admin
-  pBacktrackWindow:
-    Description: Backtrack window in seconds
-    Type: Number
   pBackupRetention:
     Description: Backup retention period in days
     Type: Number
@@ -130,7 +127,6 @@ Resources:
     DependsOn:
          - LogGroup
     Properties:
-      BacktrackWindow: !Ref pBacktrackWindow
       BackupRetentionPeriod: !Ref pBackupRetention
       CopyTagsToSnapshot: true
       DatabaseName: !Sub ${pProductName}${pEnvironment}
