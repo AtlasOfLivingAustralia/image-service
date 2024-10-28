@@ -56,7 +56,8 @@ class UrlMappings {
 
         // homogeneous URLs
         "/image/$id/thumbnail"(controller: "image", action: "proxyImageThumbnail")
-        "/image/$id/large"(controller: "image", action: "proxyImageThumbnailType", params: ['thumbnailType': 'large'])
+        "/image/$id/$type"(controller: "image", action: "proxyImageThumbnailType")
+        "/image/$id/thumbnail_$type"(controller: "image", action: "proxyImageThumbnailType")
         "/image/$id/tms/$z/$x/${y}.png"(controller: "image", action: "proxyImageTile")
         "/image/$id/original"(controller: "image", action: "getOriginalFile")
 

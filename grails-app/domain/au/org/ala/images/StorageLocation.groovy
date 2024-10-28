@@ -169,4 +169,8 @@ abstract class StorageLocation {
     abstract void migrateTo(String uuid, String contentType, StorageLocation destination)
 
     abstract boolean verifySettings()
+
+    abstract boolean thumbnailExists(String uuid, String type)
+
+    abstract boolean tileExists(String uuid, int x, int y, int z)
 }

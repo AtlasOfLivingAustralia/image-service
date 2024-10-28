@@ -249,10 +249,10 @@ class WebServiceController {
                 imageService.scheduleArtifactGeneration(imageInstance.id, userId)
                 results.message = "Image artifact generation scheduled for image ${imageInstance.id}"
             } else {
-                def count = forEachImageId { imageId ->
-                    imageService.scheduleArtifactGeneration(imageId, userId)
-                }
-                results.message = "Image artifact generation scheduled for ${count} images."
+//                def count = forEachImageId { imageId ->
+//                    imageService.scheduleArtifactGeneration(imageId, userId)
+//                }
+                results.message = "Not performing indexing on all images."
             }
             flash.message  = results.message
             renderResults(results)
@@ -2112,7 +2112,7 @@ class WebServiceController {
                 def newImage = results[srcImage.sourceUrl ?: srcImage.imageUrl]
                 if (newImage && newImage.success) {
                     imageService.setMetadataItems(newImage.image, srcImage, MetaDataSourceType.SystemDefined, userId)
-                    imageService.scheduleArtifactGeneration(newImage.image.id, userId)
+//                    imageService.scheduleArtifactGeneration(newImage.image.id, userId)
                     imageService.scheduleImageIndex(newImage.image.id)
                     newImage.image = null
                 }

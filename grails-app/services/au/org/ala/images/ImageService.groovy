@@ -233,6 +233,10 @@ SELECT
             'thumbnail_square_darkGray'
     ] as Set
 
+    boolean validateThumbnailType(String thumbnailType){
+        return IMAGE_SERVICE_URL_SUFFIXES.contains('thumbnail' + thumbnailType ? '_' + thumbnailType : '')
+    }
+
     String findImageIdInImageServiceUrl(String imageUrl) {
         // is it as image service URL?
         // if so, no need to load the image, use the identifier.....
@@ -616,7 +620,7 @@ SELECT
     }
 
     def schedulePostIngestTasks(Long imageId, String identifier, String fileName, String uploaderId){
-        scheduleArtifactGeneration(imageId, uploaderId)
+//        scheduleArtifactGeneration(imageId, uploaderId)
         scheduleImageIndex(imageId)
         scheduleImageMetadataPersist(imageId,identifier, fileName,  MetaDataSourceType.Embedded, uploaderId)
     }
@@ -1215,7 +1219,7 @@ SELECT
             auditService.log(parentImage, "Subimage created ${subimage.imageIdentifier}", userId)
             auditService.log(subimage, "Subimage created from parent image ${parentImage.imageIdentifier}", userId)
 
-            scheduleArtifactGeneration(subimage.id, userId)
+//            scheduleArtifactGeneration(subimage.id, userId)
             scheduleImageIndex(subimage.id)
 
             return subimage

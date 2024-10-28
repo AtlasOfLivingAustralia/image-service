@@ -149,6 +149,16 @@ class SwiftStorageLocation extends StorageLocation {
     }
 
     @Override
+    boolean thumbnailExists(String uuid, String type) {
+        return container.getObject(createThumbLargePathFromUUID(uuid, type)).exists()
+    }
+
+    @Override
+    boolean tileExists(String uuid, int x, int y, int z) {
+        return container.getObject(createTilesPathFromUUID(uuid, x, y, z)).exists()
+    }
+
+    @Override
     void storeTileZipInputStream(String uuid, String zipFileName, String contentType, long length = 0, ZipInputStream zipInputStream) {
         def path = FilenameUtils.normalize(createTilesPathFromUUID(uuid) + '/' + zipFileName)
         def obj = container.getObject(path)

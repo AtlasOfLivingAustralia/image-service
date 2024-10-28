@@ -273,6 +273,16 @@ class S3StorageLocation extends StorageLocation {
     }
 
     @Override
+    boolean thumbnailExists(String uuid, String type) {
+        return s3Client.doesObjectExist(bucket, createThumbLargePathFromUUID(uuid, type))
+    }
+
+    @Override
+    boolean tileExists(String uuid, int x, int y, int z) {
+        return s3Client.doesObjectExist(bucket, createTilesPathFromUUID(uuid, x, y, z))
+    }
+
+    @Override
     void storeTileZipInputStream(String uuid, String zipInputFileName, String contentType, long length = 0, ZipInputStream zipInputStream) {
         def path = FilenameUtils.normalize(createTilesPathFromUUID(uuid) + '/' + zipInputFileName)
         zipInputStream.withStream { stream ->

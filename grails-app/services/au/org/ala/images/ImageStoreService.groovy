@@ -11,6 +11,7 @@ import au.org.ala.images.tiling.TilerSink
 import au.org.ala.images.util.ImageReaderUtils
 import grails.gorm.transactions.Transactional
 import grails.web.mapping.LinkGenerator
+import io.micronaut.caffeine.cache.Caffeine
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.FileHeader
 import org.apache.commons.io.FileUtils
@@ -31,6 +32,9 @@ class ImageStoreService {
     def logService
     def auditService
     LinkGenerator grailsLinkGenerator
+
+    def thumbnailCache = Caffeine.newBuilder().maximumSize(10_000).build()
+    def tileCache = Caffeine.newBuilder().maximumSize(10_000).build()
 
     ImageDescriptor storeImage(byte[] imageBytes, StorageLocation sl, String contentType, String contentDisposition = null) {
         def uuid = UUID.randomUUID().toString()
@@ -171,27 +175,44 @@ class ImageStoreService {
         return generateThumbnailsImpl(imageBytes, image)
     }
 
-    private List<ThumbnailingResult> generateThumbnailsImpl(byte[] imageBytes, Image image) {
+    List<ThumbnailingResult> generateImageThumbnail(Image image, String type) {
+        def imageBytes = image.retrieve()
+        return generateThumbnailsImpl(imageBytes, image, type)
+    }
+
+    private List<ThumbnailingResult> generateThumbnailsImpl(byte[] imageBytes, Image image, String type = null) {
         def t = new ImageThumbnailer()
         def imageIdentifier = image.imageIdentifier
         int size = grailsApplication.config.getProperty('imageservice.thumbnail.size') as Integer
-        def thumbDefs = [
-            new ThumbDefinition(size, false, null, "thumbnail"),
-            new ThumbDefinition(size, true, null, "thumbnail_square"),
-            new ThumbDefinition(size, true, Color.black, "thumbnail_square_black"),
-            new ThumbDefinition(size, true, Color.white, "thumbnail_square_white"),
-            new ThumbDefinition(size, true, Color.darkGray, "thumbnail_square_darkGray"),
-            new ThumbDefinition(650, false, null, "thumbnail_large"),
-        ]
+        def thumbDefs = new ArrayList<ThumbDefinition>(type == null ? 6 : 1)
+        if (''.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(new ThumbDefinition(size, false, null, "thumbnail"))
+        } else if ('square'.equals(type) || type == null) {
+            thumbDefs.add(new ThumbDefinition(size, true, null, "thumbnail_square"))
+        } else if ('square_black'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(new ThumbDefinition(size, true, Color.black, "thumbnail_square_black"))
+        } else if ('square_white'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(new ThumbDefinition(size, true, Color.white, "thumbnail_square_white"))
+        } else if ('square_darkGray'.equalsIgnoreCase(type) || 'square_darkGrey'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(new ThumbDefinition(size, true, Color.darkGray, "thumbnail_square_darkGray"))
+        } else if ('large'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(new ThumbDefinition(650, false, null, "thumbnail_large"))
+        }
+
         def results = t.generateThumbnails(imageBytes, GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).thumbnailByteSinkFactory(image.imageIdentifier), thumbDefs as List<ThumbDefinition>)
         auditService.log(imageIdentifier, "Thumbnails created", "N/A")
         return results
     }
 
     void generateTMSTiles(String imageIdentifier) {
+        def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true ])
+        generateTMSTiles(image)
+    }
+
+
+    ImageTilerResults generateTMSTiles(Image image) {
         logService.log("Generating TMS compatible tiles for image ${imageIdentifier}")
         def ct = new CodeTimer("Tiling image ${imageIdentifier}")
-        def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true])
 
         def results = tileImage(image)
         if (results.success) {
@@ -206,6 +227,8 @@ class ImageStoreService {
         }
         auditService.log(imageIdentifier, "TMS tiles generated", "N/A")
         ct.stop(true)
+
+        return results
     }
 
     private static ImageTilerResults tileImage(Image image) {
@@ -274,33 +297,121 @@ class ImageStoreService {
 
     }
 
+    private boolean ensureThumbnailExists(Image image, String type) {
+        // TODO drop db connection for this bit?
+        return thumbnailCache.get(image.imageIdentifier, { imageIdentifier ->
+            try {
+                def exists = image.thumbnailExists(type)
+                if (!exists) {
+                    def results = generateImageThumbnail(image, type)
+                    if (results.size() > 0) {
+                        exists = true
+                    }
+                }
+                return exists
+            } catch (e) {
+                log.error("Error generating thumbnail for image ${image.imageIdentifier} of type ${type}", e)
+                return null
+            }
+        })
+    }
+
+    private boolean ensureTileExists(Image image, int x, int y, int z) {
+        // TODO update this to be able to generate a single layer at a time
+        return tileCache.get(image.imageIdentifier, { imageIdentifierAndZLevel ->
+            try {
+                def exists = image.tileExists(x,y,z)
+                if (!exists && image.zoomLevels < 1) {
+                    def results = generateTMSTiles(image)
+                    exists = results.success
+                }
+                return exists
+            } catch (e) {
+                log.error("Error generating thumbnail for image ${image.imageIdentifier} of type ${type}", e)
+                return null
+            }
+        })
+    }
+
     // delegating methods for Unit Testing
     InputStream originalInputStream(Image image, Range range) {
         image.originalInputStream(range)
     }
 
+    URI originalRedirectLocation(Image image) {
+        image.storageLocation.originalRedirectLocation(image.imageIdentifier)
+    }
+
     long thumbnailStoredLength(Image image) {
-        image.thumbnailStoredLength()
+        def exists = ensureThumbnailExists(image, '')
+        if (!exists) {
+            return -1
+        } else {
+            return image.thumbnailStoredLength()
+        }
     }
 
     InputStream thumbnailInputStream(Image image, Range range) {
-        image.thumbnailInputStream(range)
+        def exists = ensureThumbnailExists(image, '')
+        if (!exists) {
+            return ByteArrayInputStream(new byte[0])
+        } else {
+            return image.thumbnailInputStream(range)
+        }
     }
 
     long thumbnailTypeStoredLength(Image image, String type) {
-        image.thumbnailTypeStoredLength(type)
+        def exists = ensureThumbnailExists(image, type)
+        if (!exists) {
+            return -1
+        } else {
+            return image.thumbnailTypeStoredLength(type)
+        }
     }
 
     InputStream thumbnailTypeInputStream(Image image, String type, Range range) {
-        image.thumbnailTypeInputStream(type, range)
+        def exists = ensureThumbnailExists(image, type)
+        if (!exists) {
+            return ByteArrayInputStream(new byte[0])
+        } else {
+            return image.thumbnailTypeInputStream(type, range)
+        }
     }
 
     long tileStoredLength(Image image, int x, int y, int z) {
-        image.tileStoredLength(x, y, z)
+        def exists = ensureTileExists(image, x, y, z)
+        if (!exists) {
+            return -1
+        } else {
+            image.tileStoredLength(x, y, z)
+        }
     }
 
     InputStream tileInputStream(Image image, Range range, int x, int y, int z) {
-        image.tileInputStream(range, x, y, z)
+        def exists = ensureTileExists(image, x, y, z)
+        if (!exists) {
+            return new ByteArrayInputStream(new byte[0])
+        } else {
+            image.tileInputStream(range, x, y, z)
+        }
+    }
+
+    URI thumbnailRedirectLocation(Image image, String type) {
+        def exists = ensureThumbnailExists(image, type)
+        if (!exists) {
+            return null
+        } else {
+            return image.storageLocation.thumbnailRedirectLocation(image.imageIdentifier, type)
+        }
+    }
+
+    URI tileRedirectLocation(Image image, int x, int y, int z) {
+        def exists = ensureTileExists(image, x, y, z)
+        if (!exists) {
+            return null
+        } else {
+            image.storageLocation.tileRedirectLocation(image.imageIdentifier, x, y, z)
+        }
     }
 
     long consumedSpace(Image image) {

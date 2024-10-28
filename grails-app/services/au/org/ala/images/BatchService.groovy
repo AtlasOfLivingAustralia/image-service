@@ -354,7 +354,7 @@ class BatchService {
                 }
 
                 if (!imageUpdateResult.alreadyStored) {
-                    imageService.scheduleArtifactGeneration(imageUpdateResult.image.id, _userId)
+//                    imageService.scheduleArtifactGeneration(imageUpdateResult.image.id, _userId)
                     imageService.scheduleImageIndex(imageUpdateResult.image.id)
                     //Only run for new images......
                     imageService.scheduleImageMetadataPersist(

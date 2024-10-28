@@ -99,6 +99,16 @@ class FileSystemStorageLocation extends StorageLocation {
     }
 
     @Override
+    boolean thumbnailExists(String uuid, String type) {
+        return new File(createThumbLargePathFromUUID(uuid, type))?.exists() ?: false
+    }
+
+    @Override
+    boolean tileExists(String uuid, int x, int y, int z) {
+        return new File(createTilesPathFromUUID(uuid, x, y, z))?.exists() ?: false
+    }
+
+    @Override
     void storeTileZipInputStream(String uuid, String zipFileName, String contentType, long length = 0, ZipInputStream zipInputStream) {
         def path = createTilesPathFromUUID(uuid)
         Files.createDirectories(Paths.get(path))

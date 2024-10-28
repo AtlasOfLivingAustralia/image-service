@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.PATH
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
+import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST
 import static javax.servlet.http.HttpServletResponse.SC_FOUND
 import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND
 import static javax.servlet.http.HttpServletResponse.SC_NOT_MODIFIED
@@ -80,7 +81,7 @@ class ImageController {
     def proxyImage() {
         serveImage(
                 { Image image -> image.fileSize },
-                { Image image -> image.storageLocation.originalRedirectLocation(image.imageIdentifier) },
+                { Image image -> imageStoreService.originalRedirectLocation(image) },
                 { Image image, Range range -> imageStoreService.originalInputStream(image, range) },
                 { Image image -> image.mimeType },
                 { Image image -> image.extension },
@@ -115,7 +116,7 @@ class ImageController {
     def getOriginalFile() {
         serveImage(
                 { Image image -> image.fileSize },
-                { Image image -> image.storageLocation.originalRedirectLocation(image.imageIdentifier) },
+                { Image image -> imageStoreService.originalRedirectLocation(image) },
                 { Image image, Range range -> imageStoreService.originalInputStream(image, range) },
                 { Image image -> image.mimeType },
                 { Image image -> image.extension },
@@ -164,7 +165,7 @@ class ImageController {
                 },
                 { Image image ->
                     if (image.mimeType.startsWith('image')) {
-                        image.storageLocation.thumbnailRedirectLocation(image.imageIdentifier)
+                        imageStoreService.thumbnailRedirectLocation(image, '')
                     } else {
                         null
                     }
@@ -186,10 +187,11 @@ class ImageController {
 
     @Operation(
             method = "GET",
-            summary = "Get image thumbnail large version.",
-            description = "Get image thumbnail large version.",
+            summary = "Get an image thumbnail version.",
+            description = "Get an image thumbnail version.",
             parameters = [
-                    @Parameter(name="id", in = PATH, description = 'Image Id', required = true)
+                    @Parameter(name="id", in = PATH, description = 'Image Id', required = true),
+                    @Parameter(name="type", in = PATH, description = 'Thumbnail type (one of: large, square, square_black, square_white, square_darkGrey, square_darkGray)', required = true)
             ],
             responses = [
                     @ApiResponse(content = [@Content(mediaType='image/jpeg')],responseCode = "200",
@@ -207,9 +209,13 @@ class ImageController {
             tags = ['Access to image derivatives (e.g. thumbnails, tiles and originals)']
     )
     @Produces("image/jpeg")
-    @Path("/image/{id}/large")
+    @Path("/image/{id}/{type}")
     def proxyImageThumbnailType() {
-        String type = params.thumbnailType ?: 'large'
+        String type = params.thumbnailType ?: params.type ?:  'large' // for backwards compat thumbnailType URL param takes precedence
+        if (!imageService.validateThumbnailType(type)) {
+            render(message: "Invalid thumbnail type", status: SC_NOT_FOUND, contentType: 'text/plain')
+            return
+        }
         serveImage(
                 { Image image ->
                     if (image.mimeType.startsWith('image')) {
@@ -222,7 +228,7 @@ class ImageController {
                 },
                 { Image image ->
                     if (image.mimeType.startsWith('image')) {
-                        image.storageLocation.thumbnailTypeRedirectLocation(image.imageIdentifier, type)
+                        imageStoreService.thumbnailRedirectLocation(image, type)
                     } else {
                         null
                     }
@@ -275,7 +281,7 @@ class ImageController {
         int z = params.int('z')
         serveImage(
                 { Image image -> imageStoreService.tileStoredLength(image, x, y, z) },
-                { Image image -> image.storageLocation.tileRedirectLocation(image.imageIdentifier, x, y, z) },
+                { Image image -> imageStoreService.tileRedirectLocation(image, x, y, z) },
                 { Image image, Range range -> imageStoreService.tileInputStream(image, range, x, y, z) },
                 { Image image -> 'image/jpeg' },
                 { Image image -> 'jpg' },
@@ -296,7 +302,7 @@ class ImageController {
             return
         }
 
-        def imageInstance = Image.findByImageIdentifier(imageIdentifier, [ cache: true])
+        def imageInstance = Image.findByImageIdentifier(imageIdentifier, [ cache: true ])
         if (!imageInstance) {
             render(message: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
             return
@@ -569,13 +575,15 @@ class ImageController {
             imageService.scheduleArtifactGeneration(imageInstance.id, userId)
             results.message = "Image artifact generation scheduled for image ${imageInstance.id}"
         } else {
-            def imageList = Image.findAll()
-            long count = 0
-            imageList.each { image ->
-                imageService.scheduleArtifactGeneration(image.id, userId)
-                count++
-            }
-            results.message = "Image artifact generation scheduled for ${count} images."
+            // Removing this because loading the whole db is probably not a good idea now
+//            def imageList = Image.findAll()
+//            long count = 0
+//            imageList.each { image ->
+//                imageService.scheduleArtifactGeneration(image.id, userId)
+//                count++
+//            }
+//            results.message = "Image artifact generation scheduled for ${count} images."
+            render(status: SC_BAD_REQUEST, contentType: 'text/plain', text: 'Image not found')
         }
 
         renderResults(results)

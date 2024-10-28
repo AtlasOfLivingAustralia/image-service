@@ -198,6 +198,14 @@ class Image {
         GrailsHibernateUtil.unwrapIfProxy(storageLocation).tileStoredLength(this.imageIdentifier, x, y, z)
     }
 
+    boolean thumbnailExists(String type) {
+        GrailsHibernateUtil.unwrapIfProxy(storageLocation).thumbnailExists(this.imageIdentifier, type)
+    }
+
+    boolean tileExists(int x, int y, int z) {
+        GrailsHibernateUtil.unwrapIfProxy(storageLocation).tileExists(this.imageIdentifier, x, y, z)
+    }
+
     void migrateTo(StorageLocation destination) {
         GrailsHibernateUtil.unwrapIfProxy(storageLocation).migrateTo(this.imageIdentifier, this.mimeType, destination)
     }
