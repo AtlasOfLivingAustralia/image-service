@@ -100,27 +100,6 @@ Resources:
         BuildSpec: !Sub cicd/${pProductComponent}/pipeline/build_images_buildspec.yaml
       TimeoutInMinutes: 30
 
-  DeployImages:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Name: !Sub
-              - ${pProductName}-${pProductComponent}-deploy-images-${ResourceName}
-              - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
-      Description: Deploy images
-      ServiceRole:
-               Fn::ImportValue:
-                 Fn::Sub: ${pBootstrapStackName}-CodeBuildServiceRoleArn
-      Artifacts:
-        Type: CODEPIPELINE
-      Environment:
-        Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:7.0
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: !Sub cicd/${pProductComponent}/pipeline/deploy_images_buildspec.yaml
-      TimeoutInMinutes: 20
-
   DeployNotification:
     Type: AWS::CodeBuild::Project
     Properties:
