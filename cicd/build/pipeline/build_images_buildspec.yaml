@@ -7,11 +7,12 @@ env:
 
 phases:
   install:
+    runtime-versions:
+      java: corretto11
     commands:
       - echo Installing dependencies...
       - apt update -y
         && cat /etc/lsb-release
-        && apt-get -q -y install openjdk-11-jdk
         && apt-get -q -y install unzip
         && apt-get -q -y install zip
         && apt-get -q -y install curl
@@ -23,6 +24,7 @@ phases:
         && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
         && apt-get update
         && apt-get install -y docker-ce
+      - java -version
       - ./gradlew clean
       - ./gradlew assemble
 
