@@ -4,7 +4,6 @@ import au.org.ala.images.helper.FlybernateSpec
 import grails.testing.services.ServiceUnitTest
 import spock.lang.Ignore
 
-@Ignore
 class StorageLocationServiceFlybernateSpec extends FlybernateSpec implements ServiceUnitTest<StorageLocationService> {
 
     // GORM Unit testing returns an ArrayList for Criteria.scroll {}, so we run
