@@ -5,6 +5,7 @@ import com.palantir.docker.compose.DockerComposeExtension
 import com.palantir.docker.compose.connection.waiting.HealthChecks
 import grails.testing.gorm.DomainUnitTest
 import org.javaswift.joss.client.factory.AuthenticationMethod
+import org.joda.time.Duration
 import org.junit.jupiter.api.extension.RegisterExtension
 
 
@@ -15,7 +16,7 @@ class SwiftStorageLocationSpec extends StorageLocationSpec implements DomainUnit
             .file("swift-aio.yml")
             .waitingForService("swift", HealthChecks.toRespond2xxOverHttp(8080) {
                 port -> port.inFormat('http://$HOST:$EXTERNAL_PORT/healthcheck')
-            })
+            }, Duration.standardMinutes(5L))
             .build()
 
     @Override
