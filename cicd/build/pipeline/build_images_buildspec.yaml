@@ -36,7 +36,7 @@ phases:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
-      - ./gradlew build --stacktrace
+#      - ./gradlew build --stacktrace
       - ./gradlew bootWar
 
   post_build:
