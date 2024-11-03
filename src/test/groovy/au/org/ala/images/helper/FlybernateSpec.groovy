@@ -25,6 +25,9 @@ import spock.lang.AutoCleanup
 import spock.lang.Shared
 import spock.lang.Specification
 
+import java.nio.file.Files
+import java.nio.file.Paths
+
 /**
  * This is the HibernateSpec with Flyway migrate / clean integrated instead of using Hibernate create-drop.
  *
@@ -35,6 +38,7 @@ abstract class FlybernateSpec extends Specification {
 
     @Shared @AutoCleanup EmbeddedPostgres embeddedPostgres = EmbeddedPostgres.builder()
             .setPort(getConfig().getProperty('dataSource.embeddedPort',  Integer.class, 6543))
+            .setDataDirectory(Files.createDirectories(Paths.get("target")))
             .setCleanDataDirectory(true)
             .start()
 

@@ -25,10 +25,6 @@ phases:
         && apt-get update
         && apt-get install -y docker-ce
       - java -version
-      - echo "Installing PostgreSQL"
-      - apt-get install -y postgresql postgresql-contrib
-      - echo "Verifying PostgreSQL installation"
-      - psql --version
       - ./gradlew clean
       - ./gradlew assemble
 
