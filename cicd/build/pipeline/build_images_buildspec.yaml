@@ -37,6 +37,8 @@ phases:
       - echo Build started on $(date)
       - echo Building the project...
       - ls -ld /tmp
+      - dpkg -s libpq-dev | grep Version
+      - ldd --version
       - ./gradlew build --stacktrace
       - ./gradlew bootWar
 
