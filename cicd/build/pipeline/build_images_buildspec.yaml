@@ -35,7 +35,7 @@ phases:
       - ls -ld /tmp
       - dpkg -s libpq-dev | grep Version
       - ldd --version
-      - ./gradlew build --stacktrace
+      - ./gradlew build --scan
       - ls /tmp/embedded-pg/
       - cat /tmp/embedded-pg/PG-*/logfile
       - ./gradlew bootWar
