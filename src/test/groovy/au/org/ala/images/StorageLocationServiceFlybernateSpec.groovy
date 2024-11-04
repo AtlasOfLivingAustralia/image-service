@@ -2,7 +2,6 @@ package au.org.ala.images
 
 import au.org.ala.images.helper.FlybernateSpec
 import grails.testing.services.ServiceUnitTest
-import spock.lang.Ignore
 
 class StorageLocationServiceFlybernateSpec extends FlybernateSpec implements ServiceUnitTest<StorageLocationService> {
 

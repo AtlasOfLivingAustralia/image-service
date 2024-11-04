@@ -39,7 +39,7 @@ phases:
       - pwd
       - chown -R postgresuser .
       - ls -l
-      - su - postgresuser -c "cd $(pwd) && exec ./gradlew build"
+      - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
       - ./gradlew bootWar
 
   post_build:
