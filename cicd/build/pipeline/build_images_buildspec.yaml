@@ -27,17 +27,16 @@ phases:
       - java -version
       - ./gradlew clean
       - ./gradlew assemble
+      - useradd -ms /bin/bash postgresuser
+      - echo "Non-root user 'postgresuser' created"
+      - chown -R postgresuser:postgresuser /tmp
 
   build:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
-      - ls -ld /tmp
-      - dpkg -s libpq-dev | grep Version
-      - ldd --version
-      - ./gradlew build --scan
-      - ls /tmp/embedded-pg/
-      - cat /tmp/embedded-pg/PG-*/logfile
+      - whoami
+      - su - postgresuser -c ./gradlew build --scan
       - ./gradlew bootWar
 
   post_build:
