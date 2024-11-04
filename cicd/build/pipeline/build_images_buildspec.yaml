@@ -36,6 +36,8 @@ phases:
       - echo Build started on $(date)
       - echo Building the project...
       - whoami
+      - pwd
+      - ls -l
       - su - postgresuser -c "./gradlew build"
       - ./gradlew bootWar
 
