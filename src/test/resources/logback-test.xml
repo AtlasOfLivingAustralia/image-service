@@ -14,6 +14,10 @@
     <logger name="grails.plugins.DefaultGrailsPluginManager" level="OFF" />
     <logger name="au.org.ala.images" level="INFO" />
     <logger name="com.palantir.docker.compose" level="DEBUG" />
+    <logger name="io.zonky.test.db.postgres.embedded" level="DEBUG"/>
+    <root level="DEBUG">
+        <appender-ref ref="STDOUT"/>
+    </root>
 
     <root level="ERROR">
         <appender-ref ref="STDOUT" />
