@@ -38,12 +38,11 @@ phases:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
-      - whoami
-      - pwd
       - chown -R postgresuser .
-      - ls -l
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
+      - ls -al build/libs
       - ./gradlew bootWar
+      - ls -al build/libs
 
   post_build:
     commands:

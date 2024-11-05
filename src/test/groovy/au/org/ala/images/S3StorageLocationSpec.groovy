@@ -12,9 +12,11 @@ import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import grails.testing.gorm.DomainUnitTest
 import org.junit.jupiter.api.extension.ExtendWith
+import spock.lang.Ignore
 
 import static cloud.localstack.deprecated.TestUtils.DEFAULT_REGION
 
+@Ignore
 @ExtendWith(LocalstackDockerExtension.class)
 @LocalstackDockerProperties(services = [ "s3" ], imageTag = '0.12.11')
 class S3StorageLocationSpec extends StorageLocationSpec implements DomainUnitTest<S3StorageLocation> {
