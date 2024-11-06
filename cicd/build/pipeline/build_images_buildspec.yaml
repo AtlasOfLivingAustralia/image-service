@@ -40,9 +40,6 @@ phases:
       - echo Building the project...
       - chown -R postgresuser .
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
-      - ls -al build/libs
-      - ./gradlew bootWar
-      - ls -al build/libs
 
   post_build:
     commands:
@@ -50,9 +47,6 @@ phases:
       - echo Build completed on $(date)
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
-#      - rm -rf build/libs/*-plain.war
-      - ls -al build/libs
-      - pwd
       - echo Building the Docker image...
       - docker build -t ala-images .
       - echo Tagging the Docker image...
