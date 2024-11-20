@@ -4,6 +4,9 @@ import grails.testing.gorm.DataTest
 import grails.testing.services.ServiceUnitTest
 import spock.lang.Specification
 import spock.lang.Unroll
+import java.awt.Color
+import java.awt.image.BufferedImage
+import javax.imageio.ImageIO
 
 class ImageServiceSpec extends Specification implements ServiceUnitTest<ImageService>, DataTest {
 
@@ -100,4 +103,68 @@ class ImageServiceSpec extends Specification implements ServiceUnitTest<ImageSer
         'https://example.org/some/garbage/original?id=test&target=other#fragment'               || ''
 
     }
+
+    private static class TestImage {
+        int width
+        int height
+        String format
+
+        TestImage(int width, int height, String format) {
+            this.width = width
+            this.height = height
+            this.format = format
+        }
+    }
+
+    def "generateTestImage generates a non-null byte array"() {
+        given:
+        int width = 800
+        int height = 600
+        String format = "jpeg"
+
+        when:
+        byte[] imageData = generateTestImage(width, height, format)
+
+        then:
+        imageData != null
+    }
+
+    @Unroll
+    def "test resizeImageIfNeeded for #testImage.width x #testImage.height image"() {
+        given:
+        int maxWidth = 1920 // Max width for resizing
+        byte[] imageData = generateTestImage(testImage.width, testImage.height, testImage.format)
+
+        when:
+        byte[] resizedImage = service.resizeImageIfNeeded(imageData, "image/" + testImage.format, maxWidth)
+        BufferedImage resizedBufferedImage = ImageIO.read(new ByteArrayInputStream(resizedImage))
+        int resizedImageWidth = resizedBufferedImage.getWidth()
+        int resizedImageHeight = resizedBufferedImage.getHeight()
+
+        then:
+        assert resizedImageWidth <= maxWidth : "Resized image width (${resizedImageWidth}px) exceeds max width (${maxWidth}px)"
+        assert (resizedImageWidth * testImage.height) / testImage.width == new BigDecimal(resizedImageHeight) : "Aspect ratio not maintained"
+
+        where:
+        testImage << [
+                new TestImage(800, 600, "jpeg"),
+                new TestImage(1600, 1200, "jpeg"),
+                new TestImage(4000, 3000, "jpeg"),
+                new TestImage(1000, 500, "jpeg"),
+                new TestImage(800, 600, "png"),
+                new TestImage(1600, 1200, "png"),
+                new TestImage(4000, 3000, "png"),
+                new TestImage(1000, 500, "png")
+        ]
+    }
+
+    static private byte[] generateTestImage(int width, int height, String format) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
+        image.graphics.color = Color.RED
+        image.graphics.fillRect(0, 0, width, height)
+        ByteArrayOutputStream stream = new ByteArrayOutputStream()
+        ImageIO.write(image, format, stream)
+        return stream.toByteArray()
+    }
+
 }
