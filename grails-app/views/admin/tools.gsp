@@ -112,6 +112,22 @@
         </tr>
         <tr>
             <td>
+                <button id="btnClearThumbnailLookupCache" class="btn btn-default">Clear thumbnail existence cache</button>
+            </td>
+            <td>
+                Clear the thumbnail lookup cache, useful if thumbnails need to be regenerated
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearTileLookupCache" class="btn btn-default">Clear tile existence cache</button>
+            </td>
+            <td>
+                Clear the tile lookup cache, useful if tiles need to be regenerated
+            </td>
+        </tr>
+        <tr>
+            <td>
                 <button id="btnMissingImagesCheck" class="btn btn-default">Missing images check</button>
             </td>
             <td>
@@ -196,6 +212,15 @@
         $("#btnClearHibernateCache").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'clearHibernateCache')}";
+        });
+
+        $("#btnClearThumbnailLookupCache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearThumbnailLookupCache')}";
+        });
+        $("#btnClearTileLookupCache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearTileLookupCache')}";
         });
 
         $("#btnPurgeDeletedImages").on('click', function(e) {

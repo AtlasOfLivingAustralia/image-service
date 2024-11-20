@@ -48,7 +48,6 @@ import java.util.zip.ZipOutputStream
 
 class ElasticSearchService {
 
-    def logService
     GrailsApplication grailsApplication
     def imageStoreService
 

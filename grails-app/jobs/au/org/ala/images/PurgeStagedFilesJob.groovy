@@ -2,7 +2,6 @@ package au.org.ala.images
 
 class PurgeStagedFilesJob {
 
-    def logService
     def settingService
     def imageStagingService
 

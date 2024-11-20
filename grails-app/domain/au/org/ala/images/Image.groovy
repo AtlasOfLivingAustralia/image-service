@@ -1,9 +1,11 @@
 package au.org.ala.images
 
+import grails.gorm.async.AsyncEntity
+
 //import net.kaleidos.hibernate.usertype.ArrayType
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 
-class Image {
+class Image implements AsyncEntity<Image> {
 
     Image parent
     @SearchableProperty(description = "The unique identifier of an image")

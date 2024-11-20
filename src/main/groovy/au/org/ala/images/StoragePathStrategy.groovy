@@ -7,7 +7,10 @@ trait StoragePathStrategy {
     }
 
     String createThumbLargePathFromUUID(String uuid, String type) {
-        createPathFromUUID(uuid, type ? "thumbnail_${type ?: 'large'}" : 'thumbnail')
+        if (type && type.toLowerCase().startsWith('thumbnail_')) {
+            type = type.substring(10)
+        }
+        createPathFromUUID(uuid, type && type != 'thumbnail' ? "thumbnail_${type ?: 'large'}" : 'thumbnail')
     }
 
     String createTilesPathFromUUID(String uuid) {

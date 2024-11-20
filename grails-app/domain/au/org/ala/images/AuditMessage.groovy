@@ -1,6 +1,8 @@
 package au.org.ala.images
 
-class AuditMessage {
+import grails.gorm.async.AsyncEntity
+
+class AuditMessage implements AsyncEntity<AuditMessage> {
 
     String imageIdentifier
     String message

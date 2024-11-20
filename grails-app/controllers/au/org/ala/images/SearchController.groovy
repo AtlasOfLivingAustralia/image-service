@@ -3,7 +3,7 @@ package au.org.ala.images
 import au.org.ala.web.AlaSecured
 import au.org.ala.web.CASRoles
 import grails.converters.JSON
-import org.apache.commons.lang.StringUtils
+import org.apache.commons.lang3.StringUtils
 
 import java.util.regex.Pattern
 

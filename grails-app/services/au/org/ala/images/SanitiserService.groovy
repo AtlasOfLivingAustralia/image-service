@@ -1,7 +1,7 @@
 package au.org.ala.images
 
 import groovy.util.logging.Slf4j
-import org.apache.commons.lang.StringUtils
+import org.apache.commons.lang3.StringUtils
 import org.owasp.html.HtmlChangeListener
 import org.owasp.html.HtmlPolicyBuilder
 import org.owasp.html.HtmlStreamEventProcessor

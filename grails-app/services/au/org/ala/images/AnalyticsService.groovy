@@ -2,12 +2,15 @@ package au.org.ala.images
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
 import com.google.api.services.analytics.AnalyticsScopes
+import grails.gorm.transactions.NotTransactional
 import groovy.json.JsonSlurper
 
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 
 class AnalyticsService {
+
+    static transactional = false
 
     def collectoryService
     def grailsApplication
@@ -95,6 +98,7 @@ class AnalyticsService {
      * @param eventCategory
      * @return
      */
+    @NotTransactional
     def sendAnalytics(Image imageInstance, String eventCategory, String userAgent) {
         final analyticsId = grailsApplication.config.getProperty('analytics.ID')
         if (imageInstance && analyticsId) {
