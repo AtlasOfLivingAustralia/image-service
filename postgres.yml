@@ -4,11 +4,13 @@ networks:
 services:
   postgresql:
     container_name: postgres-image-service
-    image: "postgres:9.6.8-alpine"
+    image: "postgres:11.22-alpine"
     networks:
       - postgres
     ports:
       - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=changethispassword
     volumes:
-      - ./initdb.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./initdb.sql:/docker-entrypoint-initdb.d/initdb.sql
 version: "2"
