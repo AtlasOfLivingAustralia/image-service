@@ -8,6 +8,7 @@ import au.org.ala.images.StoragePathStrategy
 import au.org.ala.images.util.ByteSinkFactory
 import com.google.common.io.ByteSink
 import groovy.transform.EqualsAndHashCode
+import groovy.util.logging.Slf4j
 import net.lingala.zip4j.io.inputstream.ZipInputStream
 import org.apache.commons.io.FilenameUtils
 import org.javaswift.joss.client.factory.AccountFactory
@@ -22,6 +23,7 @@ import org.javaswift.joss.model.StoredObject
 
 import java.nio.file.Files
 
+@Slf4j
 @EqualsAndHashCode(includes=['authUrl', 'containerName', 'tenantId', 'tenantName', 'publicContainer'])
 class SwiftStorageOperations implements StorageOperations {
 

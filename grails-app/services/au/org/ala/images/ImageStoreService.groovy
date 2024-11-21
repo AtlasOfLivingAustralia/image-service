@@ -424,7 +424,7 @@ class ImageStoreService {
         }
     }
 
-    private ImageInfo ensureThumbnailExists(String imageIdentifier, StorageOperations operations, String type) {
+    private ImageInfo ensureThumbnailExists(String imageIdentifier, String dataResourceUid, StorageOperations operations, String type) {
         type = normaliseThumbnailType(type)
         return thumbnailCache.get(Pair.of(imageIdentifier, type), { pair ->
             def imageIdentifierArg = pair.left
@@ -474,6 +474,7 @@ class ImageStoreService {
                 // override these based on behaviour of the thumbnailer
                 info.contentType = typeArg == 'square' ? 'image/png' : 'image/jpeg'
                 info.extension = typeArg == 'square' ? 'png' : 'jpg'
+                info.dataResourceUid = dataResourceUid
                 return info
             } catch (e) {
                 log.error("Error generating thumbnail for image ${imageIdentifier} of type ${typeArg}", e)
@@ -489,7 +490,7 @@ class ImageStoreService {
         int z
     }
 
-    private ImageInfo ensureTileExists(String identifier, int zoomLevels, StorageOperations operations, int x, int y, int z) {
+    private ImageInfo ensureTileExists(String identifier, String dataResourceUid, int zoomLevels, StorageOperations operations, int x, int y, int z) {
         if (zoomLevels > 0 && z > zoomLevels) {
             // requested zoom level is beyond the zoom levels of the image so the tile will never exist
             return new ImageInfo(exists: false, imageIdentifier: identifier)
@@ -521,6 +522,7 @@ class ImageStoreService {
         // or if the origin doesn't exist then any tile for the given zoom level won't exist either
         // so return the non-existent origin info
         if (x == 0 && y == 0 || !originInfo.exists) {
+            originInfo.dataResourceUid = dataResourceUid
             return originInfo
         } else {
             // otherwise now we get the info for the tile that was actually requested and cache it
@@ -535,88 +537,8 @@ class ImageStoreService {
                     return null // don't cache this error
                 }
             }) ?: new ImageInfo(exists: false, imageIdentifier: identifier)
+            tileInfo.dataResourceUid = dataResourceUid
             return tileInfo
-        }
-    }
-
-    // delegating methods for Unit Testing
-    InputStream originalInputStream(Image image, Range range) {
-        image.originalInputStream(range)
-    }
-
-    URI originalRedirectLocation(Image image) {
-        image.storageLocation.originalRedirectLocation(image.imageIdentifier)
-    }
-
-    long thumbnailStoredLength(Image image) {
-        def info = ensureThumbnailExists(image, '')
-        if (!info.exists) {
-            return -1
-        } else {
-            return info.length
-        }
-    }
-
-    InputStream thumbnailInputStream(Image image, Range range) {
-        def info = ensureThumbnailExists(image, '')
-        if (!info.exists) {
-            return new ByteArrayInputStream(new byte[0])
-        } else {
-            return info.inputStreamSupplier(range)
-        }
-    }
-
-    long thumbnailTypeStoredLength(Image image, String type) {
-        def info = ensureThumbnailExists(image, type)
-        if (!info.exists) {
-            return -1
-        } else {
-            return info.length
-        }
-    }
-
-    InputStream thumbnailTypeInputStream(Image image, String type, Range range) {
-        def info = ensureThumbnailExists(image, type)
-        if (!info.exists) {
-            return new ByteArrayInputStream(new byte[0])
-        } else {
-            return info.inputStreamSupplier(range)
-        }
-    }
-
-    long tileStoredLength(Image image, int x, int y, int z) {
-        def info = ensureTileExists(image, x, y, z)
-        if (!info.exists) {
-            return -1
-        } else {
-            info.length
-        }
-    }
-
-    InputStream tileInputStream(Image image, Range range, int x, int y, int z) {
-        def info = ensureTileExists(image, x, y, z)
-        if (!info.exists) {
-            return new ByteArrayInputStream(new byte[0])
-        } else {
-            info.inputStreamSupplier(range)
-        }
-    }
-
-    URI thumbnailRedirectLocation(Image image, String type) {
-        def info = ensureThumbnailExists(image, type)
-        if (!info.exists) {
-            return null
-        } else {
-            return info.redirectUri
-        }
-    }
-
-    URI tileRedirectLocation(Image image, int x, int y, int z) {
-        def info = ensureTileExists(image, x, y, z)
-        if (!info.exists) {
-            return null
-        } else {
-            info.redirectUri
         }
     }
 
@@ -625,6 +547,7 @@ class ImageStoreService {
         if (image) {
             def imageInfo = image.storageLocation.originalImageInfo(image.imageIdentifier)
             // override these to match original behaviour
+            imageInfo.dataResourceUid = image.dataResourceUid
             imageInfo.etag = image.contentSHA1Hash
             imageInfo.lastModified = image.dateUploaded
             imageInfo.contentType = image.mimeType
@@ -638,15 +561,17 @@ class ImageStoreService {
     ImageInfo thumbnailImageInfo(String imageIdentifier, String type) {
         Image image
         StorageOperations operations = null
+        String dataResourceUid = null
         Image.withNewTransaction(readOnly: true) {
             image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
             if (image) {
                 operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
+                dataResourceUid = image.dataResourceUid
             }
         }
         if (image) {
             if (image.mimeType.startsWith('image/')) {
-                def info = ensureThumbnailExists(imageIdentifier, operations, type)
+                def info = ensureThumbnailExists(imageIdentifier, dataResourceUid, operations, type)
                 if (info) {
                     return info
                 }
@@ -669,6 +594,7 @@ class ImageStoreService {
                 return new ImageInfo(
                         exists: true,
                         imageIdentifier: imageIdentifier,
+                        dataResourceUid: dataResourceUid,
                         length: resource.contentLength(),
                         lastModified: new Date(resource.lastModified()),
                         contentType: 'image/png',
@@ -686,15 +612,17 @@ class ImageStoreService {
 
         Image image
         StorageOperations operations = null
+        String dataResourceUid = null
         Image.withNewTransaction(readOnly: true) {
             image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
             if (image) {
                 operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
+                dataResourceUid = image.dataResourceUid
             }
         }
         if (image) {
             if (image.mimeType.startsWith('image/')) {
-                def info = ensureTileExists(imageIdentifier, image.zoomLevels, operations, x, y, z)
+                def info = ensureTileExists(imageIdentifier, dataResourceUid, image.zoomLevels, operations, x, y, z)
                 return info
             }
         }

@@ -739,7 +739,7 @@ SELECT
             if (metadata && metadata instanceof JpegImageMetadata) {
                 JpegImageMetadata jpegMetadata = metadata
 
-                def date = getImageTagValue(jpegMetadata,TiffConstants.EXIF_TAG_DATE_TIME_ORIGINAL)
+                def date = getImageTagValue(jpegMetadata, ExifTagConstants.EXIF_TAG_DATE_TIME_ORIGINAL)
                 if (date) {
                     def sdf = new SimpleDateFormat("yyyy:MM:dd hh:mm:ss")
                     return sdf.parse(date.toString())

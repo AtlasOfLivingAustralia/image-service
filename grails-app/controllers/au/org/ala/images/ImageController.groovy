@@ -242,8 +242,7 @@ class ImageController {
         boolean contentDisposition = params.boolean("contentDisposition", false)
 
         if (sendAnalytics) {
-            // TODO: send analytics
-//            analyticsService.sendAnalytics(imageInstance, 'imageview', request.getHeader("User-Agent"))
+            analyticsService.sendAnalytics(imageInfo.exists, imageInfo.dataResourceUid, 'imageview', request.getHeader("User-Agent"))
         }
 
         if (imageInfo.redirectUri) {
@@ -308,7 +307,7 @@ class ImageController {
                     writeRangePart(range, imageInfo, boundary, contentType, pw, out)
                 }
                 finaliseMultipartResponse(boundary, pw)
-                response.flushBuffer()
+//                response.flushBuffer()
             } else {
                 Range range = ranges[0]
                 long rangeLength = range.length()
@@ -622,7 +621,7 @@ class ImageController {
         def resourceLevel = collectoryService.getResourceLevelMetadata(image.dataResourceUid)
 
         if (grailsApplication.config.getProperty('analytics.trackDetailedView', Boolean, false)) {
-            analyticsService.sendAnalytics(image, 'imagedetailedview', request.getHeader("User-Agent"))
+            analyticsService.sendAnalytics(image != null, image?.dataResourceUid, 'imagedetailedview', request.getHeader("User-Agent"))
         }
 
         [imageInstance: image, subimages: subimages,
@@ -639,7 +638,7 @@ class ImageController {
         def subimages = Subimage.findAllByParentImage(image)*.subimage
 
         if (grailsApplication.config.getProperty('analytics.trackLargeViewer', Boolean, false)) {
-            analyticsService.sendAnalytics(image, 'imagelargeviewer', request.getHeader("User-Agent"))
+            analyticsService.sendAnalytics(image != null, image?.dataResourceUid, 'imagelargeviewer', request.getHeader("User-Agent"))
         }
 
         render (view: 'viewer', model: [imageInstance: image, subimages: subimages])
@@ -717,7 +716,7 @@ class ImageController {
             return
         }
         if (grailsApplication.config.getProperty('analytics.trackLargeViewer', Boolean)) {
-            analyticsService.sendAnalytics(imageInstance, 'imagelargeviewer', request.getHeader("User-Agent"))
+            analyticsService.sendAnalytics(imageInstance != null, imageInstance?.dataResourceUid, 'imagelargeviewer', request.getHeader("User-Agent"))
         }
         [imageInstance: imageInstance, auxDataUrl: params.infoUrl]
     }

@@ -94,14 +94,15 @@ class AnalyticsService {
     /**
      * POST event data to google analytics.
      *
-     * @param imageInstance
+     * @param exists Does the image instance exist in the database
+     * @param dataResourceUid The data resource uid the image instance belongs to
      * @param eventCategory
      * @return
      */
     @NotTransactional
-    def sendAnalytics(Image imageInstance, String eventCategory, String userAgent) {
+    def sendAnalytics(boolean exists, String dataResourceUid, String eventCategory, String userAgent) {
         final analyticsId = grailsApplication.config.getProperty('analytics.ID')
-        if (imageInstance && analyticsId) {
+        if (exists && analyticsId) {
             final queryURL =  grailsApplication.config.getProperty('analytics.URL')
             final requestBody = [
                     'v': 1,
@@ -109,7 +110,7 @@ class AnalyticsService {
                     'cid': UUID.randomUUID().toString(),  //anonymous client ID
                     't': 'event',
                     'ec': eventCategory, // event category
-                    'ea': imageInstance.dataResourceUid, //event value
+                    'ea': dataResourceUid, //event value
                     'ua' : userAgent
             ]
 

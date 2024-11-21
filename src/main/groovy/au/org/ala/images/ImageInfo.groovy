@@ -4,6 +4,7 @@ class ImageInfo {
 
     boolean exists
     String imageIdentifier
+    String dataResourceUid
     long length
     String etag
     Date lastModified
