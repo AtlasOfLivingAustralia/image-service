@@ -1387,14 +1387,21 @@ SELECT
      * @return
      */
     def getImageFromParams(params) {
-        def image = Image.findById(params.int("id"))
+        def id = params.int("id")
+        def image = null
+        if (id != null) {
+            image = Image.findById(id, [ cache:true ])
+        }
+//        def image = Image.findById(params.int("id"))
         if (!image) {
             String guid = params.id // maybe the id is a guid?
             if (!guid) {
                 guid = params.imageId
             }
 
-            image = Image.findByImageIdentifier(guid, [ cache: true])
+            if (guid) {
+                image = Image.findByImageIdentifier(guid, [ cache: true])
+            }
         }
         return image
     }
