@@ -25,6 +25,18 @@
             <span class="glyphicon glyphicon-info-sign" aria-hidden="true"></span>
             Help
         </button>
+        <g:if test="${params.boolean('hideEmpty', true)}">
+            <g:link controller="admin" action="batchUploads" params="${[hideEmpty: false]}" class="btn-default btn">
+                <span class="glyphicon glyphicon-refresh" aria-hidden="true"></span>
+                Show empty uploads
+            </g:link>
+        </g:if>
+        <g:else>
+            <g:link controller="admin" action="batchUploads" class="btn-default btn">
+                <span class="glyphicon glyphicon-refresh" aria-hidden="true"></span>
+                Hide empty uploads
+            </g:link>
+        </g:else>
         <g:link controller="admin" action="clearUploads" class="btn-default btn">
             <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
             Purge all non-active uploads
@@ -242,7 +254,7 @@ days.
     </thead>
     <tbody>
     <g:each in="${results}" var="batchFileUpload">
-        <tr class="${batchFileUpload.status == 'LOADING' ? 'active' : ''} ${batchFileUpload.status == 'COMPLETE' ? 'success' : ''} ${batchFileUpload.status == 'PARTIALLY_COMPLETE' ? 'warning' : ''} ${batchFileUpload.status == 'WAITING_PROCESSING' ? 'warning' : ''} ${batchFileUpload.status == 'QUEUED' ? 'warning' : ''} ${batchFileUpload.status == 'STOPPED' ? 'danger' : ''}">
+        <tr class="<img:batchFileUploadStatus status="${batchFileUpload.status}" />">
             <td title="${batchFileUpload.filePath}">
                 <g:link controller="admin" action="batchUpload" id="${batchFileUpload.id}">
                     ${batchFileUpload.id}

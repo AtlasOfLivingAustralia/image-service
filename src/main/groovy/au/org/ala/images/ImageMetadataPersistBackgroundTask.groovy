@@ -41,8 +41,8 @@ class ImageMetadataPersistBackgroundTask extends BackgroundTask {
         try {
             session = _imageService.sessionFactory.openSession()
             session.beginTransaction()
-            byte[] imageBytes = _imageStoreService.retrieveImage(_imageIdentifier)
-            Map _metadata = _imageService.getImageMetadataFromBytes(imageBytes, _originalFilename)
+            InputStream inputStream = _imageStoreService.retrieveImageInputStream(_imageIdentifier)
+            Map _metadata = _imageService.getImageMetadataFromBytes(inputStream, _originalFilename)
             _metadata.each { k, v ->
                 def cleanedValue = sanitizeString(v)
                 if (cleanedValue && cleanedValue.length() < 8000) {

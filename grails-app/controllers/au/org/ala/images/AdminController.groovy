@@ -204,8 +204,9 @@ class AdminController {
         [licenceCSV:licenceCSV.toString(), licenceCSVMapping:licenceCSVMappings.toString()]
     }
 
-    def batchUploads(){
-        [results: batchService.getUploads(),
+    def batchUploads() {
+        def hideEmptyBatchUploads = params.boolean('hideEmpty', true)
+        [results: batchService.getUploads(hideEmptyBatchUploads),
          active: batchService.getActiveFiles(),
          queued: batchService.getQueuedFiles(),
          batchServiceProcessingEnabled: settingService.getBatchServiceProcessingEnabled()]
