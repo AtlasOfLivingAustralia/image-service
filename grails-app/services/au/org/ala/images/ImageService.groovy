@@ -103,11 +103,11 @@ SELECT
 
     private static int BACKGROUND_TASKS_BATCH_SIZE = 100
 
-    @Value('${http.default.readTimeoutMs:120000}')
-    int readTimeoutMs = 120000 // 2 minutes
+    @Value('${http.default.readTimeoutMs:10000}')
+    int readTimeoutMs = 10000 // 10 seconds
 
-    @Value('${http.default.connectTimeoutMs:120000}')
-    int connectTimeoutMs = 120000 // 2 minutes
+    @Value('${http.default.connectTimeoutMs:5000}')
+    int connectTimeoutMs = 5000 // 5 seconds
 
     @Value('${http.default.user-agent:}')
     String userAgent
