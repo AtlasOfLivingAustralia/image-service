@@ -15,10 +15,18 @@ import grails.gorm.transactions.Transactional
 import grails.orm.HibernateCriteriaBuilder
 import grails.web.servlet.mvc.GrailsParameterMap
 import groovy.transform.Synchronized
+import groovy.transform.stc.ClosureParams
+import groovy.transform.stc.SimpleType
 import groovy.util.logging.Slf4j
 import groovyx.gpars.GParsPool
 import jsr166y.ForkJoinPool
 import okhttp3.HttpUrl
+import org.apache.avro.SchemaBuilder
+import org.apache.avro.file.DataFileWriter
+import org.apache.avro.generic.GenericDatumWriter
+import org.apache.avro.generic.GenericRecord
+import org.apache.avro.generic.GenericRecordBuilder
+import org.apache.avro.io.DatumWriter
 import org.apache.commons.codec.binary.Base64
 import org.apache.commons.imaging.Imaging
 import org.apache.commons.imaging.common.ImageMetadata
@@ -39,9 +47,13 @@ import org.springframework.web.multipart.MultipartFile
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
 import java.sql.Connection
+import java.sql.Date
 import java.sql.PreparedStatement
 import java.sql.ResultSet
+import java.sql.ResultSetMetaData
 import java.sql.SQLException
+import java.sql.Timestamp
+import java.sql.Types
 import java.text.SimpleDateFormat
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantLock
@@ -51,6 +63,12 @@ import static java.nio.file.Files.createTempFile
 
 @Slf4j
 class ImageService {
+
+    static final String EXPORT_IMAGES_SQL = """SELECT * FROM export_images;"""
+    static final String EXPORT_MAPPING_SQL = """SELECT * FROM export_mapping;"""
+
+    static final String DEFAULT_DATE_FORMAT = "dd-MMM-yyyy";
+    static final String DEFAULT_TIMESTAMP_FORMAT = "dd-MMM-yyyy HH:mm:ss";
 
     def dataSource
     def imageStoreService
@@ -1686,7 +1704,11 @@ SELECT
      * @return
      */
     def exportCSV(OutputStream outputStream) {
-        eachRowToCSV(outputStream.newWriter('UTF-8'), """SELECT * FROM export_images;""")
+        eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_IMAGES_SQL)
+    }
+
+    def exportAvro(OutputStream outputStream) {
+        eachRowToAvro(outputStream, EXPORT_IMAGES_SQL)
     }
 
     /**
@@ -1696,7 +1718,11 @@ SELECT
      * @return
      */
     def exportMappingCSV(OutputStream outputStream) {
-        eachRowToCSV(outputStream.newWriter('UTF-8'), """SELECT * FROM export_mapping;""")
+        eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_MAPPING_SQL)
+    }
+
+    def exportMappingAvro(OutputStream outputStream) {
+        eachRowToAvro(outputStream, EXPORT_MAPPING_SQL)
     }
 
     /**
@@ -1709,8 +1735,16 @@ SELECT
         eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_DATASET_MAPPING_SQL, [datasetID], ',', '\\')
     }
 
+    def exportDatasetMappingAvro(String datasetID, OutputStream outputStream) {
+        eachRowToAvro(outputStream, EXPORT_DATASET_MAPPING_SQL, [datasetID])
+    }
+
     def exportDatasetCSV(String datasetID, OutputStream outputStream) {
         eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_DATASET_SQL, [datasetID])
+    }
+
+    def exportDatasetAvro(String datasetID, OutputStream outputStream) {
+        eachRowToAvro(outputStream, EXPORT_DATASET_SQL, [datasetID])
     }
 
     /**
@@ -1739,6 +1773,202 @@ SELECT
                             .build())
                 .build()
 
+        eachRowTo(sql, params) { rs ->
+            csvWriter.writeAll(rs, true)
+        }
+        writer.flush()
+    }
+
+    /**
+     * Pass the results of the SQL query through a function that turns the query result metadata into an AVRO schema
+     * and then each row in the result set becomes a record in the resulting file.  The AVRO file is written to the
+     * given OutputStream but the OutputStream is not closed.
+     *
+     * @param outputStream The output stream to write the AVRO file to
+     * @param sql The SQL query to run
+     * @param params The parameters for the SQL query
+     */
+    private def eachRowToAvro(OutputStream outputStream, String sql, List<Object> params = []) {
+        DataFileWriter<GenericRecord> dataFileWriter = null
+
+        eachRowTo(sql, params) {rs ->
+            def schema = avroSchema(rs)
+
+            DatumWriter<GenericRecord> avroWriter = new GenericDatumWriter<GenericRecord>(schema)
+            dataFileWriter = new DataFileWriter<GenericRecord>(avroWriter)
+            dataFileWriter.create(schema, outputStream)
+
+            ResultSetMetaData metadata = rs.getMetaData()
+            while (rs.next()) {
+                def rb = new GenericRecordBuilder(schema)
+                for (int i = 1; i <= metadata.getColumnCount(); i++) {
+                    def label = metadata.getColumnLabel(i)
+                    def value = getColumnValue(rs, metadata.getColumnType(i), i, DEFAULT_DATE_FORMAT, DEFAULT_TIMESTAMP_FORMAT)
+                    rb.set(label, value)
+                }
+                dataFileWriter.append(rb.build())
+            }
+        }
+        dataFileWriter?.flush()
+    }
+
+    /**
+     * Helper function that turns the metadata from a ResultSet into an AVRO schema
+     * @param rs The SQL result set
+     * @return The AVRO schema for the result set
+     */
+    private def avroSchema(ResultSet rs) {
+        ResultSetMetaData metadata = rs.getMetaData()
+        def schemaAssembler = SchemaBuilder.builder()
+                .record("record")
+                .fields()
+        for (int i = 1; i <= metadata.getColumnCount(); i++) {
+            String label = metadata.getColumnLabel(i)
+            int type = metadata.getColumnType(i)
+            switch (type) {
+                case Types.BOOLEAN:
+                    schemaAssembler.optionalBoolean(label)
+                    break;
+                case Types.DECIMAL:
+                case Types.REAL:
+                case Types.NUMERIC:
+                case Types.DOUBLE:
+                    schemaAssembler.optionalDouble(label)
+                    break;
+                case Types.FLOAT:
+                    schemaAssembler.optionalFloat(label)
+                    break
+                case Types.BIGINT:
+                    schemaAssembler.optionalLong(label)
+                    break
+                case Types.INTEGER:
+                case Types.TINYINT:
+                case Types.SMALLINT:
+                    schemaAssembler.optionalInt(label)
+                    break
+                case Types.BLOB:
+                    schemaAssembler.optionalBytes(label)
+                    break
+                case Types.DATE:
+                case Types.TIME:
+                case Types.TIMESTAMP:
+                case Types.NCLOB:
+                case Types.CLOB:
+                case Types.NVARCHAR:
+                case Types.NCHAR:
+                case Types.LONGNVARCHAR:
+                case Types.LONGVARCHAR:
+                case Types.VARCHAR:
+                case Types.CHAR:
+                default:
+                    // This takes care of Types.BIT, Types.JAVA_OBJECT, and anything
+                    // unknown.
+                    schemaAssembler.optionalString(label)
+            }
+        }
+
+        return schemaAssembler.endRecord()
+    }
+
+    /**
+     * Helper function that turns a column value into the appropriate type for the AVRO record.
+     * @param rs The result set
+     * @param colType The Java Result Set Type for the given colIndex
+     * @param colIndex The column index in the current row in the Result Set
+     * @param dateFormatString The date format string for any Dates
+     * @param timestampFormatString The timestamp format string for any Timestamps
+     * @return A primitive object that can be written to an AVRO record
+     */
+    private Object getColumnValue(ResultSet rs, int colType, int colIndex, String dateFormatString, String timestampFormatString) {
+
+        def value
+
+        switch (colType) {
+            case Types.BOOLEAN:
+                value = rs.getBoolean(colIndex);
+                break
+            case Types.DECIMAL:
+            case Types.REAL:
+            case Types.NUMERIC:
+                BigDecimal d = rs.getBigDecimal(colIndex)
+                value = d.doubleValue()
+                break
+            case Types.DOUBLE:
+                value = rs.getDouble(colIndex)
+                break
+            case Types.FLOAT:
+                value = rs.getFloat(colIndex)
+                break
+            case Types.BIGINT:
+                value = rs.getLong(colIndex)
+                break
+            case Types.INTEGER:
+            case Types.TINYINT:
+            case Types.SMALLINT:
+                value = rs.getInt(colIndex)
+                break
+            case Types.BLOB:
+                value = rs.getBlob(colIndex).binaryStream.bytes
+                break
+            case Types.DATE:
+                value = handleDate(rs.getDate(colIndex), dateFormatString);
+                break
+            case Types.TIME:
+                def time = rs.getTime(colIndex)
+                value = time ? Objects.toString(time) : null
+                break
+            case Types.TIMESTAMP:
+                value = handleTimestamp(rs.getTimestamp(colIndex), timestampFormatString);
+                break
+            case Types.NCLOB:
+                value = rs.getNClob(colIndex)?.characterStream?.text
+                break
+            case Types.CLOB:
+                value = rs.getClob(colIndex)?.characterStream?.text
+                break
+            case Types.NVARCHAR:
+            case Types.NCHAR:
+            case Types.LONGNVARCHAR:
+            case Types.LONGVARCHAR:
+            case Types.VARCHAR:
+            case Types.CHAR:
+                value = rs.getString(colIndex)
+                break
+            default:
+                // This takes care of Types.BIT, Types.JAVA_OBJECT, and anything
+                // unknown.
+                // TODO Array types?
+                def obj = rs.getObject(colIndex)
+                value = obj ? Objects.toString(obj) : null
+        }
+
+
+        if (rs.wasNull() || value == null) {
+            value = null
+        }
+
+        return value
+    }
+
+    private String handleDate(java.sql.Date date, String dateFormatString) throws SQLException {
+        SimpleDateFormat df = new SimpleDateFormat(dateFormatString)
+        return date == null ? null : df.format(date)
+    }
+
+    protected String handleTimestamp(Timestamp timestamp, String timestampFormatString) {
+        SimpleDateFormat timeFormat = new SimpleDateFormat(timestampFormatString);
+        return timestamp == null ? null : timeFormat.format(timestamp);
+    }
+
+    /**
+     * Runs a SQL query and then runs the passed in closure with the ResultSet for the closure.
+     *
+     * @param sql The SQL query
+     * @param params The parameters for the query
+     * @param c The cloure to receive a single java.sql.ResultSet as a parameter
+     */
+    private def eachRowTo(String sql, List<Object> params,
+                          @ClosureParams(value = SimpleType, options= 'java.sql.ResultSet' ) Closure c) {
         Connection conn = null
         PreparedStatement st = null
         ResultSet rs = null
@@ -1757,7 +1987,7 @@ SELECT
             }
             rs = st.executeQuery()
 
-            csvWriter.writeAll(rs, true)
+            c(rs)
         } catch (SQLException e) {
             log.warn("Failed to execute: $sql because: ${e.message}")
             throw e
@@ -1784,7 +2014,6 @@ SELECT
                 log.debug("Caught exception closing connection: ${e.message} - continuing");
             }
         }
-        writer.flush()
     }
 
 
