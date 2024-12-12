@@ -1,14 +1,21 @@
 package au.org.ala.images
 
 import au.org.ala.images.metadata.MetadataExtractor
+import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.thumb.ThumbnailingResult
 import au.org.ala.images.tiling.TileFormat
+import com.google.common.hash.Hashing
+import com.google.common.io.ByteSource
+import com.google.common.io.Files
 import com.opencsv.CSVParserBuilder
 import com.opencsv.CSVWriterBuilder
 import com.opencsv.RFC4180ParserBuilder
+import grails.gorm.transactions.NotTransactional
 import grails.gorm.transactions.Transactional
 import grails.orm.HibernateCriteriaBuilder
+import grails.web.servlet.mvc.GrailsParameterMap
 import groovy.transform.Synchronized
+import groovy.util.logging.Slf4j
 import groovyx.gpars.GParsPool
 import okhttp3.HttpUrl
 import org.apache.commons.codec.binary.Base64
@@ -16,11 +23,11 @@ import org.apache.commons.imaging.Imaging
 import org.apache.commons.imaging.common.ImageMetadata
 import org.apache.commons.imaging.formats.jpeg.JpegImageMetadata
 import org.apache.commons.imaging.formats.tiff.TiffField
-import org.apache.commons.imaging.formats.tiff.constants.TiffConstants
+import org.apache.commons.imaging.formats.tiff.constants.ExifTagConstants
 import org.apache.commons.imaging.formats.tiff.taginfos.TagInfo
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
-import org.apache.commons.lang.StringUtils
+import org.apache.commons.lang3.StringUtils
 import org.apache.tika.mime.MimeType
 import org.apache.tika.mime.MimeTypes
 import org.hibernate.FlushMode
@@ -28,6 +35,7 @@ import org.hibernate.ScrollMode
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.multipart.MultipartFile
 
+import javax.annotation.PostConstruct
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -38,13 +46,13 @@ import java.util.concurrent.locks.ReentrantLock
 
 import static grails.web.http.HttpHeaders.USER_AGENT
 
+@Slf4j
 class ImageService {
 
     def dataSource
     def imageStoreService
     def tagService
     def grailsApplication
-    def logService
     def auditService
     def sessionFactory
     def imageService
@@ -232,6 +240,13 @@ SELECT
             'thumbnail_square_darkGrey',
             'thumbnail_square_darkGray'
     ] as Set
+
+    boolean validateThumbnailType(String thumbnailType) {
+        if (thumbnailType.startsWith('thumbnail')) {
+            return IMAGE_SERVICE_URL_SUFFIXES.contains(thumbnailType)
+        }
+        return IMAGE_SERVICE_URL_SUFFIXES.contains('thumbnail' + (thumbnailType ? '_' + thumbnailType : ''))
+    }
 
     String findImageIdInImageServiceUrl(String imageUrl) {
         // is it as image service URL?
@@ -616,7 +631,7 @@ SELECT
     }
 
     def schedulePostIngestTasks(Long imageId, String identifier, String fileName, String uploaderId){
-        scheduleArtifactGeneration(imageId, uploaderId)
+//        scheduleArtifactGeneration(imageId, uploaderId)
         scheduleImageIndex(imageId)
         scheduleImageMetadataPersist(imageId,identifier, fileName,  MetaDataSourceType.Embedded, uploaderId)
     }
@@ -660,7 +675,7 @@ SELECT
     List<String> getAllThumbnailUrls(String imageIdentifier) {
         def results = []
         def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true])
-        if (image) {
+        if (image) { // TODO we should be able to give all thumbnail URLs here as they are generated on demand.
             def thumbs = ImageThumbnail.findAllByImage(image)
             thumbs?.each { thumb ->
                 results << imageStoreService.getThumbUrlByName(imageIdentifier, thumb.name)
@@ -724,7 +739,7 @@ SELECT
             if (metadata && metadata instanceof JpegImageMetadata) {
                 JpegImageMetadata jpegMetadata = metadata
 
-                def date = getImageTagValue(jpegMetadata,TiffConstants.EXIF_TAG_DATE_TIME_ORIGINAL)
+                def date = getImageTagValue(jpegMetadata, ExifTagConstants.EXIF_TAG_DATE_TIME_ORIGINAL)
                 if (date) {
                     def sdf = new SimpleDateFormat("yyyy:MM:dd hh:mm:ss")
                     return sdf.parse(date.toString())
@@ -1052,7 +1067,7 @@ SELECT
                     setMetaDataItem(image, MetaDataSourceType.SystemDefined, fieldDef.fieldName, ImportFieldValueExtractor.extractValue(fieldDef, file))
                 }
             }
-            generateImageThumbnails(image)
+//            generateImageThumbnails(image)
 
             image.save(flush: true, failOnError: true)
         }
@@ -1065,7 +1080,7 @@ SELECT
             // schedule an index
             scheduleImageIndex(image.id)
             // also we should do the thumb generation (we'll defer tiles until after the load, as it will slow everything down)
-            scheduleTileGeneration(image.id, userId)
+//            scheduleTileGeneration(image.id, userId)
         }
         return image
     }
@@ -1123,7 +1138,7 @@ SELECT
             }
             return true
         } else {
-            logService.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
+            log.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
         }
 
         return false
@@ -1167,7 +1182,7 @@ SELECT
 
                 auditService.log(image, "Metadata item ${key} set to '${value?.take(25)}' (truncated) (${source})", userId)
             } else {
-                logService.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
+                log.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
             }
         }
         image.save()
@@ -1215,7 +1230,7 @@ SELECT
             auditService.log(parentImage, "Subimage created ${subimage.imageIdentifier}", userId)
             auditService.log(subimage, "Subimage created from parent image ${parentImage.imageIdentifier}", userId)
 
-            scheduleArtifactGeneration(subimage.id, userId)
+//            scheduleArtifactGeneration(subimage.id, userId)
             scheduleImageIndex(subimage.id)
 
             return subimage
@@ -1372,14 +1387,21 @@ SELECT
      * @return
      */
     def getImageFromParams(params) {
-        def image = Image.findById(params.int("id"))
+        def id = params.int("id")
+        def image = null
+        if (id != null) {
+            image = Image.findById(id, [ cache:true ])
+        }
+//        def image = Image.findById(params.int("id"))
         if (!image) {
             String guid = params.id // maybe the id is a guid?
             if (!guid) {
                 guid = params.imageId
             }
 
-            image = Image.findByImageIdentifier(guid, [ cache: true])
+            if (guid) {
+                image = Image.findByImageIdentifier(guid, [ cache: true])
+            }
         }
         return image
     }
@@ -1450,28 +1472,33 @@ SELECT
 
     def UUID_PATTERN = ~/\b[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}\b/
 
-    def getImageGUIDFromParams(params) {
+    @NotTransactional // will start a new transaction if required
+    def getImageGUIDFromParams(GrailsParameterMap params) {
 
-        if(params.id){
+        if (params.id) {
             //if it a GUID, avoid database trip if possible....
             if (UUID_PATTERN.matcher(params.id).matches()){
                 return params.id
             }
-            if(params.id ){
-                def image = Image.findById(params.int("id"))
-                if(image) {
-                    return image.imageIdentifier
+            if (params.id ) {
+                def identifer = Image.withNewTransaction(readOnly: true) {
+                     Image.findById(params.int("id"), [ cache: true ])?.imageIdentifier
+                }
+                if (identifer) {
+                    return identifer
                 }
             }
-        } else if(params.imageId){
+        } else if (params.imageId) {
             //if it a GUID, avoid database trip if possible....
             if (UUID_PATTERN.matcher(params.imageId).matches()){
                 return params.imageId
             }
-            if(params.id ){
-                def image = Image.findById(params.int("imageId"))
-                if (image) {
-                    return image.imageIdentifier
+            if (params.id) {
+                def identifer = Image.withNewTransaction(readOnly: true) {
+                    Image.findById(params.int("imageId"), [ cache: true ])?.imageIdentifier
+                }
+                if (identifer) {
+                    return identifer
                 }
             }
         }

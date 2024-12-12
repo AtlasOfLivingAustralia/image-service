@@ -1,6 +1,8 @@
 package au.org.ala.images
 
+import com.google.common.io.Files
 import grails.web.mapping.LinkGenerator
+import groovy.util.logging.Slf4j
 import org.apache.commons.io.ByteOrderMark
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.input.BOMInputStream
@@ -10,11 +12,11 @@ import org.springframework.web.multipart.MultipartFile
 
 import java.util.regex.Pattern
 
+@Slf4j
 class ImageStagingService {
 
     def grailsApplication
     def settingService
-    def logService
     def imageService
     def auditService
     LinkGenerator grailsLinkGenerator
@@ -84,12 +86,12 @@ class ImageStagingService {
         def cutoffDate = new Date(new Date().getTime() - millis)
         def purgeList = StagedFile.findAllByDateStagedLessThan(cutoffDate)
         if (purgeList) {
-            logService.debug("${purgeList.size()} staged files older than ${lifetimeInHours} hours.")
+            log.debug("${purgeList.size()} staged files older than ${lifetimeInHours} hours.")
             purgeList.each { stagedFile ->
                 deleteStagedFile(stagedFile)
             }
         } else {
-            logService.debug("No eligible staged files found to purge.")
+            log.debug("No eligible staged files found to purge.")
         }
     }
 
@@ -226,7 +228,7 @@ class ImageStagingService {
 
             def localFile = new File(getStagedFileLocalPath(stagedFile))
             if (!localFile.exists()) {
-                logService.log("Staged File ${stagedFile.filename} for user ${stagedFile.userId} does not exist on disk (${localFile.getAbsolutePath()}")
+                log.info("Staged File ${stagedFile.filename} for user ${stagedFile.userId} does not exist on disk (${localFile.getAbsolutePath()}")
             } else {
                 def imageMap = [id: stagedFile.id, filename: stagedFile.filename, stagedFileUrl: getStagedFileUrl(stagedFile), dateStaged: stagedFile.dateStaged]
                 images << imageMap
@@ -272,7 +274,7 @@ class ImageStagingService {
         def file = new File(getStagedFileLocalPath(stagedFile))
 
         if (!file.exists()) {
-            logService.log("Local file ${file.getAbsoluteFile()} could not be found! Import aborted")
+            log.info("Local file ${file.getAbsoluteFile()} could not be found! Import aborted")
             return null
         }
 
@@ -300,7 +302,7 @@ class ImageStagingService {
                     }
                 }
             }
-            imageService.generateImageThumbnails(image)
+//            imageService.generateImageThumbnails(image)
 
             image.harvestable = harvestable
 

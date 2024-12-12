@@ -1,6 +1,8 @@
 package au.org.ala.images
 
-class ImageThumbnail {
+import grails.gorm.async.AsyncEntity
+
+class ImageThumbnail implements AsyncEntity<ImageThumbnail> {
 
     Image image
     int width

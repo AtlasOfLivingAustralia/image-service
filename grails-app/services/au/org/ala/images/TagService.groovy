@@ -1,12 +1,13 @@
 package au.org.ala.images
 
 import grails.gorm.transactions.Transactional
+import groovy.util.logging.Slf4j
 import org.springframework.web.multipart.MultipartFile
 
 @Transactional
+@Slf4j
 class TagService {
 
-    def logService
     def auditService
 
     def createTagByPath(String path, Tag parent = null) {
@@ -54,7 +55,7 @@ class TagService {
             return false
         }
 
-        logService.log("Moving ${target.path} to ${newParent?.path ?: " to root"}")
+        log.info("Moving ${target.path} to ${newParent?.path ?: " to root"}")
 
         def newParentPath = newParent?.path ?: ""
 
@@ -215,7 +216,7 @@ class TagService {
             return
         }
 
-        logService.log("Rebuilding keyword for image ${image.imageIdentifier}")
+        log.info("Rebuilding keyword for image ${image.imageIdentifier}")
 
         // remove all existing keywords
         image.keywords?.each { imageKeyword ->

@@ -1,13 +1,14 @@
 package au.org.ala.images
 
 import groovy.time.TimeCategory
+import groovy.util.logging.Slf4j
 
 import java.text.SimpleDateFormat
 
 
+@Slf4j
 class CheckOutsourcedTasksJob {
 
-    def logService
     def imageService
     def settingService
 
@@ -27,12 +28,12 @@ class CheckOutsourcedTasksJob {
         OutsourcedJob.withNewTransaction {
             def jobs = OutsourcedJob.list()
             jobs.each { job ->
-                logService.debug("Checking if job ${job.id} as expired")
+                log.debug("Checking if job ${job.id} as expired")
                 // Check if expired
                 use (TimeCategory) {
                     def date = job.expectedDurationInMinutes.minutes.ago
                     if (job.dateCreated.before(date)) {
-                        logService.log("Outsourced job (ticket ${job.ticket} for image ${job.image.imageIdentifier}) has expired! Returning to queue.")
+                        log.info("Outsourced job (ticket ${job.ticket} for image ${job.image.imageIdentifier}) has expired! Returning to queue.")
                         // new to rescheduled job
                         if (job.taskType == ImageTaskType.TMSTile) {
                             imageService.scheduleTileGeneration(job.image.id, "<unknown>")

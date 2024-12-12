@@ -2,6 +2,7 @@ package au.org.ala.images
 
 import cloud.localstack.Constants
 import cloud.localstack.Localstack
+import cloud.localstack.ServiceName
 import cloud.localstack.docker.LocalstackDockerExtension
 import cloud.localstack.docker.annotation.LocalstackDockerProperties
 import com.amazonaws.ClientConfiguration
@@ -16,7 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import static cloud.localstack.deprecated.TestUtils.DEFAULT_REGION
 
 @ExtendWith(LocalstackDockerExtension.class)
-@LocalstackDockerProperties(services = [ "s3" ], imageTag = '0.12.11')
+@LocalstackDockerProperties(services = [ ServiceName.S3 ], imageTag = '0.12.11')
 class S3StorageLocationSpec extends StorageLocationSpec implements DomainUnitTest<S3StorageLocation> {
 
     List<S3StorageLocation> getStorageLocations() {[
