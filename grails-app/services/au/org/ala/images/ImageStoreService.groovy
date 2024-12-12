@@ -4,6 +4,7 @@ import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
 import au.org.ala.images.thumb.ThumbnailingResult
+import au.org.ala.images.tiling.DefaultZoomFactorStrategy
 import au.org.ala.images.tiling.ImageTiler3
 import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.tiling.ImageTilerResults
@@ -96,22 +97,39 @@ class ImageStoreService {
         tileCache.invalidateAll()
     }
 
-    ImageDescriptor storeImage(byte[] imageBytes, StorageLocation sl, String contentType, String contentDisposition = null) {
+    @NotTransactional
+    ImageDescriptor storeImage(ByteSource imageBytes, StorageOperations operations, String contentType, String originalFilename, String contentDisposition = null) {
         def uuid = UUID.randomUUID().toString()
-        def imgDesc = new ImageDescriptor(imageIdentifier: uuid)
-        sl.store(uuid, imageBytes, contentType, contentDisposition)
-        def reader = ImageReaderUtils.findCompatibleImageReader(imageBytes)
-        if (reader) {
-            imgDesc.height = reader.getHeight(0)
-            imgDesc.width = reader.getWidth(0)
-            reader.dispose()
+        if (log.isTraceEnabled()) {
+            log.trace('Storing image {} with content type {}, original filename {}, content disposition {} to {}', uuid, contentType, originalFilename, contentDisposition, operations)
         }
+        def imgDesc = new ImageDescriptor(imageIdentifier: uuid)
+        operations.store(uuid, imageBytes.openStream(), contentType, contentDisposition)
+        def filename = ImageUtils.getFilename(originalFilename)
+        if (contentType?.toLowerCase()?.startsWith('image')) {
+            if (log.isTraceEnabled()) {
+                log.trace('Getting image dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
+            }
+            def dimensions = ImageReaderUtils.getImageDimensions(imageBytes, filename) // TODO replace original filename with a temp filename with extension determine by content type?
+            if (dimensions) {
+                imgDesc.height = dimensions.height
+                imgDesc.width = dimensions.width
+                // precalculate the number of zoom levels
+                def pyramid = new DefaultZoomFactorStrategy(TILE_SIZE).getZoomFactors(dimensions.width, dimensions.height)
+                imgDesc.zoomLevels = pyramid.length
+            }
+        } else {
+            if (log.isTraceEnabled()) {
+                log.trace('Skipping calculating dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
+            }
+        }
+
         return imgDesc
     }
 
     @Transactional(readOnly = true)
-    byte[] retrieveImage(String imageIdentifier) {
-        return Image.findByImageIdentifier(imageIdentifier, [ cache: true] ).retrieve()
+    InputStream retrieveImageInputStream(String imageIdentifier) {
+        return Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join'] ] ).originalInputStream()
     }
 
     Map retrieveImageRectangle(Image parentImage, int x, int y, int width, int height) {

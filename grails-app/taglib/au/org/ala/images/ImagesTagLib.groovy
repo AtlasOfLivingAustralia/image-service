@@ -253,13 +253,15 @@ class ImagesTagLib {
         }
     }
 
+    static final List<String> SYSTEM_USERNAMES = [BatchService.BATCH_UPDATE_USERNAME]
+
     /**
      * @attr userId User id
      */
     def userDisplayName = { attrs, body ->
         String userId = attrs.userId as String
         def displayName = ""
-        if (userId) {
+        if (userId && !SYSTEM_USERNAMES.contains(userId)) {
             displayName = authService.getUserForUserId(userId)?.displayName
         }
 
@@ -359,6 +361,39 @@ class ImagesTagLib {
         ImageMetaDataItem md = attrs.metaDataItem as ImageMetaDataItem
         if (md) {
             out << sanitiserService.sanitise(new MetaDataValueFormatRules(grailsApplication).formatValue(md))
+        }
+    }
+
+    def batchFileUploadStatus = { attrs, body ->
+        def status = attrs.status
+        //${batchFileUpload.status == 'LOADING' ? 'active' : ''}
+        // ${batchFileUpload.status == 'COMPLETE' ? 'success' : ''}
+        // ${batchFileUpload.status == 'PARTIALLY_COMPLETE' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'WAITING_PROCESSING' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'QUEUED' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'STOPPED' ? 'danger' : ''}
+        switch (status) {
+            case BatchService.UNPACKING:
+            case BatchService.UNZIPPED:
+                out << ""
+                break
+            case BatchService.LOADING:
+            case BatchService.WAITING__PROCESSING:
+                out << "info"
+                break
+            case BatchService.COMPLETE:
+                out << "success"
+                break
+            case BatchService.PARTIALLY__COMPLETE:
+                out << "primary"
+                break
+            case BatchService.QUEUED:
+                out << "warning"
+                break
+            case BatchService.STOPPED:
+            case BatchService.CORRUPT__AVRO__FILES:
+                out << "danger"
+                break
         }
     }
 }
