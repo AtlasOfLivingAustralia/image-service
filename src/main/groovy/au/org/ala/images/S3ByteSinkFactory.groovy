@@ -1,20 +1,20 @@
 package au.org.ala.images
 
 import au.org.ala.images.util.ByteSinkFactory
-import com.amazonaws.services.s3.AmazonS3Client
+import com.amazonaws.services.s3.AmazonS3
 import com.google.common.io.ByteSink
 
 import java.nio.file.Files
 
 class S3ByteSinkFactory implements ByteSinkFactory {
 
-    private final AmazonS3Client s3Client
+    private final AmazonS3 s3Client
     private final StoragePathStrategy storagePathStrategy
     private final String uuid
     private final String[] prefixes
     private final String bucket
 
-    S3ByteSinkFactory(AmazonS3Client s3Client, StoragePathStrategy storagePathStrategy, String bucket, String uuid, String... prefixes) {
+    S3ByteSinkFactory(AmazonS3 s3Client, StoragePathStrategy storagePathStrategy, String bucket, String uuid, String... prefixes) {
         this.bucket = bucket
         this.s3Client = s3Client
         this.storagePathStrategy = storagePathStrategy

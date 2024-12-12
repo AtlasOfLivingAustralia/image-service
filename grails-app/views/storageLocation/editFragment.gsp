@@ -39,6 +39,11 @@
                 <g:textField class="form-control" name="prefix" value="${s3StorageLocation.prefix}" placeholder="images/prefix" />
             </div>
             <div class="form-group">
+                <label>
+                    <g:checkBox name="containerCredentials" value="${s3StorageLocation.containerCredentials}" /> Use Container Credentials instead of Access Key and Secret Key
+                </label>
+            </div>
+            <div class="form-group">
                 <label for="accessKey">Access Key</label>
                 <g:textField class="form-control" name="accessKey" value="${s3StorageLocation.accessKey}" placeholder="" />
             </div>

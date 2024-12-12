@@ -6,6 +6,7 @@ import au.org.ala.web.SSO
 import com.google.common.base.Suppliers
 import grails.converters.JSON
 import grails.converters.XML
+import groovy.util.logging.Slf4j
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.headers.Header
@@ -29,6 +30,7 @@ import static io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.PATH
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
 
+@Slf4j
 class WebServiceController {
 
     static String LEGACY_API_KEY_HEADER_NAME = 'apiKey'
@@ -38,7 +40,6 @@ class WebServiceController {
     def imageStoreService
     def tagService
     def searchService
-    def logService
     def batchService
     def elasticSearchService
     def collectoryService
@@ -249,10 +250,10 @@ class WebServiceController {
                 imageService.scheduleArtifactGeneration(imageInstance.id, userId)
                 results.message = "Image artifact generation scheduled for image ${imageInstance.id}"
             } else {
-                def count = forEachImageId { imageId ->
-                    imageService.scheduleArtifactGeneration(imageId, userId)
-                }
-                results.message = "Image artifact generation scheduled for ${count} images."
+//                def count = forEachImageId { imageId ->
+//                    imageService.scheduleArtifactGeneration(imageId, userId)
+//                }
+                results.message = "Not performing indexing on all images."
             }
             flash.message  = results.message
             renderResults(results)
@@ -1757,7 +1758,7 @@ class WebServiceController {
             return
         }
 
-        logService.log("Cancelling job (Ticket: ${job.ticket} for image ${job.image.imageIdentifier}")
+        log.info("Cancelling job (Ticket: ${job.ticket} for image ${job.image.imageIdentifier}")
 
         // Push the job back on the queue
         if (job.taskType == ImageTaskType.TMSTile) {
@@ -2112,7 +2113,7 @@ class WebServiceController {
                 def newImage = results[srcImage.sourceUrl ?: srcImage.imageUrl]
                 if (newImage && newImage.success) {
                     imageService.setMetadataItems(newImage.image, srcImage, MetaDataSourceType.SystemDefined, userId)
-                    imageService.scheduleArtifactGeneration(newImage.image.id, userId)
+//                    imageService.scheduleArtifactGeneration(newImage.image.id, userId)
                     imageService.scheduleImageIndex(newImage.image.id)
                     newImage.image = null
                 }

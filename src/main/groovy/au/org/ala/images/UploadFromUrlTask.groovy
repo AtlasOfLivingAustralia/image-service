@@ -20,7 +20,7 @@ class UploadFromUrlTask extends BackgroundTask {
             Image.withNewTransaction {
                 _imageService.setMetadataItemsByImageId(newImage.image.id, _imageSource, MetaDataSourceType.SystemDefined, _userId)
             }
-            _imageService.scheduleArtifactGeneration(newImage.image.id, _userId)
+//            _imageService.scheduleArtifactGeneration(newImage.image.id, _userId)
             _imageService.scheduleImageIndex(newImage.image.id)
             _imageService.scheduleImageMetadataPersist(newImage.image.id, newImage.image.imageIdentifier,  newImage.image.originalFileName, MetaDataSourceType.Embedded, _userId)
             this.yieldResult(newImage.image)

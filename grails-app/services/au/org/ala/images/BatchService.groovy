@@ -1,12 +1,14 @@
 package au.org.ala.images
 
-
+import grails.gorm.transactions.NotTransactional
 import groovyx.gpars.GParsPool
+import jsr166y.ForkJoinPool
 import net.lingala.zip4j.ZipFile
 import org.apache.avro.file.DataFileStream
 import org.apache.avro.generic.GenericDatumReader
 import org.apache.avro.generic.GenericRecord
 
+import javax.annotation.PreDestroy
 import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
@@ -23,7 +25,9 @@ class BatchService {
     public static final String CORRUPT__AVRO__FILES = "CORRUPT_AVRO_FILES"
     public static final String INVALID = "INVALID"
     public static final String UNZIPPED = "UNZIPPED"
+    public static final String UNPACKING = "UNPACKING"
     public static final String MULTIMEDIA_ITEMS = "multimediaItems"
+    public static final String BATCH_UPDATE_USERNAME = "batch-update"
 
     def imageService
     def settingService
@@ -119,7 +123,7 @@ class BatchService {
                 filePath: uploadedFile.getAbsolutePath(),
                 md5Hash: md5Hash,
                 dataResourceUid: dataResourceUid,
-                status: "UNPACKING",
+                status: UNPACKING,
                 message: "Unarchive zip file"
 
         )
@@ -165,14 +169,21 @@ class BatchService {
 
             upload.batchFiles = batchFiles as Set
             if (upload.batchFiles) {
-                upload.message = "Awaiting processing"
-                upload.status = WAITING__PROCESSING
+                if (upload.batchFiles.every { it.recordCount == 0 }) {
+                    upload.status = COMPLETE
+                    upload.dateCompleted = new Date()
+                    upload.message = "No valid records found"
+                } else {
+                    upload.message = "Awaiting processing"
+                    upload.status = WAITING__PROCESSING
+                }
             } else {
                 upload.message = message
                 upload.status = COMPLETE
+                upload.dateCompleted = new Date()
             }
 
-        } catch (Exception e){
+        } catch (Exception e) {
             log.error("Problem unpacking zip " + e.getMessage(), e)
             upload.message = "Problem reading files: " + e.getMessage()
             upload.status = CORRUPT__AVRO__FILES
@@ -218,15 +229,37 @@ class BatchService {
         Boolean.parseBoolean(setting ? setting.value : "true")
     }
 
-    private boolean loadBatchFile(BatchFile batchFile) {
+    private volatile ForkJoinPool pool
+    private final def $lock = new Object[0]
 
-        log.info("Loading batch file ${batchFile.id}: ${batchFile.filePath}")
+    private def getBackgroundTasksPool(int batchThreads) {
+        // TODO update pool if batchThreads changes
+        if (!pool) {
+            synchronized ($lock) {
+                if (!pool) {
+                    pool = new ForkJoinPool(batchThreads)
+                }
+            }
+        }
+        return pool
+    }
+
+    @PreDestroy
+    def shutdownPool() {
+        if (pool) {
+            pool.shutdown()
+        }
+    }
+
+    private boolean loadBatchFile(long id, String filePath, String dataResourceUid) {
+
+        log.info("Loading batch file ${id}: ${filePath}")
         def start = Instant.now()
 
-        def inStream = new FileInputStream(new File(batchFile.filePath))
+        def inStream = new FileInputStream(new File(filePath))
         DataFileStream<GenericRecord> reader = new DataFileStream<>(inStream, new GenericDatumReader<GenericRecord>())
 
-        def dataResourceUid = batchFile.batchFileUpload.dataResourceUid
+//        def dataResourceUid = dataResourceUid
 
         int processedCount = 0
         long newImageCount = 0
@@ -239,7 +272,7 @@ class BatchService {
 
         boolean completed = false
 
-        while (reader.hasNext() && batchEnabled()){
+        while (reader.hasNext() && batchEnabled()) {
 
             int batchSize = 0
             def batch = []
@@ -298,14 +331,17 @@ class BatchService {
                 }
                 batchSize ++
             }
-            List<Map<String, Object>> results = Collections.synchronizedList(new ArrayList<Map<String, Object>>());
+//            List<Map<String, Object>> results //= Collections.synchronizedList(new ArrayList<Map<String, Object>>());
 
-            GParsPool.withPool(batchThreads) {
-                batch.eachParallel { image ->
-                    results << execute(image, "batch-update")
+            // TODO: Use virtual threads
+            //def pool = Executors.newVirtualThreadPerTaskExecutor()
+            List<Map<String, Object>> results = GParsPool.withExistingPool(getBackgroundTasksPool(batchThreads)) {
+                batch.collectParallel { image ->
+                    def result = execute(image, BATCH_UPDATE_USERNAME)
                     if (batchThrottleInMillis > 0){
                         Thread.sleep(batchThrottleInMillis)
                     }
+                    result
                 }
             }
 
@@ -325,25 +361,29 @@ class BatchService {
                 }
             }
 
-            batchFile.metadataUpdates = metadataUpdateCount
-            batchFile.newImages = newImageCount
-            batchFile.errorCount = errorCount
-            batchFile.processedCount = processedCount
-            batchFile.timeTakenToLoad = Duration.between(start, Instant.now()).toMillis() / 1000
-            batchFile.save(flush:true)
+            BatchFile.withNewTransaction {
+                BatchFile batchFile = BatchFile.get(id)
+                batchFile.metadataUpdates = metadataUpdateCount
+                batchFile.newImages = newImageCount
+                batchFile.errorCount = errorCount
+                batchFile.processedCount = processedCount
+                batchFile.timeTakenToLoad = Duration.between(start, Instant.now()).toMillis() / 1000
+                batchFile.save()
+            }
 
             completed = !reader.hasNext()
         }
 
         if (completed) {
-            log.info("Completed loading of batch file ${batchFile.id}: ${batchFile.filePath}")
+            log.info("Completed loading of batch file ${id}: ${filePath}")
             // TODO Delete .avro / .zip files?
         } else {
-            log.info("Exiting the loading of batch file ${batchFile.id}:  ${batchFile.filePath}, complete: ${completed}")
+            log.info("Exiting the loading of batch file ${id}:  ${filePath}, complete: ${completed}")
         }
-        completed
+        return completed
     }
 
+    @NotTransactional // transactions managed in method
     Map execute(Map imageSource,  String _userId) {
 
         try {
@@ -354,7 +394,7 @@ class BatchService {
                 }
 
                 if (!imageUpdateResult.alreadyStored) {
-                    imageService.scheduleArtifactGeneration(imageUpdateResult.image.id, _userId)
+//                    imageService.scheduleArtifactGeneration(imageUpdateResult.image.id, _userId)
                     imageService.scheduleImageIndex(imageUpdateResult.image.id)
                     //Only run for new images......
                     imageService.scheduleImageMetadataPersist(
@@ -367,9 +407,14 @@ class BatchService {
             }
             imageUpdateResult
         } catch (Exception e){
-            log.error("Problem saving image: " + imageSource + " - Problem:" + e.getMessage())
-            if (log.isDebugEnabled()){
-                log.debug("Problem saving image: " + imageSource + " - Problem:" + e.getMessage(), e)
+            // not sure where this exception comes from
+            if (e.message.startsWith('query did not return a unique result'))  {
+                log.error("Problem saving image: " + imageSource + " - Problem:" + e.getMessage(), e)
+            } else {
+                log.error("Problem saving image: " + imageSource + " - Problem: " + e.class.name + " " + e.message)
+                if (log.isDebugEnabled()){
+                    log.debug("Problem saving image: " + imageSource + " - Problem: " + e.class.name + " " + e.message, e)
+                }
             }
             [success: false]
         }
@@ -382,72 +427,99 @@ class BatchService {
         }
     }
 
-    def processNextInQueue(){
+    @NotTransactional
+    def processNextInQueue() {
 
-        if (!settingService.getBatchServiceProcessingEnabled()){
-            log.debug("Batch service is currently disabled")
+        def continueProcessing = true
+        long id
+        String filePath
+        String dataResourceUid
+        BatchFile.withNewTransaction {
+
+            if (!settingService.getBatchServiceProcessingEnabled()) {
+                log.debug("Batch service is currently disabled")
+                continueProcessing = false
+                return
+            }
+
+            //is there an executing job ??
+            def loading = BatchFile.findAllByStatus(LOADING)
+            if (loading) {
+                log.debug("Batch service is currently processing a job")
+                continueProcessing = false
+                return
+            }
+
+            // Read a job from BatchFile - oldest file that is set to "READY_TO_LOAD"
+            BatchFile batchFile = BatchFile.findByStatus(QUEUED, [sort: 'dateCreated', order: 'asc'])
+
+            log.debug("Checking batch file load job...")
+            if (batchFile) {
+                id = batchFile.id
+                filePath = batchFile.filePath
+                dataResourceUid = batchFile.batchFileUpload.dataResourceUid
+
+                // Read AVRO, download for new, enqueue for metadata updates....
+                batchFile.status = LOADING
+                batchFile.lastUpdated = new Date()
+                batchFile.processedCount = 0
+                batchFile.newImages = 0
+                batchFile.metadataUpdates = 0
+                batchFile.dateCompleted = null
+                batchFile.save()
+
+                BatchFileUpload.executeUpdate("update BatchFileUpload set status = :status where id = :id and status != :status", [status: LOADING, id: batchFile.batchFileUpload.id])
+//                batchFile.batchFileUpload.status = LOADING
+//                batchFile.batchFileUpload.save()
+
+                return
+            } else {
+                log.debug("No jobs to run.")
+                continueProcessing = false
+                return
+            }
+        }
+
+        if (!continueProcessing) {
             return
         }
 
-        //is there an executing job ??
-        def loading = BatchFile.findAllByStatus(LOADING)
-        if (loading){
-            return
-        }
+        //load batch file
+        def start = Instant.now()
+        def complete = loadBatchFile(id, filePath, dataResourceUid)
+        def millisTaken = Duration.between(start, Instant.now()).toMillis()
 
-        log.debug("Checking batch file load job...")
+        Date now = new Date()
+        BatchFile.withNewTransaction {
 
-        // Read a job from BatchFile - oldest file that is set to "READY_TO_LOAD"
-        BatchFile batchFile = BatchFile.findByStatus(QUEUED, [sort: 'dateCreated', order: 'asc'])
+            BatchFile batchFile = BatchFile.get(id)
 
-        if (batchFile){
-
-            // Read AVRO, download for new, enqueue for metadata updates....
-            batchFile.status = LOADING
-            batchFile.lastUpdated = new Date()
-            batchFile.processedCount = 0
-            batchFile.newImages = 0
-            batchFile.metadataUpdates = 0
-            batchFile.dateCompleted = null
-            batchFile.save(flush:true)
-
-            batchFile.batchFileUpload.status = LOADING
-            batchFile.batchFileUpload.save(flush:true)
-
-            //load batch file
-            def start = Instant.now()
-            def complete = loadBatchFile(batchFile)
-            def millisTaken = Duration.between(start, Instant.now()).toMillis()
-
-            Date now = new Date()
             if (complete) {
                 batchFile.status = COMPLETE
                 batchFile.lastUpdated = now
                 batchFile.dateCompleted = now
-                if (millisTaken)
-                    batchFile.timeTakenToLoad = millisTaken / 1000
-                else
-                    batchFile.timeTakenToLoad = 0
 
-                batchFile.save(flush: true)
+                batchFile.timeTakenToLoad = millisTaken ? millisTaken / 1000 : 0
             } else {
                 batchFile.status = STOPPED
                 batchFile.lastUpdated = now
-                batchFile.save(flush: true)
             }
+            batchFile.save()
 
             // if all loaded, mark as complete
+
             boolean allComplete = batchFile.batchFileUpload.batchFiles.every { it.status == COMPLETE }
-            if (allComplete){
-                batchFile.batchFileUpload.message = "All files processed"
-                batchFile.batchFileUpload.status =  COMPLETE
-                batchFile.batchFileUpload.dateCompleted = now
+
+            BatchFileUpload batchFileUpload = batchFile.batchFileUpload
+            if (allComplete) {
+                batchFileUpload.message = "All files processed"
+                batchFileUpload.status =  COMPLETE
+                batchFileUpload.dateCompleted = now
             } else {
-                batchFile.batchFileUpload.message = "Some files processed"
-                batchFile.batchFileUpload.status = PARTIALLY__COMPLETE
+                batchFileUpload.message = "Some files processed"
+                batchFileUpload.status = PARTIALLY__COMPLETE
             }
-        } else {
-            log.debug("No jobs to run.")
+            batchFileUpload.save()
         }
     }
 
@@ -478,8 +550,16 @@ class BatchService {
         }
     }
 
-    def getUploads(){
-        BatchFileUpload.findAll([sort:'id', order: 'asc'])
+    def getUploads(boolean hideEmptyBatchUploads = false) {
+        List<Long> ids
+        if (hideEmptyBatchUploads) {
+            ids = BatchFileUpload.executeQuery("select bfu.id from BatchFileUpload bfu left join bfu.batchFiles bf where bf.status != 'INVALID' group by bfu.id")
+            if (ids) {
+                return BatchFileUpload.findAllByIdInList(ids, [sort: 'id', order: 'asc'])
+            }
+        } else {
+            return BatchFileUpload.findAll([sort: 'id', order: 'asc'])
+        }
     }
 
     def getNonCompleteFiles(){

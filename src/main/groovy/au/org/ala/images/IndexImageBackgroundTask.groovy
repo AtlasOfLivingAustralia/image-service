@@ -18,9 +18,11 @@ class IndexImageBackgroundTask extends BackgroundTask {
     }
 
     @Override
-    @Transactional
     void execute() {
-        def imageInstance = Image.get(_imageId)
+        def imageInstance
+        Image.withTransaction {
+            imageInstance = Image.get(_imageId)
+        }
         if (imageInstance) {
             _elasticSearchService.indexImage(imageInstance)
         }

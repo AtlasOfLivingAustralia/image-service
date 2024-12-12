@@ -2,6 +2,7 @@ package au.org.ala.images;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -26,6 +27,8 @@ public class CodeTimer {
 
     private long _frequency;
 
+    Level level = Level.INFO;
+
     /**
      * ctor Starts the timer
      *
@@ -37,6 +40,22 @@ public class CodeTimer {
         _times = new ArrayList<Long>();
         _startCounter = System.nanoTime();
         _frequency = 1000000000;
+    }
+
+    public void debug() {
+        level = Level.FINE;
+    }
+
+    public void info() {
+        level = Level.INFO;
+    }
+
+    public void trace() {
+        level = Level.FINEST;
+    }
+
+    public void off() {
+        level = Level.OFF;
     }
 
     /** start/restart the timer */
@@ -84,13 +103,15 @@ public class CodeTimer {
         _endCounter = System.nanoTime();
         String msg = null;
         if (printelapsed) {
-            if (asdouble) {
-                msg = String.format("%s: %f ms%s", _description, getElapsedMillisDouble(), (auxmsg == null ? "" : " (" + auxmsg + ")"));
-            } else {
-                msg = String.format("%s: %d ms%s", _description, getElapsedMillis(), (auxmsg == null ? "" : " (" + auxmsg + ")"));
-            }
-            if (msg != null && logger != null) {
-                writeln(msg);
+            if (logger.isLoggable(level)) {
+                if (asdouble) {
+                    msg = String.format("%s: %f ms%s", _description, getElapsedMillisDouble(), (auxmsg == null ? "" : " (" + auxmsg + ")"));
+                } else {
+                    msg = String.format("%s: %d ms%s", _description, getElapsedMillis(), (auxmsg == null ? "" : " (" + auxmsg + ")"));
+                }
+                if (msg != null && logger != null) {
+                    logger.log(level, msg);
+                }
             }
         }
         _times.add(getElapsedMillis());
@@ -122,10 +143,6 @@ public class CodeTimer {
         return getAverage(false);
     }
 
-    private void writeln(String msg) {
-        logger.info(msg);
-    }
-
     /**
      * @param dump
      *            if true will print a message to std out
@@ -137,8 +154,8 @@ public class CodeTimer {
             total += l;
         }
         long avg = (_times.size() == 0 ? 0 : total / _times.size());
-        if (dump && logger != null) {
-            writeln("Average : " + avg);
+        if (dump && logger != null && logger.isLoggable(level)) {
+            logger.log(level, "Average : {}", avg);
         }
         return avg;
     }

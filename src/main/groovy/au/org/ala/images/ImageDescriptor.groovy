@@ -4,4 +4,5 @@ class ImageDescriptor {
     String imageIdentifier
     int height
     int width
+    int zoomLevels
 }

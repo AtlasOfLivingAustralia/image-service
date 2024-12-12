@@ -204,8 +204,9 @@ class AdminController {
         [licenceCSV:licenceCSV.toString(), licenceCSVMapping:licenceCSVMappings.toString()]
     }
 
-    def batchUploads(){
-        [results: batchService.getUploads(),
+    def batchUploads() {
+        def hideEmptyBatchUploads = params.boolean('hideEmpty', true)
+        [results: batchService.getUploads(hideEmptyBatchUploads),
          active: batchService.getActiveFiles(),
          queued: batchService.getQueuedFiles(),
          batchServiceProcessingEnabled: settingService.getBatchServiceProcessingEnabled()]
@@ -550,12 +551,24 @@ class AdminController {
     def clearCollectoryCache(){
         collectoryService.clearCache()
         flash.message = 'Collectory cache cleared'
-        redirect(action:'tools', message: 'Cache is cleared')
+        redirect(action:'tools', message: 'Collectory Cache is cleared')
     }
 
     def clearHibernateCache() {
         sessionFactory.cache?.evictAllRegions()
         flash.message = 'Hibernate cache cleared'
-        redirect(action:'tools', message: 'Cache is cleared')
+        redirect(action:'tools', message: 'Hibernate Cache is cleared')
+    }
+
+    def clearThumbnailLookupCache() {
+        imageStoreService.clearThumbnailLookupCache()
+        flash.message = 'Thumbnail lookup cache cleared'
+        redirect(action:'tools', message: 'Thumbnail Lookup Cache is cleared')
+    }
+
+    def clearTileLookupCache() {
+        imageStoreService.clearTileLookupCache()
+        flash.message = 'Tile lookup cache cleared'
+        redirect(action:'tools', message: 'Tile Lookup Cache is cleared')
     }
 }

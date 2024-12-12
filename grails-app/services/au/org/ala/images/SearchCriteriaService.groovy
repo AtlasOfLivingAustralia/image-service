@@ -1,8 +1,10 @@
 package au.org.ala.images
 
+import groovy.util.logging.Slf4j
+
+@Slf4j
 class SearchCriteriaService {
 
-    def logService
 
     List<SearchCriteriaDefinition> criteriaDefinitionList = []
 
@@ -19,7 +21,7 @@ class SearchCriteriaService {
 
                         def criteriaDefinition = SearchCriteriaDefinition.findByTypeAndFieldName(CriteriaType.ImageProperty, field.name)
                         if (!criteriaDefinition) {
-                            logService.debug("Creating new Image Property criteria definition for ${field.name}")
+                            log.debug("Creating new Image Property criteria definition for ${field.name}")
                             criteriaDefinition = new SearchCriteriaDefinition(name: "Image ${field.name}", type: CriteriaType.ImageProperty, valueType: ann.valueType(), fieldName: field.name, units: ann.units(), description: ann.description())
                             criteriaDefinition.save(flush: true, failOnError: false)
                         }
