@@ -557,6 +557,9 @@ class BatchService {
             if (ids) {
                 return BatchFileUpload.findAllByIdInList(ids, [sort: 'id', order: 'asc'])
             }
+            else {
+                return []
+            }
         } else {
             return BatchFileUpload.findAll([sort: 'id', order: 'asc'])
         }

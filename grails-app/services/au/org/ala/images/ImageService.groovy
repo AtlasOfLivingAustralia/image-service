@@ -735,7 +735,7 @@ SELECT
                 image.zoomLevels = imgDesc.zoomLevels
                 image.fileSize = bytes.size()
                 image.mimeType = contentType
-                image.dateUploaded = new Date()
+                image.dateUploaded = new java.util.Date()
                 image.originalFilename = originalFilename
                 image.dateTaken = contentType.toLowerCase().startsWith('image') ? getImageTakenDate(bytes, originalFilename) ?: image.dateUploaded : image.dateUploaded
 
@@ -1087,7 +1087,7 @@ SELECT
             elasticSearchService.deleteImage(image)
 
             //soft deletes
-            image.dateDeleted = new Date()
+            image.dateDeleted = new java.util.Date()
             image.save(flush: true, failonerror: true)
 
             auditService.log(image?.imageIdentifier, "Image deleted", userId)
