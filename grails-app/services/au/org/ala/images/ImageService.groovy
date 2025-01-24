@@ -47,7 +47,6 @@ import org.springframework.web.multipart.MultipartFile
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
 import java.sql.Connection
-import java.sql.Date
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.ResultSetMetaData
@@ -735,7 +734,7 @@ SELECT
                 image.zoomLevels = imgDesc.zoomLevels
                 image.fileSize = bytes.size()
                 image.mimeType = contentType
-                image.dateUploaded = new java.util.Date()
+                image.dateUploaded = new Date()
                 image.originalFilename = originalFilename
                 image.dateTaken = contentType.toLowerCase().startsWith('image') ? getImageTakenDate(bytes, originalFilename) ?: image.dateUploaded : image.dateUploaded
 
@@ -1087,7 +1086,7 @@ SELECT
             elasticSearchService.deleteImage(image)
 
             //soft deletes
-            image.dateDeleted = new java.util.Date()
+            image.dateDeleted = new Date()
             image.save(flush: true, failonerror: true)
 
             auditService.log(image?.imageIdentifier, "Image deleted", userId)
