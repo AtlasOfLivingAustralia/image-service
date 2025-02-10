@@ -345,6 +345,8 @@ elasticsearch:
 
 # Number of days to wait before purging completed batch jobs
 purgeCompletedAgeInDays: 3
+# Number of days to wait before purging failed uploads
+purgeFailedUploadInDays: 1
 
 # The URLs to recognise as image service URL for the purposes of recognising incoming
 # URLs for images (to avoid re-downloading the images)

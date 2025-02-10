@@ -9,6 +9,7 @@ import org.apache.avro.generic.GenericDatumReader
 import org.apache.avro.generic.GenericRecord
 
 import javax.annotation.PreDestroy
+import javax.transaction.Transactional
 import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
@@ -627,5 +628,12 @@ class BatchService {
                 it.delete(flush: true)
             }
         }
+    }
+
+    @Transactional
+    def purgeOldFailedUploads() {
+        def threshold = Instant.now().minus(Duration.ofDays(grailsApplication.config.getProperty('purgeFailedUploadInDays')))
+        def deletions = FailedUpload.executeUpdate("delete FailedUpload where dateCreated > :threshold", [threshold: threshold])
+        log.info("Removed ${deletions} failed uploads older than ${threshold}")
     }
 }
