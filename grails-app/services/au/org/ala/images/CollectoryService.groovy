@@ -1,6 +1,11 @@
 package au.org.ala.images
 
+import com.github.benmanes.caffeine.cache.Caffeine
+import com.github.benmanes.caffeine.cache.LoadingCache
 import groovy.json.JsonSlurper
+import org.springframework.beans.factory.annotation.Value
+
+import java.time.Duration
 
 /**
  * Services to retrieve resource level metadata.
@@ -11,12 +16,18 @@ class CollectoryService {
 
     static String NO_DATARESOURCE = 'no_dataresource'
 
-    def serviceMethod() {}
+    @Value('${collectory.cache.dataResourceSpec:maximumSize=10000,expireAfterWrite=1d,refreshAfterWrite=1d}')
+    String dataResourceLookupCacheSpec = "maximumSize=10000,expireAfterWrite=1d,refreshAfterWrite=1d"
 
-    //a low rent cache of image metadata
-    static _lookupCache = [:]
+    @Value('${collectory.cache.nameSpec:maximumSize=10000,expireAfterWrite=1d,refreshAfterWrite=1d}')
+    String nameLookupCacheSpec = "maximumSize=10000,expireAfterWrite=1d,refreshAfterWrite=1d"
 
-    static _uidLookupCache = [:]
+    LoadingCache<String, Optional<Object>> dataResourceLookupCache = Caffeine.from(dataResourceLookupCacheSpec)
+            .build { key -> getResourceLevelMetadataInternal(key) }
+
+    LoadingCache<String, Optional<Object>> nameLookupCache = Caffeine.from(nameLookupCacheSpec)
+            .build { key -> getNameForUIDInternal(key) }
+
 
     /**
      * Adds the image metadata (dublin core terms) to the image
@@ -49,57 +60,62 @@ class CollectoryService {
     }
 
     def clearCache() {
-        log.info("Clearing cache - current size: " + _lookupCache.size())
-        _lookupCache.clear()
-        _uidLookupCache.clear()
+        log.info("Clearing cache - current size: " + dataResourceLookupCache.estimatedSize())
+        dataResourceLookupCache.invalidateAll()
+        nameLookupCache.invalidateAll()
     }
 
     def getResourceLevelMetadata(dataResourceUid) {
 
-        def metadata = [:]
+        def results = dataResourceLookupCache.get(dataResourceUid)
+        return results.orElse([:])
+    }
 
+    private Optional<Object> getResourceLevelMetadataInternal(String dataResourceUid) {
         if (!dataResourceUid || dataResourceUid == NO_DATARESOURCE){
-            return metadata
+            return Optional.empty()
         }
 
-        //lookup the resource UID
-        if(!_lookupCache.containsKey(dataResourceUid)){
-            def url = grailsApplication.config.getProperty('collectory.baseURL') + "/ws/dataResource/" + dataResourceUid
-            try {
-                def js = new JsonSlurper()
-                def json = js.parseText(new URL(url).text)
-                if (json) {
-                    metadata = json
-                }
-                _lookupCache.put(dataResourceUid, json)
-            } catch (Exception e){
-                log.warn("Unable to load metadata from ${url}")
+        def url = grailsApplication.config.getProperty('collectory.baseURL') + "/ws/dataResource/" + dataResourceUid
+        try {
+            def js = new JsonSlurper()
+            def json = js.parseText(new URL(url).text)
+            if (json) {
+                return Optional.of(json)
             }
-        } else {
-            metadata = _lookupCache.get(dataResourceUid)
+            return Optional.empty()
+        } catch (FileNotFoundException e) {
+            log.trace("Data Resource UID not found: ${dataResourceUid} at ${url}")
+            return Optional.empty()
+        } catch (Exception e) {
+            log.warn("Unable to load metadata from ${url} because ${e.message}")
+            return null // always retry errors that aren't 404s
         }
-
-        metadata
     }
 
     def getNameForUID(uid){
-
-        if(!uid){
-            return null
-        }
-
-        //lookup the resource UID
-        if(!_uidLookupCache.containsKey(uid)){
-            def url = grailsApplication.config.getProperty('collectory.baseURL') + "/ws/lookup/name/" + uid
-            try {
-                def js = new JsonSlurper()
-                def json = js.parseText(new URL(url).text)
-                _uidLookupCache.put(uid, json.name)
-            } catch (Exception e){
-                log.warn("Unable to load metadata from ${url}")
+            if (!uid) {
+                return null
             }
-        } else {
-            _uidLookupCache.get(uid)
+
+            //lookup the resource UID
+            def results = nameLookupCache.get(uid)
+            return results.orElse(null)
+    }
+
+    Optional<Object> getNameForUIDInternal(String uid){
+        //lookup the resource UID
+        def url = grailsApplication.config.getProperty('collectory.baseURL') + "/ws/lookup/name/" + uid
+        try {
+            def js = new JsonSlurper()
+            def json = js.parseText(new URL(url).text)
+            return Optional.of(json)
+        } catch (FileNotFoundException e) {
+            log.trace("Name not found: ${uid} at ${url}")
+            return Optional.empty()
+        } catch (Exception e) {
+            log.warn("Unable to load metadata from ${url} because ${e.message}")
+            return null
         }
     }
 }
