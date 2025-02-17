@@ -121,6 +121,7 @@ class SearchController {
         redirect(action:'list', params:[q:params.q, fq:params.fq])
     }
 
+    @AlaSecured
     def download(){
         response.setHeader("Content-Disposition", "attachment; filename=\"images.zip\"")
         response.setHeader("Content-Type", "application/zip")
