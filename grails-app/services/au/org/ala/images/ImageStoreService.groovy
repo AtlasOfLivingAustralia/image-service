@@ -433,6 +433,9 @@ class ImageStoreService {
 
     private String normaliseThumbnailType(String type) {
         def typeLowerCase = type.toLowerCase()
+        if (type.contains('darkGrey')) {
+            type = type.replace('darkGrey', 'darkGray')
+        }
         if (typeLowerCase.startsWith('thumbnail_')) {
             return type.substring('thumbnail_'.length())
         } else if (typeLowerCase == 'thumbnail') {
