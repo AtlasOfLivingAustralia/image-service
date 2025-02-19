@@ -260,6 +260,32 @@ class WebServiceController {
         }
     }
 
+    /**
+     * Hotfix to allow scheduling only tile generation
+     */
+    @RequireApiKey(scopes = ['image-service/write'])
+    def scheduleTileGenerationWS() {
+        def imageInstances = Image.findAllByImageIdentifierInList(params.list('id'), [ cache: true])
+        def userId = request.remoteUser ?: request.getHeader(LEGACY_API_KEY_HEADER_NAME)
+        def results = [success: true]
+
+        if (!imageInstances) {
+            results.success = false
+            results.message = "Could not find images ${params.id}"
+            flash.message  = results.message
+            renderResults(results, HttpStatus.SC_BAD_REQUEST)
+        } else {
+            if (imageInstances) {
+                imageInstances.each { imageInstance ->
+                    imageService.scheduleTileGeneration(imageInstance.id, userId)
+                }
+                results.message = "Image tile generation scheduled for images ${imageInstances*.id}"
+            }
+            flash.message  = results.message
+            renderResults(results)
+        }
+    }
+
     @Operation(
             method = "GET",
             summary = "Schedule keyword generation",
