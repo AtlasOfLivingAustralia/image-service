@@ -27,6 +27,7 @@ import spock.lang.Shared
 import spock.lang.Specification
 
 import java.lang.reflect.Field
+import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 abstract class ImagesIntegrationSpec extends Specification {
@@ -96,7 +97,17 @@ abstract class ImagesIntegrationSpec extends Specification {
      */
     static void setNewValue(Field field, Object newValue, obj) throws Exception {
         field.setAccessible(true)
-        Field modifiersField = Field.class.getDeclaredField("modifiers")
+        Method getDeclaredFields0 = Class.class.getDeclaredMethod("getDeclaredFields0", boolean.class)
+        getDeclaredFields0.setAccessible(true)
+//        Field modifiersField = Field.class.getDeclaredField("modifiers")
+        Field[] fields = (Field[]) getDeclaredFields0.invoke(Field.class, false)
+        Field modifiersField = null
+        for (Field each : fields) {
+            if ("modifiers".equals(each.getName())) {
+                modifiersField = each;
+                break;
+            }
+        }
         modifiersField.setAccessible(true)
         modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL)
         field.set(obj, newValue)

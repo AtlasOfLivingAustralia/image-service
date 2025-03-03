@@ -2,7 +2,7 @@ plugins {
     id "groovy"
     id "org.grails.grails-gsp"
     id "org.grails.grails-web"
-    id "com.github.erdi.webdriver-binaries"
+    id "com.github.erdi.webdriver-binaries" version "3.2"
     id "war"
     id "idea"
     id "com.bertramlabs.asset-pipeline"
@@ -222,6 +222,15 @@ tasks.withType(Test) {
     systemProperty "geb.build.reportsDir", reporting.file("geb/integrationTest")
     systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
     systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
+    testLogging {
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
+    doFirst {
+      jvmArgs = [
+        '--add-opens', 'java.base/java.lang=ALL-UNNAMED', '--add-opens', 'java.base/java.lang.reflect=ALL-UNNAMED'
+      ]
+    }
 }
 tasks.withType(War).configureEach { War war ->
     war.dependsOn compileGroovyPages
