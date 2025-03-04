@@ -1,10 +1,36 @@
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.configuration.ClassicConfiguration
+import org.grails.spring.beans.factory.InstanceFactoryBean
 import org.postgresql.ds.PGSimpleDataSource
 import org.springframework.beans.factory.config.BeanDefinition
 
 // Place your Spring DSL code here
 beans = {
+
+    // This is here to support integration testing - the embedded postgres JAR
+    // does not exist in the built .war file.
+    // This is a workaround to allow embedded postgres to be started
+    // when running integration tests as Grails 6 seems to load the application
+    // context once, no matter how many integration tests are being run.
+    // Previously we started embedded postgres in the integration test itself but
+    // this now causes test failures in the current version of Grails.
+    // TODO could we move to using TestContainers for integration tests?
+    if (application.config.getProperty('dataSource.embeddedPostgres', Boolean)) {
+        log.info "Starting embedded postgres"
+        def pgInstance = io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder()
+                .setPort(application.config.getProperty('dataSource.embeddedPort', Integer, 6543))
+                .setCleanDataDirectory(true)
+                .start()
+        embeddedPostgres(InstanceFactoryBean, pgInstance) { bean ->
+//            bean.destroyMethod = 'close'
+        }
+
+        BeanDefinition dataSourceBeanDef = getBeanDefinition('dataSource')
+        if (dataSourceBeanDef) {
+            addDependency(dataSourceBeanDef, 'embeddedPostgres')
+        }
+    }
+
     if (application.config.getProperty('flyway.enabled', Boolean)) {
 
         flywayDataSource(PGSimpleDataSource) { bean ->
