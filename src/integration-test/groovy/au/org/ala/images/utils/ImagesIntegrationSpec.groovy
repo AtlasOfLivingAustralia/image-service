@@ -27,6 +27,7 @@ import spock.lang.Shared
 import spock.lang.Specification
 
 import java.lang.reflect.Field
+import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 abstract class ImagesIntegrationSpec extends Specification {
@@ -34,12 +35,6 @@ abstract class ImagesIntegrationSpec extends Specification {
     AlaSecurityInterceptor alaSecurityInterceptor
     AlaAuthClient alaAuthClient
     ProfileCreator profileCreator
-
-    @Shared @AutoCleanup EmbeddedPostgres embeddedPostgres = EmbeddedPostgres.builder()
-            .setPort(ImagesIntegrationSpec.config.getProperty('dataSource.embeddedPort',  Integer.class, 6543))
-            .setCleanDataDirectory(true)
-            .start()
-    @Shared Flyway flyway = null
 
     static Config getConfig() { // CHANGED extracted from setupSpec so postgresRule can access
 
@@ -96,7 +91,17 @@ abstract class ImagesIntegrationSpec extends Specification {
      */
     static void setNewValue(Field field, Object newValue, obj) throws Exception {
         field.setAccessible(true)
-        Field modifiersField = Field.class.getDeclaredField("modifiers")
+        Method getDeclaredFields0 = Class.class.getDeclaredMethod("getDeclaredFields0", boolean.class)
+        getDeclaredFields0.setAccessible(true)
+//        Field modifiersField = Field.class.getDeclaredField("modifiers")
+        Field[] fields = (Field[]) getDeclaredFields0.invoke(Field.class, false)
+        Field modifiersField = null
+        for (Field each : fields) {
+            if ("modifiers".equals(each.getName())) {
+                modifiersField = each;
+                break;
+            }
+        }
         modifiersField.setAccessible(true)
         modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL)
         field.set(obj, newValue)
@@ -113,32 +118,6 @@ abstract class ImagesIntegrationSpec extends Specification {
         profileCreator.create(_,_,_) >> Optional.of(new AlaOidcUserProfile("1"))
         setNewValue(BaseClient.class.getDeclaredField("logger"), logger, alaAuthClient)
         setNewValue(BaseClient.class.getDeclaredField("profileCreator"), profileCreator, alaAuthClient)
-    }
-
-    void setupSpec() {
-        Config config = getConfig()
-        // CHANGED added flyway migrate
-        this.flyway = Flyway.configure()
-                .cleanDisabled(false)
-                .table(config.getProperty('flyway.table'))
-                .baselineOnMigrate(config.getProperty('flyway.baselineOnMigrate', Boolean))
-                .baselineVersion(config.getProperty('flyway.baselineVersion'))
-                .outOfOrder(config.getProperty('flyway.outOfOrder', Boolean))
-                .placeholders([
-                        'imageRoot': config.getProperty('imageservice.imagestore.root'),
-                        'exportRoot': config.getProperty('imageservice.imagestore.exportDir', '/data/image-service/exports'),
-                        'baseUrl': config.getProperty('grails.serverURL', 'https://devt.ala.org.au/image-service')
-                ])
-                .locations('db/migration')
-                .dataSource(embeddedPostgres.getPostgresDatabase())
-                .load()
-        flyway.clean()
-        flyway.migrate()
-        // END CHANGED
-    }
-
-    void cleanupSpec() {
-        //flyway.clean()
     }
 
 }

@@ -161,9 +161,6 @@
             </g:if>
             <a class="btn btn-default" href="${createLink(controller:'image', action:'getOriginalFile', id:imageInstance.id, params:[contentDisposition: 'true'])}" title="${g.message(code:'core.image.metadata.download', default: 'Download full image')}" target="imageWindow"><i class="glyphicon glyphicon-download-alt"></i></a>
             <g:if test="${isAdminView}">
-                <button class="btn btn-default" id="btnRegen" title="Regenerate artifacts"><i class="glyphicon glyphicon-refresh"></i></button>
-            </g:if>
-            <g:if test="${isAdminView}">
                 <button class="btn btn-danger" id="btnDeleteImage" title="Delete image (admin)">
                     <i class="glyphicon glyphicon-remove  glyphicon-white"></i>
                 </button>

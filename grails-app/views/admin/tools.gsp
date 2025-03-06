@@ -29,22 +29,6 @@
         </tr>
         <tr>
             <td>
-                <button id="btnRegenArtifacts" class="btn btn-default">Regenerate Image Artifacts</button>
-            </td>
-            <td>
-                Regenerate all tiles and thumbnails for all images in the repository. Progress can be tracked on the dashboard.
-            </td>
-        </tr>
-        <tr>
-            <td>
-                <button id="btnRegenThumbnails" class="btn btn-default">Regenerate Image Thumbnails</button>
-            </td>
-            <td>
-                Regenerate just thumbnails for all images in the repository. Progress can be tracked on the dashboard.
-            </td>
-        </tr>
-        <tr>
-            <td>
                 <button id="btnRebuildKeywords" class="btn btn-default">Rebuild Keywords</button>
             </td>
             <td>
@@ -150,20 +134,6 @@
         $("#btnMissingImagesCheck").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'checkForMissingImages')}";
-        });
-
-        $("#btnRegenArtifacts").on('click', function(e) {
-            e.preventDefault();
-            $.ajax("${createLink(controller:'webService', action:'scheduleArtifactGeneration')}").done(function() {
-                window.location = "${createLink(action:'tools')}";
-            });
-        });
-
-        $("#btnRegenThumbnails").on('click', function(e) {
-            e.preventDefault();
-            $.ajax("${createLink(controller:'webService', action:'scheduleThumbnailGeneration')}").done(function() {
-                window.location = "${createLink(action:'tools')}";
-            });
         });
 
         $("#btnRebuildKeywords").on('click', function(e) {
