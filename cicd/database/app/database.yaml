@@ -228,7 +228,7 @@ Resources:
       PerformanceInsightsRetentionPeriod: !If
                                             - DatabaseInsights
                                             - 465
-                                            - !If [ PerformanceInsightsEnabled, 7, 0 ]
+                                            - !If [ PerformanceInsightsEnabled, 7, !Ref "AWS::NoValue" ]
       Port: 5432
       PreferredBackupWindow: 16:00-17:00
       PreferredMaintenanceWindow: tue:17:00-tue:19:00
