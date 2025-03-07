@@ -7,4 +7,4 @@
 
 SRC_BRANCH=$1
 
-echo $SRC_BRANCH | sed 's/[/_]/-/g' | sed 's/[^a-zA-Z0-9-]//g' | tr '[:upper:]' '[:lower:]' | cut -c 1-30
+echo -n $SRC_BRANCH | sed 's/^feature\///' | sed 's/[/_]/-/g' | sed 's/[^a-zA-Z0-9-]//g' | tr '[:upper:]' '[:lower:]' | cut -c 1-30 | sed -E 's/[^a-z0-9]+$//'

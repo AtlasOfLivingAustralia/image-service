@@ -36,7 +36,7 @@ Parameters:
     Type: String
   pDbVersion:
     Type: String
-    Description: The version of Postgres for the RDS instance
+    Description: The version of PostgreSQL for the RDS instance
   pDeletionProtection:
     Description: Enable deletion protection
     Type: String
