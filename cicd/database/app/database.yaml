@@ -117,6 +117,9 @@ Conditions:
   ExportLogs: !Equals
                 - !Ref pExportLogs
                 - true
+  PerformanceInsightsEnabled: !Equals
+                - !Ref pPerformanceInsights
+                - true
   EnhancedMonitoring: !Not 
                         - !Equals
                           - !Ref pEnhancedMonitoring
@@ -225,7 +228,7 @@ Resources:
       PerformanceInsightsRetentionPeriod: !If
                                             - DatabaseInsights
                                             - 465
-                                            - 7
+                                            - !If [ PerformanceInsightsEnabled, 7, 0 ]
       Port: 5432
       PreferredBackupWindow: 16:00-17:00
       PreferredMaintenanceWindow: tue:17:00-tue:19:00
