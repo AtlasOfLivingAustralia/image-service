@@ -75,6 +75,7 @@ phases:
 
             echo Generating the template config for $stack
             cicd/gen_template_config.py  --template ${stack}_template_config.j2 > ${stack}_template_config.json
+            cat ${stack}_template_config.json
           done
     finally:
       - #echo This always runs
