@@ -138,7 +138,7 @@ Resources:
       Family: !Join
                 - ""
                 - - aurora-postgresql
-                  - !Select [1, !Split [".", !Ref pDbVersion]]
+                  - !Select [0, !Split [".", !Ref pDbVersion]]
 
   ClusterParamGrp:
     Type: AWS::RDS::DBClusterParameterGroup
@@ -147,7 +147,7 @@ Resources:
       Family: !Join
                 - ""
                 - - aurora-postgresql
-                  - !Select [1, !Split [".", !Ref pDbVersion]]
+                  - !Select [0, !Split [".", !Ref pDbVersion]]
       Parameters:
         timezone: Australia/Sydney
 
