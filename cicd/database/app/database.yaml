@@ -135,13 +135,19 @@ Resources:
     Type: AWS::RDS::DBParameterGroup
     Properties:
       Description: Images DB instance parameter grp
-      Family: aurora-postgresql11
+      Family: !Join
+                - ""
+                - - aurora-postgresql
+                  - !Select [1, !Split [".", !Ref pDbVersion]]
 
   ClusterParamGrp:
     Type: AWS::RDS::DBClusterParameterGroup
     Properties: 
       Description: Images cluster param group
-      Family: aurora-postgresql11
+      Family: !Join
+                - ""
+                - - aurora-postgresql
+                  - !Select [1, !Split [".", !Ref pDbVersion]]
       Parameters:
         timezone: Australia/Sydney
 
@@ -195,7 +201,7 @@ Resources:
          - SlowQueryLogGroup
          - ErrorLogGroup
     Properties:
-      BacktrackWindow: !Ref pBacktrackWindow
+      #BacktrackWindow: !Ref pBacktrackWindow
       BackupRetentionPeriod: !Ref pBackupRetention
       CopyTagsToSnapshot: true
       DatabaseInsightsMode: !Ref pDatabaseInsightsMode
