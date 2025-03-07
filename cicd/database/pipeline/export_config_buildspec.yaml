@@ -56,7 +56,7 @@ phases:
       - cicd/gen_env_vars.py --env $ENVIRONMENT --clean-branch $CLEAN_BRANCH --conf cicd/$PRODUCT_COMPONENT/config.ini > env.txt
       - echo loading config..
       - set -a ; source env.txt ; set +a
-      - SECRET_NAME=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesSecrets'].OutputValue" --output text)
+      - SECRET_NAME=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesSecret'].OutputValue" --output text)
     finally:
       - #echo This always runs
 
@@ -75,7 +75,6 @@ phases:
 
             echo Generating the template config for $stack
             cicd/gen_template_config.py  --template ${stack}_template_config.j2 > ${stack}_template_config.json
-            cat ${stack}_template_config.json
           done
     finally:
       - #echo This always runs

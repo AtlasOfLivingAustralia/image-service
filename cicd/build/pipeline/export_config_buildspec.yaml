@@ -58,7 +58,7 @@ phases:
       # import stack export from the base cloudformation stack
       - echo importing stack output...
       - IMAGES_ECR_REPOSITORY_NAME=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesRepositoryName'].OutputValue" --output text)
-      - IMAGES_SECRETS=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesSecrets'].OutputValue" --output text)
+      - IMAGES_SECRETS=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesSecret'].OutputValue" --output text)
       - echo IMAGES_ECR_REPOSITORY_NAME=$IMAGES_ECR_REPOSITORY_NAME
       - echo IMAGES_SECRETS=$IMAGES_SECRETS
     finally:
