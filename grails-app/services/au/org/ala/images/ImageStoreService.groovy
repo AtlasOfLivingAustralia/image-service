@@ -39,8 +39,9 @@ import java.nio.file.Files
 
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.TimeUnit
 
 @Slf4j
 class ImageStoreService {
@@ -69,22 +70,56 @@ class ImageStoreService {
     @Value('${image.store.lookup.cache.tiles:10000}')
     long tileLookupCacheSize = 10000
 
+    @Value('${tiling.levelThreads:2}')
+    int tilingLevelThreads = 2
+
+    @Value('${tiling.ioVirtualThreads:true}')
+    boolean tilingIoVirtualThreads = true
+
+    @Value('${tiling.ioThreads:2}')
+    int tilingIoThreads = 2
+
     Cache<Object, Object> thumbnailCache
     Cache<Object, Object> tileCache
 
-    var ioPool = Executors.newFixedThreadPool(2);
-    var workPool = ForkJoinPool.commonPool();
+    ExecutorService tilingIoPool
+    ExecutorService tilingWorkPool
 
     @PostConstruct
-    def initCache() {
+    @NotTransactional
+    def init() {
         thumbnailCache = Caffeine.newBuilder().maximumSize(thumbnailLookupCacheSize).build()
         tileCache = Caffeine.newBuilder().maximumSize(tileLookupCacheSize).build()
+        tilingIoPool = tilingIoVirtualThreads ? Executors.newVirtualThreadPerTaskExecutor() : Executors.newFixedThreadPool(tilingIoThreads)
+        tilingWorkPool = Executors.newFixedThreadPool(tilingLevelThreads)
     }
 
     @PreDestroy
+    @NotTransactional
     void destroy() {
-        ioPool.shutdown()
-        workPool.shutdown()
+        closePool(tilingWorkPool, 10, TimeUnit.SECONDS)
+        closePool(tilingIoPool, 10, TimeUnit.SECONDS)
+    }
+
+    private static void closePool(ExecutorService pool, long timeout, TimeUnit unit) {
+        boolean terminated = pool.isTerminated()
+        if (!terminated) {
+            pool.shutdown()
+            boolean interrupted = false
+            while (!terminated) {
+                try {
+                    terminated = pool.awaitTermination(timeout, unit);
+                } catch (InterruptedException e) {
+                    if (!interrupted) {
+                        pool.shutdownNow();
+                        interrupted = true;
+                    }
+                }
+            }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     @NotTransactional
@@ -351,7 +386,7 @@ class ImageStoreService {
     }
 
     private ImageTilerResults tileImageLevel(String imageIdentifier, StorageOperations operations, int z) {
-        def config = new ImageTilerConfig(ioPool, workPool, TILE_SIZE, 6, TileFormat.JPEG)
+        def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
         config.setTileBackgroundColor(new Color(221, 221, 221))
         def tiler = new ImageTiler3(config)
         return tiler.tileImage(
@@ -363,7 +398,7 @@ class ImageStoreService {
     }
 
     private ImageTilerResults tileImage(String imageIdentifier, StorageOperations operations) {
-        def config = new ImageTilerConfig(ioPool, workPool, TILE_SIZE, 6, TileFormat.JPEG)
+        def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
         config.setTileBackgroundColor(new Color(221, 221, 221))
         def tiler = new ImageTiler3(config)
         return tiler.tileImage(
