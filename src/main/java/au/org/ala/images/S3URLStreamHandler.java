@@ -5,6 +5,9 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLStreamHandler;
 
+/**
+ * Support s3:// URLs
+ */
 public class S3URLStreamHandler extends URLStreamHandler {
 
     @Override

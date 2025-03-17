@@ -3,6 +3,9 @@ package au.org.ala.images;
 import java.net.URLStreamHandler;
 import java.net.spi.URLStreamHandlerProvider;
 
+/**
+ * Support s3:// URLs
+ */
 public class S3URLStreamHandlerProvider extends URLStreamHandlerProvider {
 
     @Override
