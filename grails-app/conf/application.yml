@@ -364,3 +364,9 @@ http:
     default:
         connectTimeoutMs: 120000
         readTimeoutMs: 120000
+
+tiling:
+    tileSize: 256
+    maxColsPerStrip: 6
+    levelThreads: 2
+    ioThreads: 2

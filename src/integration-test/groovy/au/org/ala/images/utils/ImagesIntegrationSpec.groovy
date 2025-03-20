@@ -2,6 +2,7 @@ package au.org.ala.images.utils
 
 import au.org.ala.ws.security.AlaSecurityInterceptor
 import au.org.ala.ws.security.client.AlaAuthClient
+import au.org.ala.ws.security.client.AlaDirectClient
 import au.org.ala.ws.security.profile.AlaOidcUserProfile
 import com.nimbusds.oauth2.sdk.Scope
 import com.nimbusds.oauth2.sdk.token.BearerAccessToken
@@ -33,7 +34,7 @@ import java.lang.reflect.Modifier
 abstract class ImagesIntegrationSpec extends Specification {
 
     AlaSecurityInterceptor alaSecurityInterceptor
-    AlaAuthClient alaAuthClient
+    AlaDirectClient alaAuthClient
     ProfileCreator profileCreator
 
     static Config getConfig() { // CHANGED extracted from setupSpec so postgresRule can access
@@ -109,13 +110,21 @@ abstract class ImagesIntegrationSpec extends Specification {
 
     def setup() {
         def logger = LoggerFactory.getLogger(getClass())
-        alaAuthClient = Mock(AlaAuthClient)
+        alaAuthClient = Mock(AlaDirectClient)
         profileCreator = Mock()
-        alaAuthClient.getCredentials(_,_) >> Optional.of(new OidcCredentials(userProfile: new AlaOidcUserProfile("1"), accessToken:
-                new BearerAccessToken('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
-                        2l, new Scope("image-service/write"))))
-        alaSecurityInterceptor.alaAuthClient = alaAuthClient
-        profileCreator.create(_,_,_) >> Optional.of(new AlaOidcUserProfile("1"))
+        def creds = new OidcCredentials(
+                userProfile: new AlaOidcUserProfile("1"),
+                accessTokenObject: new BearerAccessToken(
+                        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+                        2l,
+                        new Scope("image-service/write")
+                )
+        )
+        alaAuthClient.getCredentials(_) >> Optional.of(creds)
+        alaAuthClient.validateCredentials(_ , _) >> Optional.of(creds)
+        alaAuthClient.internalValidateCredentials(_ , _) >> Optional.of(creds)
+        alaSecurityInterceptor.clientList = [alaAuthClient]
+        profileCreator.create(_,_) >> Optional.of(new AlaOidcUserProfile("1"))
         setNewValue(BaseClient.class.getDeclaredField("logger"), logger, alaAuthClient)
         setNewValue(BaseClient.class.getDeclaredField("profileCreator"), profileCreator, alaAuthClient)
     }

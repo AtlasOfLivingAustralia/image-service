@@ -213,7 +213,7 @@ application {
 }
 
 java {
-    sourceCompatibility = JavaVersion.toVersion("11")
+    sourceCompatibility = JavaVersion.toVersion("21")
 }
 
 tasks.withType(Test) {
@@ -247,7 +247,7 @@ assets {
 
 bootJar {
     enabled = true
-    classifier = 'exec'
+    archiveClassifier = 'exec'
     launchScript()
 }
 
