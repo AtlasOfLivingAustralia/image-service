@@ -1,0 +1,1 @@
+UPDATE "storage_location" SET container_credentials = false WHERE class = 'au.org.ala.images.S3StorageLocation' AND container_credentials IS NULL;
