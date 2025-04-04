@@ -18,6 +18,7 @@ import groovy.transform.Synchronized
 import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 import groovy.util.logging.Slf4j
+import groovyx.gpars.AsyncException
 import groovyx.gpars.GParsPool
 import jsr166y.ForkJoinPool
 import okhttp3.HttpUrl
@@ -39,6 +40,7 @@ import org.apache.commons.io.FilenameUtils
 import org.apache.commons.lang3.StringUtils
 import org.apache.tika.mime.MimeType
 import org.apache.tika.mime.MimeTypes
+import org.codehaus.groovy.runtime.StackTraceUtils
 import org.hibernate.FlushMode
 import org.hibernate.ScrollMode
 import org.springframework.beans.factory.annotation.Value
@@ -1037,7 +1039,12 @@ UNION
             GParsPool.withExistingPool(getBackgroundTasksPool(batchThreads)) {
                 GParsPool.executeAsyncAndWait(theseTasks)
             }
-        } catch (e) {
+        } catch (AsyncException e) {
+            log.error("Errors executing background tasks ({})", e.concurrentExceptions.size())
+            e.concurrentExceptions.each {
+                log.error("Background task error", StackTraceUtils.sanitize(it))
+            }
+        } catch (Exception e) {
             log.error("Exception executing background tasks in batch", e)
         }
     }
