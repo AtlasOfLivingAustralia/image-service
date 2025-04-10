@@ -48,7 +48,6 @@ import java.util.zip.ZipOutputStream
 
 class ElasticSearchService {
 
-    def logService
     GrailsApplication grailsApplication
     def imageStoreService
 
@@ -111,6 +110,7 @@ class ElasticSearchService {
             return
         }
 
+        log.debug("Indexing image {}", image.id)
         def ct = new CodeTimer("Index Image ${image.id}")
         // only add the fields that are searchable. They are marked with an annotation
         def fields = Image.class.declaredFields

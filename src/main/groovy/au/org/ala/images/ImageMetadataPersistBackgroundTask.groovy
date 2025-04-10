@@ -2,7 +2,7 @@ package au.org.ala.images
 
 import groovy.util.logging.Slf4j
 import org.apache.commons.codec.binary.Base64
-import org.apache.commons.lang.StringUtils
+import org.apache.commons.lang3.StringUtils
 //import org.apache.log4j.Logger
 import org.hibernate.Session
 
@@ -41,8 +41,8 @@ class ImageMetadataPersistBackgroundTask extends BackgroundTask {
         try {
             session = _imageService.sessionFactory.openSession()
             session.beginTransaction()
-            byte[] imageBytes = _imageStoreService.retrieveImage(_imageIdentifier)
-            Map _metadata = _imageService.getImageMetadataFromBytes(imageBytes, _originalFilename)
+            InputStream inputStream = _imageStoreService.retrieveImageInputStream(_imageIdentifier)
+            Map _metadata = _imageService.getImageMetadataFromBytes(inputStream, _originalFilename)
             _metadata.each { k, v ->
                 def cleanedValue = sanitizeString(v)
                 if (cleanedValue && cleanedValue.length() < 8000) {

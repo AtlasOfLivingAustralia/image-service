@@ -2,7 +2,7 @@ dist: focal
 arch: amd64
 language: groovy
 jdk:
-  - openjdk11
+  - openjdk21
 sudo: false
 branches:
   only:

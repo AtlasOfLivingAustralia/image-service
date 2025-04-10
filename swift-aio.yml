@@ -7,10 +7,10 @@ services:
     environment: 
       - cluster.name=docker-cluster
       - discovery.type=single-node
-#    image: "dockerswiftaio/docker-swift:2.24.0"
+    image: "dockerswiftaio/docker-swift:2.32.0"
 #    image: "dockerswiftaio/docker-swift"
 #    image: "bouncestorage/swift-aio:2.23.0"
-    image: "bouncestorage/swift-aio:4c279dcc"
+#    image: "bouncestorage/swift-aio:4c279dcc"
 #    image: "bouncestorage/swift-aio"
     networks:
       - swift

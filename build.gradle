@@ -2,7 +2,7 @@ plugins {
     id "groovy"
     id "org.grails.grails-gsp"
     id "org.grails.grails-web"
-    id "com.github.erdi.webdriver-binaries"
+    id "com.github.erdi.webdriver-binaries" version "3.2"
     id "war"
     id "idea"
     id "com.bertramlabs.asset-pipeline"
@@ -86,7 +86,9 @@ configurations.all {
 
 dependencies {
 
+//    implementation 'org.grails.plugins:async:5.0.2'
     implementation group: 'org.grails', name: 'grails-async-gpars'
+    implementation group: 'org.grails', name: 'grails-datastore-gorm-async'
 
     implementation group: 'org.grails.plugins', name: 'grails-pretty-time', version: '4.0.0'
     implementation 'org.grails.plugins:csv:1.0.1'
@@ -105,21 +107,21 @@ dependencies {
     implementation group: 'au.org.ala.plugins.grails', name:'images-client-plugin', version: '1.1', changing: true
 
     // Added dependencies
-    runtimeOnly 'com.zaxxer:HikariCP:5.0.1'
+    runtimeOnly 'com.zaxxer:HikariCP:5.1.0'
     implementation 'org.grails.plugins:postgresql-extensions:7.0.0'
     implementation "org.flywaydb:flyway-core:9.4.0"
     implementation 'org.grails.plugins:cache-headers:2.0.2'
     runtimeOnly 'org.codehaus.groovy:groovy-dateutil'
     implementation 'dk.glasius:external-config:3.1.1'
 
-    implementation 'org.grails.plugins:quartz:2.0.13'
-    implementation 'org.quartz-scheduler:quartz:2.2.1' // Is not pulled in by default
+    implementation 'org.grails.plugins:quartz:3.0.0'
+//    implementation 'org.quartz-scheduler:quartz:2.3.2' // Is not pulled in by default
 
     implementation group: 'org.locationtech.spatial4j', name: 'spatial4j', version: '0.7'
     implementation group: 'org.locationtech.jts', name: 'jts-core', version: '1.15.0'
     implementation "com.amazonaws:aws-java-sdk-s3:$amazonAwsSdkVersion"
     implementation 'org.javaswift:joss:0.10.4'
-    runtimeOnly 'org.postgresql:postgresql:42.5.4'
+    runtimeOnly 'org.postgresql:postgresql:42.7.4'
 
     implementation 'org.elasticsearch:elasticsearch:7.17.1'
     implementation 'org.elasticsearch.client:elasticsearch-rest-high-level-client:7.17.1'
@@ -129,21 +131,23 @@ dependencies {
 //    runtimeOnly group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.17.1'
 
     implementation 'org.imgscalr:imgscalr-lib:4.2'
-    implementation 'org.apache.commons:commons-imaging:1.0-SNAPSHOT'
+    implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
     implementation 'org.apache.tika:tika-core:2.5.0'
     implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
-    implementation 'au.org.ala:image-utils:1.9.0'
+    implementation 'au.org.ala:image-utils:1.10.0-SNAPSHOT'
 
-    implementation 'net.lingala.zip4j:zip4j:2.10.0'
-    implementation 'com.google.guava:guava:31.1-jre'
-    implementation 'org.apache.avro:avro:1.11.0'
-    implementation 'org.xerial.snappy:snappy-java:1.1.8.4'
+    implementation 'net.lingala.zip4j:zip4j:2.11.3'
+    implementation 'com.google.guava:guava:33.2.1-jre'
+    implementation 'com.github.ben-manes.caffeine:caffeine:2.9.3'
+
+    implementation 'org.apache.avro:avro:1.11.4'
+    implementation 'org.xerial.snappy:snappy-java:1.1.10.4'
 
     // Swagger
     implementation 'au.org.ala.plugins:openapi:1.1.0'
 
     // Google analytics requirement
-    implementation 'com.google.api-client:google-api-client:1.33.2'
+    implementation 'com.google.api-client:google-api-client:1.33.4'
     implementation 'com.google.apis:google-api-services-analytics:v3-rev20190807-1.32.1'
 
     // Standard grails
@@ -198,7 +202,7 @@ dependencies {
     testImplementation 'io.zonky.test:embedded-postgres:2.0.3'
     testImplementation enforcedPlatform('io.zonky.test.postgres:embedded-postgres-binaries-bom:11.19.0')
 //    testImplementation "com.opentable.components:otj-pg-embedded:1.0.1" // required transitive dependency from the plugin.
-    testImplementation 'cloud.localstack:localstack-utils:0.2.22'
+    testImplementation 'cloud.localstack:localstack-utils:0.2.23'
     testImplementation "com.amazonaws:aws-java-sdk:$amazonAwsSdkVersion" // full AWS SDK included in test scope for localstack config
     testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:1.8.0'
 
@@ -209,7 +213,7 @@ application {
 }
 
 java {
-    sourceCompatibility = JavaVersion.toVersion("11")
+    sourceCompatibility = JavaVersion.toVersion("21")
 }
 
 tasks.withType(Test) {
@@ -218,6 +222,15 @@ tasks.withType(Test) {
     systemProperty "geb.build.reportsDir", reporting.file("geb/integrationTest")
     systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
     systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
+    testLogging {
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
+    doFirst {
+      jvmArgs = [
+        '--add-opens', 'java.base/java.lang=ALL-UNNAMED', '--add-opens', 'java.base/java.lang.reflect=ALL-UNNAMED'
+      ]
+    }
 }
 tasks.withType(War).configureEach { War war ->
     war.dependsOn compileGroovyPages
@@ -234,7 +247,7 @@ assets {
 
 bootJar {
     enabled = true
-    classifier = 'exec'
+    archiveClassifier = 'exec'
     launchScript()
 }
 

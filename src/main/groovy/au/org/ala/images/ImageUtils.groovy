@@ -3,6 +3,7 @@ package au.org.ala.images
 import com.google.common.hash.Hashing
 import com.google.common.io.BaseEncoding
 import com.google.common.io.Files
+import groovy.util.logging.Slf4j
 
 import java.awt.Color
 import java.awt.Rectangle
@@ -14,6 +15,7 @@ import java.util.regex.Pattern
 import javax.imageio.ImageIO
 import org.imgscalr.Scalr
 
+@Slf4j
 class ImageUtils {
 
     static int IMAGE_BUF_INIT_SIZE = 2 * 1024 * 1024
@@ -152,5 +154,33 @@ class ImageUtils {
      */
     static String generateMD5(final file) {
         return BaseEncoding.base16().lowerCase().encode(Files.asByteSource(file).hash(Hashing.md5()).asBytes()).padLeft(32, '0')
+    }
+
+    /**
+     * Takes a String that could be a filename or a URI and returns the filename part if it is a URI or the original
+     * string if it is not a URI.
+     *
+     * @param filenameOrUri
+     * @return
+     */
+    static String getFilename(String filenameOrUri) {
+        def filename
+        try {
+            def uri = filenameOrUri.toURI()
+            if (uri.path) {
+                filename = uri.path
+                if (filename.contains('/')) {
+                    def potential = filename.substring(filename.lastIndexOf('/') + 1)
+                    if (potential) {
+                        filename = potential
+                    }
+                }
+            } else {
+                filename = filenameOrUri
+            }
+        } catch (URISyntaxException ignored) {
+            filename = filenameOrUri
+        }
+        return filename
     }
 }
