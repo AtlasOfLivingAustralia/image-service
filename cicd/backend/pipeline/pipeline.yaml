@@ -8,6 +8,9 @@ Parameters:
   pBootstrapStackName:
     Type: String
     Description: the name of the bootstrap stack
+  pBaseStackName:
+    Type: String
+    Description: the name of the base stack
   pBucketsStackName:
     Type: String
     Description: the name of the bucket stack
@@ -35,6 +38,12 @@ Parameters:
   pProductName:
     Type: String
     Description: The name of the product
+  pDomainName:
+    Type: String
+    Description: The domain name
+  pSecretName:
+    Type: String
+    Description: The name of the secret
   pRestartExecutionOnUpdate:
     Type: String
     Description: Restart that pipeline if it's been updated
@@ -79,6 +88,27 @@ Resources:
         BuildSpec: !Sub cicd/${pProductComponent}/pipeline/export_config_buildspec.yaml
       TimeoutInMinutes: 5
 
+  BuildImages:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub
+        - ${pProductName}-${pProductComponent}-build-images-${ResourceName}
+        - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      Description: Build the images project
+      ServiceRole:
+        Fn::ImportValue:
+          Fn::Sub: ${pBootstrapStackName}-CodeBuildServiceRoleArn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/standard:7.0
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub cicd/${pProductComponent}/pipeline/build_images_buildspec.yaml
+      TimeoutInMinutes: 30
+
   DeployImages:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -102,6 +132,27 @@ Resources:
         Type: CODEPIPELINE
         BuildSpec: !Sub cicd/${pProductComponent}/pipeline/deploy_images_buildspec.yaml
       TimeoutInMinutes: 20
+
+  TeardownImages:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub
+        - ${pProductName}-${pProductComponent}-teardown-images-${ResourceName}
+        - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      Description: Teardown deployed images stack
+      ServiceRole:
+        Fn::ImportValue:
+          Fn::Sub: ${pBootstrapStackName}-CloudFormationServiceRoleArn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub cicd/${pProductComponent}/pipeline/teardown_images_buildspec.yaml
+      TimeoutInMinutes: 10
 
   DeployNotification:
     Type: AWS::CodeBuild::Project
@@ -191,21 +242,50 @@ Resources:
               Provider: CodeBuild
             Configuration:
               ProjectName: !Ref ExportConfig
-              EnvironmentVariables: !Sub |
-                 [
-                   { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" },
-                   { "name":"COMMIT_ID", "value":"#{CheckoutSrcNS.CommitId}" },
-                   { "name":"ENVIRONMENT", "value":"${pEnvironment}" },
-                   { "name":"PIPELINE_FINGERPRINT", "value":"#{variables.PIPELINE_FINGERPRINT}" },
-                   { "name":"PRODUCT_COMPONENT", "value":"${pProductComponent}" },
-                   { "name":"SRC_BRANCH", "value":"${pGitHubBranch}" }
-                 ]
+              EnvironmentVariables:
+                Fn::Sub:
+                  - |
+                   [
+                     { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" },
+                     { "name":"COMMIT_ID", "value":"#{CheckoutSrcNS.CommitId}" },
+                     { "name":"ENVIRONMENT", "value":"${pEnvironment}" },
+                     { "name":"PIPELINE_FINGERPRINT", "value":"#{variables.PIPELINE_FINGERPRINT}" },
+                     { "name":"PRODUCT_COMPONENT", "value":"${pProductComponent}" },
+                     { "name":"SRC_BRANCH", "value":"${pGitHubBranch}" },
+                     { "name":"IMAGES_SECRET_NAME", "value":"${pSecretName}" }'
+                     { "name":"FILE_SYSTEM_ID", "value":"${FileSystemId}" }
+                   ]
+                  - FileSystemId:
+                     Fn::ImportValue:
+                       Fn::Sub: "${pRegolithStackName}-FileSystemId"
             Namespace: ExportConfigNS
             InputArtifacts:
               - Name: 'SourceArtifact'
             OutputArtifacts:
               - Name: ExportConfigArtifact
             RunOrder: 1
+
+          - Name: BuildImages
+            ActionTypeId:
+              Owner: AWS
+              Category: Build
+              Version: 1
+              Provider: CodeBuild
+            Configuration:
+              ProjectName: !Ref BuildImages
+              EnvironmentVariables: !Sub
+                - |
+                  [
+                    { "name":"ECR_REPO", "value":"${EcrRepo}" },
+                    { "name":"AWS_ACCOUNT_ID", "value":"${AWS::AccountId}" },
+                    { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" }
+                  ]
+                - EcrRepo:
+                    Fn::ImportValue:
+                      Fn::Sub: "${pBaseStackName}-ImagesRepositoryUri"
+            InputArtifacts:
+              - Name: 'SourceArtifact'
+            RunOrder: 2
 
           - Name: DeployImages
             ActionTypeId:
@@ -216,19 +296,30 @@ Resources:
             Configuration:
               ProjectName: !Ref DeployImages
               EnvironmentVariables: !Sub |
-                [
-                  { "name":"IMAGES_SECRET_NAME", "value":"#{ExportConfigNS.IMAGES_SECRET_NAME}" },
-                  { "name":"AWS_ACCOUNT_ID", "value":"${AWS::AccountId}" },
-                  { "name":"IMAGES_ECR_REPOSITORY_NAME", "value":"#{ExportConfigNS.IMAGES_ECR_REPOSITORY_NAME}" },
-                  { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" },
-                  { "name":"DB_READ_ENDPOINT", "value":"#{ExportConfigNS.DB_READ_ENDPOINT}" },
-                  { "name":"DB_WRITE_ENDPOINT", "value":"#{ExportConfigNS.DB_WRITE_ENDPOINT}" },
-                  { "name":"EKS_CLUSTER_NAME", "value":"#{ExportConfigNS.EKS_CLUSTER_NAME}" },
-                  { "name":"BASE_STACK_NAME", "value":"#{ExportConfigNS.BASE_STACK_NAME}" }
-                ]
+                - |
+                  [
+                    { "name":"AWS_ACCOUNT_ID", "value":"${AWS::AccountId}" },
+                    { "name":"ENVIRONMENT", "value":"${pEnvironment}" },
+                    { "name":"PRODUCT_COMPONENT", "value":"${pProductComponent}" },
+                    { "name":"BASE_STACK_NAME", "value":"#{ExportConfigNS.BASE_STACK_NAME}" },
+                    { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" },
+                    { "name":"COGNITO_STACK_NAME", "value":"#{ExportConfigNS.COGNITO_STACK_NAME}" },
+                    { "name":"DB_READ_ENDPOINT", "value":"#{ExportConfigNS.DB_READ_ENDPOINT}" },
+                    { "name":"DB_WRITE_ENDPOINT", "value":"#{ExportConfigNS.DB_WRITE_ENDPOINT}" },
+                    { "name":"DOMAIN_NAME", "value":"${pDomainName}" },
+                    { "name":"ECR_REPO", "value":"${EcrRepo}" },
+                    { "name":"EKS_CLUSTER_NAME", "value":"#{ExportConfigNS.EKS_CLUSTER_NAME}" },
+                    { "name":"HELM_RELEASE_NAME", "value":"#{ExportConfigNS.HELM_RELEASE_NAME}" },
+                    { "name":"HOSTED_ZONE", "value":"#{ExportConfigNS.HOSTED_ZONE}" },
+                    { "name":"PRODUCT_NAME", "value":"#{ExportConfigNS.PRODUCT_NAME}" }
+                  ]
+                - EcrRepo: !ImportValue
+                    Fn::Sub: '${pBaseStackName}-ImagesRepositoryUri'
+              PrimarySource: SourceArtifact
             InputArtifacts:
               - Name: 'SourceArtifact'
-            RunOrder: 2
+              - Name: 'ExportConfigArtifact'
+            RunOrder: 3
 
           - Name: DeployNotification
             ActionTypeId:
@@ -254,7 +345,7 @@ Resources:
             Namespace: DeployNotificationNS
             InputArtifacts:
               - Name: 'SourceArtifact'
-            RunOrder: 3
+            RunOrder: 4
 
       - Name: Teardown
         Actions:
@@ -267,6 +358,32 @@ Resources:
             Configuration:
               CustomData: Approval required to tear down this stack
             RunOrder: 1
+          - Name: TeardownImages
+            ActionTypeId:
+              Owner: AWS
+              Category: Build
+              Version: 1
+              Provider: CodeBuild
+            Configuration:
+              ProjectName: !Ref TeardownImages
+              EnvironmentVariables: !Sub |
+                [
+                  { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" },
+                  { "name":"EKS_CLUSTER_NAME", "value":"#{ExportConfigNS.EKS_CLUSTER_NAME}" },
+                  { "name":"HELM_RELEASE_NAME", "value":"#{ExportConfigNS.HELM_RELEASE_NAME}" }
+                ]
+            InputArtifacts:
+              - Name: 'SourceArtifact'
+            RunOrder: 2
+          - Name: ApprovalForPipelineTeardown
+            ActionTypeId:
+              Owner: AWS
+              Category: Approval
+              Version: 1
+              Provider: Manual
+            Configuration:
+              CustomData: Approval required to tear down this stack
+            RunOrder: 3
           - Name: TeardownCodePipeline
             ActionTypeId:
               Owner: AWS
@@ -280,6 +397,16 @@ Resources:
                    Fn::ImportValue:
                      Fn::Sub: '${pBootstrapStackName}-CloudFormationServiceRoleArn'
             RunOrder: 2
+
+  BuildImagesCodeBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${BuildImages}
+      RetentionInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
 
   DeployImagesCodeBuildLogGroup:
     Type: AWS::Logs::LogGroup

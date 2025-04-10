@@ -1,0 +1,52 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+
+phases:
+  install:
+    commands:
+      - echo Installing dependencies...
+      - cat /etc/lsb-release
+      - apt update -y
+        && apt-get -q -y install openjdk-11-jdk
+        && pip3 install jinja2
+        && curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        && chmod 700 get_helm.sh
+        && ./get_helm.sh
+
+  build:
+    commands:
+      - echo Build started on $(date)
+      - aws eks --region ap-southeast-2 update-kubeconfig --name $EKS_CLUSTER_NAME
+      - IMAGES_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesRoleArn'].OutputValue" --output text)
+      - kubectl config set-context --current --namespace=images
+      - printf "$(kubectl config current-context)\n"
+      - eksctl create iamserviceaccount --name images-service-account-$CLEAN_BRANCH --namespace images --cluster $EKS_CLUSTER_NAME --attach-role-arn $IMAGES_ROLE_ARN --approve --override-existing-serviceaccounts --tags "product=images,environment=development,branch=${CLEAN_BRANCH}"
+      - echo "Service account created."
+      - echo "Deploying images via helm..."
+      - cd helm
+      - export CERTIFICATE_ARN=$(aws acm list-certificates --region ap-southeast-2 --query "CertificateSummaryList[?DomainName=='*.$HOSTED_ZONE' && Status=='ISSUED'].CertificateArn" --output text)
+      - BUILD_TAG=$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER
+      - helm upgrade --install $HELM_RELEASE_NAME . -n images \
+          --set image.repository=$ECR_REPO \
+          --set image.tag=$BUILD_TAG -\
+          -set ingress.hostname=$DOMAIN_NAME \
+          --set rds.externalName=$DB_WRITE_ENDPOINT \
+          --set ingress.certificateArn=$CERTIFICATE_ARN \
+          --set secret.name=images-config-secret-$CLEAN_BRANCH \
+          --set serviceAccount.name=images-service-account-$CLEAN_BRANCH \
+          -f $CODEBUILD_SRC_DIR_ExportConfigArtifact/helm-values.yaml
+      - kubectl rollout restart deployment $HELM_RELEASE_NAME
+
+  post_build:
+    commands:
+      - echo Post-build phase...
+      - echo Build completed on $(date)
+
+artifacts:
+  base-directory: $CODEBUILD_SRC_DIR
+  files:
+    - '**/*'

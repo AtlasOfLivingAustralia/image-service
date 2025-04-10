@@ -1,0 +1,31 @@
+replicaCount: 1
+image: "docker.elastic.co/elasticsearch/elasticsearch:7.17.3"
+resources:
+  requests:
+    cpu: "1"
+    memory: "2Gi"
+  limits:
+    cpu: "1"
+    memory: "2Gi"
+pvc:
+  name: elasticsearch-pvc
+  enabled: true
+  accessMode: ReadWriteOnce
+  size: "5Gi"
+pv:
+  name: elasticsearch-pv
+  size: "5Gi"
+  volumeHandle: fs-xxxxxxxxxxxxx
+env:
+  - name: node.name
+    value: "elasticsearch"
+  - name: xpack.security.enabled
+    value: "false"
+  - name: discovery.type
+    value: "single-node"
+service:
+  name: elasticsearch
+  host: elasticsearch
+  port: 9200
+deployment:
+  name: elasticsearch

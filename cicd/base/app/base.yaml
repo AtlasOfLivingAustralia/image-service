@@ -27,6 +27,15 @@ Parameters:
   pClusterOidcIssuerUrl:
     Type: String
     Description: The OIDC issuer URL for the cluster
+  pCognitoStackName:
+    Type: String
+    Description: The name of the Cognito stack
+  pAppClientDomain:
+    Type: String
+    Description: The domain for the app client
+  pSecretName:
+    Type: String
+    Description: The name of the secret
 
 Conditions:
 
@@ -126,17 +135,6 @@ Resources:
                 - !Sub arn:aws:s3:::${pBackupBucket}
                 - !Sub arn:aws:s3:::${pBackupBucket}/*
           PolicyName: backups
-        - PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-            - Effect: Allow
-              Action:
-                - ses:SendEmail
-                - ses:SendTemplatedEmail
-                - ses:SendRawEmail
-              Resource:
-                - '*'
-          PolicyName: email
       RoleName: !Sub '${AWS::StackName}--${pEnvironment}--${pBuild}'
       Tags:
         - Key: Name
@@ -149,13 +147,106 @@ Resources:
     Type: AWS::SecretsManager::Secret
     Condition: IsFirstBuild
     Properties:
-      Name: !Sub 
-              - ${pProductName}-${ResourceName}
-              - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      Name: !Sub ${pSecretName}
       Description: !Sub Images app ${pEnvironment} secrets
-      SecretString: "{\"oidc_secret\": \"\", \"db-password\": \"\"}"
+      SecretString: !If
+        - IsFirstBuild
+        - |
+          {
+             "db-password" : ""
+          }
+        - !Ref "AWS::NoValue"
 
+  AppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AccessTokenValidity: 60
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: True
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+        - ala/roles
+        - ala/attrs
+      AuthSessionValidity: 3
+      CallbackURLs:
+        - !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+      ClientName: !Sub
+        - ${pProductName}-${ResourceName}
+        - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      DefaultRedirectURI: !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+      EnablePropagateAdditionalUserContextData: True
+      EnableTokenRevocation: True
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      GenerateSecret: True
+      IdTokenValidity: 60
+      LogoutURLs:
+        - !Sub "https://${pAppClientDomain}"
+        - !Sub "https://${pAppClientDomain}/"
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      SupportedIdentityProviders:
+        - COGNITO
+        - Facebook
+        - Google
+        - AAF
+        - SignInWithApple
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      UserPoolId: !ImportValue
+        Fn::Sub: ${pCognitoStackName}-UserPoolId
 
+  AppClientImagesServer:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AccessTokenValidity: 60
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthFlowsUserPoolClient: True
+      AllowedOAuthScopes:
+        - ala/internal
+        - ala/attrs
+        - users/read
+      AuthSessionValidity: 3
+      CallbackURLs:
+        - !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+      ClientName: !Sub
+        - ${pProductName}-${ResourceName}-server-to-server
+        - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      DefaultRedirectURI: !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+      EnablePropagateAdditionalUserContextData: True
+      EnableTokenRevocation: True
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      GenerateSecret: True
+      IdTokenValidity: 60
+      LogoutURLs:
+        - !Sub "https://${pAppClientDomain}"
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      SupportedIdentityProviders:
+        - COGNITO
+        - Facebook
+        - Google
+        - AAF
+        - SignInWithApple
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      UserPoolId: !ImportValue
+        Fn::Sub: ${pCognitoStackName}-UserPoolId
 
 Outputs:
 
@@ -167,6 +258,12 @@ Outputs:
     Description: The ECR repository ARN for the Images service
     Value: !Ref ImagesRepository
 
+  ImagesRepositoryUri:
+    Description: The ECR repository URI for the Images service
+    Value: !GetAtt ImagesRepository.RepositoryUri
+    Export:
+      Name: !Sub ${AWS::StackName}-ImagesRepositoryUri
+
   ImagesSecret:
     Description: The Secrets name for Images
     Value: !Ref ImagesSecret
@@ -174,3 +271,11 @@ Outputs:
   ImagesRoleArn:
     Description: The role ARN for the Images service
     Value: !GetAtt ImagesRole.Arn
+
+  ImagesAppClient:
+    Description: The app client for the Image service
+    Value: !Ref AppClient
+
+  ImagesServerToServerAppClient:
+    Description: The app client for the Image service
+    Value: !Ref AppClientImagesServer

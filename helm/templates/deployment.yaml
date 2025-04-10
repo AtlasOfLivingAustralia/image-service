@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ala-images.fullname" . }}
+  labels:
+    {{- include "ala-images.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ala-images.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ala-images.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /data/image-service/config/image-service-config.yml
+              subPath: images-service-config.yml
+            - name: logback-volume
+              mountPath: /data/image-service/config/logback.xml
+              subPath: logback.xml
+            - name: logback-groovy-volume
+              mountPath: /data/image-service/config/logback.groovy
+              subPath: logback.groovy
+            - name: system-message-volume
+              mountPath: /data/image-service/config/system-message.json
+              subPath: system-message.json
+      volumes:
+        - name: config-volume
+          secret:
+            secretName: {{ .Values.secret.name }}
+        - name: logback-volume
+          configMap:
+            name: logback-config
+            optional: true
+        - name: logback-groovy-volume
+          configMap:
+            name: logback-groovy-config
+            optional: true
+        - name: system-message-volume
+          configMap:
+            name: system-message-config
+            optional: true

@@ -1,0 +1,38 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+
+phases:
+  install:
+    commands:
+      - echo Installing dependencies...
+      - cat /etc/lsb-release
+      - apt update -y
+      - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+      - chmod 700 get_helm.sh
+      - ./get_helm.sh
+
+  build:
+    commands:
+      - echo Build started on $(date)
+      - aws eks --region ap-southeast-2 update-kubeconfig --name $EKS_CLUSTER_NAME
+      - kubectl config set-context --current --namespace=images
+      - eksctl delete iamserviceaccount --name=images-service-account-$CLEAN_BRANCH --namespace=images --cluster=$EKS_CLUSTER_NAME
+      - |
+        if helm list -n images | grep -q $HELM_RELEASE_NAME; then
+          helm uninstall $HELM_RELEASE_NAME -n images
+        else
+          echo "Release $HELM_RELEASE_NAME does not exist."
+        fi
+  post_build:
+    commands:
+      - echo Post-build phase...
+      - echo Build completed on $(date)
+
+artifacts:
+  base-directory: $CODEBUILD_SRC_DIR
+  files:
+    - '**/*'

@@ -1,0 +1,144 @@
+grails:
+  serverURL: {{ .Values.app.url }}
+
+server:
+  port: 8080
+  contextPath: 
+
+security:
+  core:
+    authCookieName: {{ .Values.authCookieName }}
+    defaultLogoutRedirectUri: {{ .Values.defaultLogoutRedirectUri }}
+    roleAttribute: ala:role
+    affiliation-survey:
+      enabled: {{ .Values.affiliation.enabled }}
+  cookie:
+    enabled: {{ .Values.cookie.enabled }}
+    domain: {{ .Values.cookie.domain }}
+  cas:
+    enabled: False
+    appServerName: {{ .Values.app.url }}
+    bypass: False
+    disableCAS: False
+    casServerName: {{ .Values.cas.serverName }}
+    casServerUrlPrefix: {{ .Values.cas.serverName }}/cas
+    casServerLoginUrl: {{ .Values.cas.serverName }}/cas/login
+    casServerLogoutUrl: {{ .Values.cas.serverName }}/cas/logout
+    loginUrl: {{ .Values.cas.serverName }}/cas/login
+    logoutUrl: {{ .Values.cas.serverName }}/cas/logout
+    authenticateOnlyIfLoggedInFilterPattern : 
+  oidc:
+    enabled: {{ .Values.oidc.enabled }}
+    clientId: {{ .Values.oidc.clientId }}
+    secret: {{ .Values.oidc.secret }}
+    discoveryUri: {{ .Values.oidc.discoveryUri }}
+    scope: openid profile email ala/attrs ala/roles
+    alaUseridClaim: username
+    logoutUrl: {{ .Values.oidc.logoutUrl }}
+    logoutAction: cognito
+    userNameClaim: email
+  jwt:
+    enabled: {{ .Values.jwt.enabled }}
+    fallback-to-legacy-behaviour: {{ .Values.jwt.legacy.enabled }}
+    discoveryUri: {{ .Values.oidc.discoveryUri }}
+    allowed-scopes: users/read
+    role-claims: cognito:groups
+    roles-from-access-token: True
+    user-id-claim: username
+    roleAttributes: cognito:groups
+  apikey:
+    ip:
+      whitelist: 
+    check:
+      serviceUrl: {{ .Values.apikey.auth.serviceUrl }}
+    enabled: {{ .Values.apikey.enabled }}
+    auth:
+      serviceUrl: {{ .Values.apikey.check.serviceUrl }}
+    userdetails:
+      serviceUrl: {{ .Values.apikey.userdetails.serviceUrl }}
+
+#websevice jwt
+webservice:
+  jwt: {{ .Values.webservice.enabled }}
+  jwt-scopes: ala/internal users/read ala/attrs
+  client-id: {{ .Values.webservice.clientId }}
+  client-secret: {{ .Values.webservice.secret }}
+
+userDetails:
+  url: {{ .Values.userdetails.api.url }}
+userdetails.url: {{ .Values.userdetails.app.url }}
+
+info:
+  app:
+    name: 'image-service'
+    version: {{ .Values.version }}
+
+flyway:
+  baselineOnMigrate: true
+
+dataSource:
+  url: "jdbc:postgresql://{{ .Values.db.endpoint }}/{{ .Values.db.database_name }}?autoReconnect=true&connectTimeout=0&useUnicode=true&characterEncoding=UTF-8"
+  driverClassName: org.postgresql.Driver
+  username: {{ .Values.db.db_username }}
+  password: {{ .Values.db.db_password }}
+  dbCreate: validate
+
+imageservice:
+  imagestore:
+    root: "/data/image-service/store"
+    staging: "/data/image-service/store/staging"
+  apache:
+    root: "{{ .Values.app.url }}/store/"
+    multiple_roots:  "{{ .Values.app.url }}/store/"
+    exportDir: "/data/image-service/exports"
+
+# skin
+skin:
+  layout: ala-main
+  favicon: "https://www.ala.org.au/app/uploads/2019/01/cropped-favicon-32x32.png"
+  orgNameLong: Atlas
+  homeUrl: https://www-test.ala.org.au
+
+# external links
+collectory:
+  baseURL: {{ .Values.collectory.url }}
+biocache:
+  baseURL: {{ .Values.biocache.url }}
+  service:
+    baseURL: {{ .Values.biocache.url }}/ws
+  
+# header block
+headerAndFooter:
+  version: {{ .Values.headerAndFooter.version }}
+  baseURL: {{ .Values.headerAndFooter.baseURL }}
+ala:
+  baseURL: {{ .Values.ala.baseURL }}
+bie:
+  baseURL: {{ .Values.bie.baseURL }}
+  searchPath: "/search"
+
+# swagger configuration
+swagger:
+  info:
+    description: "API Documentation for Image Services"
+    version: {{ .Values.version }}
+    title:  "Image Service API"
+    termsOfServices: "https://www.ala.org.au/who-we-are/terms-of-use/"
+    contact:
+      name:  "ALA Support"
+      url: "https://www.ala.org.au"
+      email: "support@ala.org.au"
+    license:
+      name: "MPL 1.1"
+      url: "https://www.mozilla.org/en-US/MPL/"
+  schemes:
+    - "HTTPS"
+  consumes:
+    - "application/json"
+userdetails:
+  url: {{ .Values.userdetails.api.url }}
+userdetails.web.url: {{ .Values.userdetails.app.url }}
+userdetails.api.url: {{ .Values.userdetails.api.url }}
+
+aws:
+  region: ap-southeast-2

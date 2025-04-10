@@ -4,6 +4,8 @@ env:
   shell: bash
   variables:
     JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+  exported-variables:
+    - BUILD_TAG
 
 phases:
   install:
