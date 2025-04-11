@@ -19,6 +19,11 @@ class ImageMetadataUpdateBackgroundTask extends BackgroundTask {
     }
 
     @Override
+    boolean isRequiresSession() {
+        return true
+    }
+
+    @Override
     String toString() {
         return "ImageMetadataUpdateBackgroundTask," + _imageIdentifier
     }

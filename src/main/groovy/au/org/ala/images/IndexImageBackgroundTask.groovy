@@ -21,7 +21,7 @@ class IndexImageBackgroundTask extends BackgroundTask {
     void execute() {
         def imageInstance
         Image.withTransaction {
-            imageInstance = Image.get(_imageId)
+            imageInstance = Image.findById(_imageId, [fetch: [recognisedLicense: 'eager']])
         }
         if (imageInstance) {
             _elasticSearchService.indexImage(imageInstance)

@@ -329,31 +329,6 @@ UNION
         return byteSource
     }
 
-    static class CloseableByteSource extends ByteSource implements AutoCloseable {
-        private File file
-
-        @Delegate
-        private ByteSource delegate
-
-        CloseableByteSource(File file) {
-            this.file = file
-            this.delegate = Files.asByteSource(file)
-        }
-
-        CloseableByteSource(byte [] bytes) {
-            this.delegate = ByteSource.wrap(bytes)
-        }
-
-        @Override
-        void close() throws Exception {
-            if (file) {
-                if (!file.delete()) {
-                    log.warn("Failed to delete temporary file: {}", file)
-                }
-            }
-        }
-    }
-
     def getImageUrl(Map<String, String> imageSource){
         if (imageSource.sourceUrl) return imageSource.sourceUrl
         if (imageSource.imageUrl) return imageSource.imageUrl

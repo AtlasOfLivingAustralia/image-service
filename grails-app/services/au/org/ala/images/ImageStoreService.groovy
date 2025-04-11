@@ -139,7 +139,7 @@ class ImageStoreService {
             log.trace('Storing image {} with content type {}, original filename {}, content disposition {} to {}', uuid, contentType, originalFilename, contentDisposition, operations)
         }
         def imgDesc = new ImageDescriptor(imageIdentifier: uuid)
-        operations.store(uuid, imageBytes.openStream(), contentType, contentDisposition)
+        operations.store(uuid, imageBytes.openStream(), contentType, contentDisposition, imageBytes.sizeIfKnown().orNull())
         def filename = ImageUtils.getFilename(originalFilename)
         if (contentType?.toLowerCase()?.startsWith('image')) {
             if (log.isTraceEnabled()) {
