@@ -56,4 +56,9 @@ class ScheduleMissingImagesBackgroundTask extends BackgroundTask {
         writer.close()
         log.info("Missing images check complete. Total checked: " + counter)
     }
+
+    @Override
+    boolean isRequiresSession() {
+        return true
+    }
 }
