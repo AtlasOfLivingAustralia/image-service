@@ -26,6 +26,7 @@ import com.amazonaws.services.s3.model.GetObjectRequest
 import com.amazonaws.services.s3.model.ObjectListing
 import com.amazonaws.services.s3.model.ObjectMetadata
 import com.amazonaws.services.s3.model.PutObjectRequest
+import com.amazonaws.services.s3.model.S3ObjectInputStream
 import com.amazonaws.services.s3.model.S3ObjectSummary
 import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
@@ -222,7 +223,8 @@ class S3StorageOperations implements StorageOperations {
             def bytes
             try {
                 def s3object = s3Client.getObject(new GetObjectRequest(bucket, imagePath))
-                bytes = s3object.objectContent.withStream { it.bytes }
+                def inputStream = new AbortingS3ObjectInputStream(s3object.objectContent)
+                bytes = inputStream.withStream { it.bytes }
             } catch (AmazonS3Exception e) {
                 if (e.statusCode == 404) {
                     throw new FileNotFoundException("S3 path $imagePath")
@@ -243,13 +245,40 @@ class S3StorageOperations implements StorageOperations {
         }
         try {
             def s3Object = s3Client.getObject(request)
-            return s3Object.objectContent
+            return new AbortingS3ObjectInputStream(s3Object.objectContent)
         } catch (AmazonS3Exception e) {
             if (e.statusCode == 404) {
                 throw new FileNotFoundException("S3 path $path")
             } else {
                 throw e
             }
+        }
+    }
+
+    /**
+     * Wrap an S3ObjectInputStream to abort the S3Object when the stream is closed.
+     *
+     * The S3ObjectInputStream will complain at the WARN level when a stream is
+     * closed that hasn't been fully read. As we will occasionally open a stream
+     * just to read the header data for an image but want to deal in generic
+     * InputStreams that don't support the AWS SDK specific abort() operation,
+     * this class will always abort the stream on close to avoid the warning.
+     *
+     * TODO Find a way of requesting only the required image header byte range
+     */
+    static private class AbortingS3ObjectInputStream extends FilterInputStream {
+
+        private S3ObjectInputStream inputStream
+
+        AbortingS3ObjectInputStream(S3ObjectInputStream inputStream) {
+            super(inputStream)
+            this.inputStream = inputStream
+        }
+
+        @Override
+        void close() throws IOException {
+            inputStream.abort()
+            super.close()
         }
     }
 
