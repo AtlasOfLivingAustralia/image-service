@@ -223,7 +223,7 @@ class S3StorageOperations implements StorageOperations {
             def bytes
             try {
                 def s3object = s3Client.getObject(new GetObjectRequest(bucket, imagePath))
-                def inputStream = new AbortingS3ObjectInputStream(s3object.objectContent)
+                def inputStream = s3object.objectContent
                 bytes = inputStream.withStream { it.bytes }
             } catch (AmazonS3Exception e) {
                 if (e.statusCode == 404) {
@@ -266,6 +266,7 @@ class S3StorageOperations implements StorageOperations {
      *
      * TODO Find a way of requesting only the required image header byte range
      */
+    @Slf4j
     static private class AbortingS3ObjectInputStream extends FilterInputStream {
 
         private S3ObjectInputStream inputStream
@@ -277,7 +278,11 @@ class S3StorageOperations implements StorageOperations {
 
         @Override
         void close() throws IOException {
-            inputStream.abort()
+            def available = inputStream.in.available()
+            if (available > 0) {
+                log.debug('Closing S3ObjectInputStream with {} bytes available', available)
+                inputStream.abort()
+            }
             super.close()
         }
     }
