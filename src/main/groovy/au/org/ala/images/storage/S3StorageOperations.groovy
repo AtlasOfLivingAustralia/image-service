@@ -278,7 +278,7 @@ class S3StorageOperations implements StorageOperations {
 
         @Override
         void close() throws IOException {
-            def available = inputStream.in.available()
+            def available = inputStream.delegateStream.available()
             if (available > 0) {
                 log.debug('Closing S3ObjectInputStream with {} bytes available', available)
                 inputStream.abort()
