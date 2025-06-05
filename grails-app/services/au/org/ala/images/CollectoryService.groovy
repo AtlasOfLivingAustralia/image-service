@@ -16,6 +16,8 @@ class CollectoryService {
 
     static String NO_DATARESOURCE = 'no_dataresource'
 
+    final private static EMPTY_MAP = Collections.emptyMap()
+
     @Value('${collectory.cache.dataResourceSpec:maximumSize=10000,expireAfterWrite=1d,refreshAfterWrite=1d}')
     String dataResourceLookupCacheSpec = "maximumSize=10000,expireAfterWrite=1d,refreshAfterWrite=1d"
 
@@ -67,8 +69,12 @@ class CollectoryService {
 
     def getResourceLevelMetadata(dataResourceUid) {
 
+        if (!dataResourceUid || dataResourceUid == NO_DATARESOURCE){
+            return EMPTY_MAP
+        }
+
         def results = dataResourceLookupCache.get(dataResourceUid)
-        return results.orElse([:])
+        return results.orElse(EMPTY_MAP)
     }
 
     private Optional<Object> getResourceLevelMetadataInternal(String dataResourceUid) {
