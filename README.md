@@ -63,3 +63,90 @@ And to shutdown
 ```$xslt
 docker-compose -f elastic.yml kill
 ```
+
+# Configuring a Global StorageOperations
+
+This section describes how to configure a global StorageOperations instance that will be used in preference to the StorageLocation attached to the Image domain object in all places a StorageOperation is referenced.
+
+## Overview
+
+The image-service application now supports configuring a global StorageOperations instance in the application.yml file. When enabled, this StorageOperations instance will be used in preference to the StorageLocation attached to the Image domain object in all places a StorageOperation is referenced.
+
+This feature is useful when you want to use a different storage backend for all images, without having to migrate the images to a new StorageLocation. For example, you might want to use an S3 bucket for all images, even though they were originally stored in a file system.
+
+In the future, this feature will allow images to be served without checking the database, which may improve performance.
+
+## Configuration
+
+To configure a global StorageOperations instance, add the following configuration to your application.yml file:
+
+```yaml
+imageservice:
+  storageOperations:
+    enabled: true
+    # Type of storage operations: 'fs', 's3', or 'swift'
+    type: 'fs'
+    basePath: '/data/image-service/store'
+```
+
+The configuration options depend on the type of StorageOperations you want to use:
+
+### File System Storage
+
+```yaml
+imageservice:
+  storageOperations:
+    enabled: true
+    type: 'fs'
+    basePath: '/data/image-service/store'
+```
+
+### S3 Storage
+
+```yaml
+imageservice:
+  storageOperations:
+    enabled: true
+    type: 's3'
+    region: 'ap-southeast-2'
+    bucket: 'my-bucket'
+    prefix: 'images'
+    accessKey: 'my-access-key'
+    secretKey: 'my-secret-key'
+    containerCredentials: false
+    publicRead: true
+    redirect: true
+    pathStyleAccess: false
+    hostname: ''
+    cloudfrontDomain: 'my-cloudfront-domain.cloudfront.net'
+```
+
+### Swift Storage
+
+```yaml
+imageservice:
+  storageOperations:
+    enabled: true
+    type: 'swift'
+    authUrl: 'https://swift.example.com/auth/v1.0'
+    containerName: 'my-container'
+    username: 'my-username'
+    password: 'my-password'
+    tenantId: 'my-tenant-id'
+    tenantName: 'my-tenant-name'
+    authenticationMethod: 'BASIC'
+    publicContainer: true
+    redirect: true
+```
+
+## Disabling the Feature
+
+To disable the feature, set `enabled: false` in the configuration:
+
+```yaml
+imageservice:
+  storageOperations:
+    enabled: false
+```
+
+When disabled, the application will use the StorageLocation attached to the Image domain object for all storage operations, as it did before this feature was added.

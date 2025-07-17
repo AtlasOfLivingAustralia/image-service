@@ -238,6 +238,39 @@ imageservice:
         staging: '/data/image-service/store/staging'
     batchUpload: '/data/image-service/upload'
     exportDir: '/data/image-service/exports'
+    # Configuration for a global StorageOperations instance
+    # If enabled, this will be used in preference to the StorageLocation attached to the Image
+    storageOperations:
+        enabled: false
+        # Type of storage operations: 'fs', 's3', or 'swift'
+        # type: 'fs'
+        # basePath: '/data/image-service/store'
+
+        # Example S3 configuration:
+        # type: 's3'
+        # region: 'ap-southeast-2'
+        # bucket: 'my-bucket'
+        # prefix: 'images'
+        # accessKey: 'my-access-key'
+        # secretKey: 'my-secret-key'
+        # containerCredentials: false
+        # publicRead: true
+        # redirect: true
+        # pathStyleAccess: false
+        # hostname: ''
+        # cloudfrontDomain: 'my-cloudfront-domain.cloudfront.net'
+
+        # Example Swift configuration:
+        # type: 'swift'
+        # authUrl: 'https://swift.example.com/auth/v1.0'
+        # containerName: 'my-container'
+        # username: 'my-username'
+        # password: 'my-password'
+        # tenantId: 'my-tenant-id'
+        # tenantName: 'my-tenant-name'
+        # authenticationMethod: 'BASIC'
+        # publicContainer: true
+        # redirect: true
     apache:
         root: '${grails.serverURL}${grails.contextPath}/store/'
         # space separated list

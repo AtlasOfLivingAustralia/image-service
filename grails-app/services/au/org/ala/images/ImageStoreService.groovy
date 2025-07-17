@@ -1,6 +1,7 @@
 package au.org.ala.images
 
 import au.org.ala.images.storage.StorageOperations
+import org.springframework.beans.factory.annotation.Autowired
 import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
 import au.org.ala.images.thumb.ThumbnailingResult
@@ -51,6 +52,9 @@ class ImageStoreService {
     def grailsApplication
     def auditService
     LinkGenerator grailsLinkGenerator
+
+    @Autowired
+    ConfiguredStorageOperationsService configuredStorageOperationsService
 
     @Value('${placeholder.sound.thumbnail}')
     Resource audioThumbnail
@@ -291,7 +295,7 @@ class ImageStoreService {
                 return image.originalInputStream()
             }
         }
-        return generateThumbnailsImpl(byteSource, image.imageIdentifier, image.storageLocation.asStandaloneStorageOperations())
+        return generateThumbnailsImpl(byteSource, image.imageIdentifier, getStorageOperationsToUse(image))
     }
 
     @NotTransactional
@@ -349,7 +353,7 @@ class ImageStoreService {
 
 
     ImageTilerResults generateTMSTiles(Image image, Integer z = null) {
-        return generateTMSTiles(image.imageIdentifier, GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations(), image.zoomLevels, z)
+        return generateTMSTiles(image.imageIdentifier, getStorageOperationsToUse(image), image.zoomLevels, z)
     }
 
     @NotTransactional
@@ -618,10 +622,11 @@ class ImageStoreService {
         Image image
         StorageOperations operations = null
         String dataResourceUid = null
+        // TODO can we remove the database access here?
         Image.withNewTransaction(readOnly: true) {
             image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
             if (image) {
-                operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
+                operations = getStorageOperationsToUse(image)
                 dataResourceUid = image.dataResourceUid
             }
         }
@@ -672,7 +677,7 @@ class ImageStoreService {
         Image.withNewTransaction(readOnly: true) {
             image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
             if (image) {
-                operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
+                operations = getStorageOperationsToUse(image)
                 dataResourceUid = image.dataResourceUid
             }
         }
@@ -688,5 +693,19 @@ class ImageStoreService {
 
     long consumedSpace(Image image) {
         image.consumedSpace()
+    }
+
+    /**
+     * Returns the StorageOperations to use for the given image.
+     * If a configured StorageOperations is available, it will be used in preference to the StorageLocation attached to the Image.
+     * @param image The image
+     * @return The StorageOperations to use
+     */
+    private StorageOperations getStorageOperationsToUse(Image image) {
+        StorageOperations configuredOps = configuredStorageOperationsService.getConfiguredStorageOperations()
+        if (configuredOps != null) {
+            return configuredOps
+        }
+        return GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
     }
 }
