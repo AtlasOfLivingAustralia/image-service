@@ -50,6 +50,7 @@ class S3StorageLocation extends StorageLocation {
         prefix nullable: false, blank: true
         pathStyleAccess nullable: true
         hostname nullable: true
+        cloudfrontDomain nullable: true, blank: true
     }
 
     static mapping = {
