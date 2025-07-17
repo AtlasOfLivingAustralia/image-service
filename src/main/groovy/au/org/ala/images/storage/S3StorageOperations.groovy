@@ -25,9 +25,11 @@ import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest
 import com.amazonaws.services.s3.model.GetObjectRequest
 import com.amazonaws.services.s3.model.ObjectListing
 import com.amazonaws.services.s3.model.ObjectMetadata
+import com.amazonaws.services.s3.model.ObjectTagging
 import com.amazonaws.services.s3.model.PutObjectRequest
 import com.amazonaws.services.s3.model.S3ObjectInputStream
 import com.amazonaws.services.s3.model.S3ObjectSummary
+import com.amazonaws.services.s3.model.Tag
 import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
 import groovy.util.logging.Slf4j
@@ -47,6 +49,7 @@ class S3StorageOperations implements StorageOperations {
     boolean containerCredentials
     boolean publicRead
     boolean redirect
+    String cloudfrontDomain
 
     boolean pathStyleAccess
     String hostname = ''
@@ -135,7 +138,10 @@ class S3StorageOperations implements StorageOperations {
 //        def permission = s3Client.getObjectAcl(bucket, path).grantsAsList.find { grant ->
 //            grant.grantee == GroupGrantee.AllUsers && [Permission.Read, Permission.Write, Permission.FullControl].contains(grant.permission)
 //        }
-        if (publicRead) {
+        if (cloudfrontDomain) {
+            // If a CloudFront domain is set, use that for redirects
+            new URI("https://${cloudfrontDomain}/${path}")
+        } else if (publicRead) {
             s3Client.getUrl(bucket, path).toURI()
         } else {
             // Set the presigned URL to expire after one hour.
@@ -213,7 +219,7 @@ class S3StorageOperations implements StorageOperations {
     @Override
     void store(String uuid, InputStream stream, String contentType = 'image/jpeg', String contentDisposition = null, Long length = null) {
         String path = createOriginalPathFromUUID(uuid)
-        storeInternal(stream, path, contentType, contentDisposition, length)
+        storeInternal(stream, path, contentType, contentDisposition, length, [imageType: 'original', thumbnail: 'false', tile: 'false', original: 'true'])
     }
 
     @Override
@@ -370,29 +376,34 @@ class S3StorageOperations implements StorageOperations {
 
     @Override
     ByteSinkFactory thumbnailByteSinkFactory(String uuid) {
-        byteSinkFactory(uuid)
+        byteSinkFactory(uuid, [imageType: 'thumbnail', thumbnail: 'true', tile: 'false', original: 'false'], 'thumbnail')
     }
 
     @Override
     ByteSinkFactory tilerByteSinkFactory(String uuid) {
-        byteSinkFactory(uuid, 'tms')
+        byteSinkFactory(uuid, [imageType: 'tile', thumbnail: 'false', tile: 'true', original: 'false'], 'tms')
     }
 
-    ByteSinkFactory byteSinkFactory(String uuid, String... prefixes) {
-        return new S3ByteSinkFactory(s3Client, storagePathStrategy(), bucket, uuid, prefixes)
+    ByteSinkFactory byteSinkFactory(String uuid, Map<String, String> tags, String... prefixes) {
+        return new S3ByteSinkFactory(s3Client, storagePathStrategy(), bucket, uuid, tags, prefixes)
     }
 
     @Override
     void storeAnywhere(String uuid, InputStream stream, String relativePath, String contentType = 'image/jpeg', String contentDisposition = null, Long length = null) {
         def path = storagePathStrategy().createPathFromUUID(uuid, relativePath)
-        storeInternal(stream, path, contentType, contentDisposition, length)
+        storeInternal(stream, path, contentType, contentDisposition, length, [:])
     }
 
-    private storeInternal(InputStream stream, String absolutePath, String contentType, String contentDisposition, Long length) {
+    private storeInternal(InputStream stream, String absolutePath, String contentType, String contentDisposition, Long length, Map<String, String> tags) {
         def client = s3Client
         try {
             def result = stream.withStream {
-                client.putObject(bucket, absolutePath, stream, generateMetadata(contentType, contentDisposition, length))
+                PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, absolutePath, it, generateMetadata(contentType, contentDisposition, length))
+                if (tags) {
+                    def tagSet = tags.collect { new Tag(it.key, it.value) }
+                    putObjectRequest.setTagging(new ObjectTagging(tagSet))
+                }
+                client.putObject(putObjectRequest)
             }
             log.debug("Uploaded {} to S3 {}:{}} with result etag {}}", absolutePath, region, bucket, result.ETag)
         } catch (AmazonS3Exception exception) {

@@ -38,6 +38,7 @@ class S3StorageLocation extends StorageLocation {
     boolean containerCredentials
     boolean publicRead
     boolean redirect
+    String cloudfrontDomain
 
     // for testing only, not exposed to UI
     boolean pathStyleAccess = false
@@ -66,7 +67,8 @@ class S3StorageLocation extends StorageLocation {
                 publicRead: publicRead,
                 redirect: redirect,
                 pathStyleAccess: pathStyleAccess,
-                hostname: hostname
+                hostname: hostname,
+                cloudfrontDomain: cloudfrontDomain
         )
     }()
 
