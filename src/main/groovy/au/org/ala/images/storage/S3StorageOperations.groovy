@@ -376,7 +376,7 @@ class S3StorageOperations implements StorageOperations {
 
     @Override
     ByteSinkFactory thumbnailByteSinkFactory(String uuid) {
-        byteSinkFactory(uuid, [imageType: 'thumbnail', thumbnail: 'true', tile: 'false', original: 'false'], 'thumbnail')
+        byteSinkFactory(uuid, [imageType: 'thumbnail', thumbnail: 'true', tile: 'false', original: 'false'])
     }
 
     @Override
