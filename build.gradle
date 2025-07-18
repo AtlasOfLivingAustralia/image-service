@@ -238,7 +238,7 @@ tasks.withType(War).configureEach { War war ->
 webdriverBinaries {
     chromedriver '110.0.5481.77'
     geckodriver '0.32.2'
-    edgedriver '110.0.1587.57'
+//    edgedriver '110.0.1587.57'
 }
 assets {
     minifyJs = true
