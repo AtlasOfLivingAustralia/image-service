@@ -8,16 +8,10 @@ env:
   git-credential-helper: yes
   variables:
     DEBIAN_FRONTEND: "noninteractive"
-  secrets-manager:
-    DB_PASSWORD: $IMAGES_SECRET_NAME:db-password
   exported-variables:
-    - CODEBUILD_BUILD_NUMBER
     - BASE_STACK_FILE_PFIX
     - BASE_STACK_NAME
-    - PRODUCT_NAME
-    - PRODUCT_COMPONENT
-    - SLACK_DEPLOY_NOTIFICATION
-    - SLACK_ALERT_CHANNEL
+    - CODEBUILD_BUILD_NUMBER
     - CODEBUILD_BUILD_NUMBER
     - COGNITO_STACK_NAME
     - DB_READ_ENDPOINT
@@ -25,10 +19,15 @@ env:
     - DOMAIN_NAME
     - EKS_CLUSTER_NAME
     - HELM_RELEASE_NAME
+    - CERTIFICATE_ARN
     - HOSTED_ZONE
+    - PRODUCT_COMPONENT
+    - PRODUCT_NAME
     - SECRET_NAME
-    - ELASTIC_HOST
-    - ELASTIC_PORT
+    - EKS_NAMESPACE
+    - ACCESS_LOGS_S3_BUCKET_NAME
+    - SLACK_ALERT_CHANNEL
+    - SLACK_DEPLOY_NOTIFICATION
 
 phases:
 
@@ -75,15 +74,18 @@ phases:
       - DB_WRITE_ENDPOINT=$(aws cloudformation describe-stacks --stack-name $DATABASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='WriteEndpoint'].OutputValue" --output text)
       - echo DB_READ_ENDPOINT=$DB_READ_ENDPOINT
       - echo DB_WRITE_ENDPOINT=$DB_WRITE_ENDPOINT
+      - ACCESS_LOGS_S3_BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerAccessLogsBucket'].OutputValue" --output text)
+      - echo ACCESS_LOGS_S3_BUCKET_NAME=$ACCESS_LOGS_S3_BUCKET_NAME
       - export EKS_CLUSTER_NAME=$(aws cloudformation list-exports --query "Exports[?Name=='$REGOLITH_STACK_NAME-ClusterName'].Value" --output text)
       - echo EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME
       - export OIDC_CLIENT_ID=$(aws cloudformation list-exports --query "Exports[?Name=='$BASE_STACK_NAME-ImagesAppClient'].Value" --output text)
       - echo OIDC_CLIENT_ID=$OIDC_CLIENT_ID
-      - export WEBSERVICE_CLIENT_ID=$(aws cloudformation list-exports --query "Exports[?Name=='$BASE_STACK_NAME-ImagesServerToServerAppClient'].Value" --output text)
-      - echo WEBSERVICE_CLIENT_ID=$WEBSERVICE_CLIENT_ID
+      - echo SECRET_NAME=$SECRET_NAME
+      - echo BASE_STACK_NAME=$BASE_STACK_NAME
+      - DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["db-password"]')
+      - CAS_CLIENT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["cas-client-secret"]')
       - export USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $COGNITO_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
       - export CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $OIDC_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
-      - export WEBSERVICE_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $WEBSERVICE_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
       - echo creating the configmap for the images deployment...
       - |
         source cicd/unset_codebuild_env_vars.sh
@@ -96,14 +98,24 @@ phases:
   build:
     commands:
       - echo Entered the build phase...
-      - DB_NAME=$PRODUCT_NAME$([[ "$ENVIRONMENT" == "development" ]] && echo "$CLEAN_BRANCH" || echo "$ENVIRONMENT")
+      - DB_NAME=$PRODUCT_NAME$ENVIRONMENT
       - DB_HOSTNAME=$([[ "$ENVIRONMENT" == "development" ]] && echo "$CLEAN_BRANCH" || echo "$ENVIRONMENT")
       - |
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            CLIENT_ID=${CAS_CLIENT_ID}
+            CLIENT_SECRET=${CAS_CLIENT_SECRET}
+          fi
+      - |
         echo "
+        elasticsearch-images:
+          deployment:
+            name: elasticsearch-images-${CLEAN_BRANCH}
+          service:
+            name: elasticsearch-images-${CLEAN_BRANCH}
         app:
           url: https://$SUB_DOMAIN.$HOSTED_ZONE
         db:
-          endpoint: "${DB_HOSTNAME}"
+          endpoint: "doi-pg-rds-${CLEAN_BRANCH}"
           database_name: "${DB_NAME}"
           db_username: "${DB_USERNAME}"
           db_password: "${DB_PASSWORD}"
@@ -126,8 +138,6 @@ phases:
             enabled: $JWT_FALLBACK_TO_LEGACY
         webservice:
           enabled: $WEB_SERVICE_ENABLED
-          clientId: $WEBSERVICE_CLIENT_ID
-          secret: $WEBSERVICE_SECRET
         apikey:
           enabled: $APIKEY_ENABLED
           auth:
@@ -152,18 +162,19 @@ phases:
           baseURL: $ALA_BASE_URL
         bie:
           baseURL: $BIE_BASE_URL
-        elasticsearch:
-          deployment:
-            name: $ELASTIC_HOST
-          service:
-            name: $ELASTIC_HOST
-            host: $ELASTIC_HOST
-            port: $ELASTIC_PORT
-          pv:
-            name: pv-$ELASTIC_HOST
-            volumeHandle: $FILE_SYSTEM_ID
-          pvc:
-            name: pvc-$ELASTIC_HOST" > helm_values.yaml
+        podEnvironment: "${POD_ENVIRONMENT}"
+        xmx: "${HEAP_SIZE_INITIAL}"
+        xms: "${HEAP_SIZE_MAX}"
+        ingress:
+          accessLogsPrefix: "logs"
+          accessLogsBucket: "${ACCESS_LOGS_S3_BUCKET_NAME}"
+        resources:
+          requests:
+            cpu: ${CPU_REQUEST}
+            memory: ${MEMORY_REQUEST}
+          limits:
+            cpu: ${CPU_LIMIT}
+            memory: ${MEMORY_LIMIT}" > helm_values.yaml
     finally:
       - #echo This always runs
 

@@ -19,11 +19,11 @@ phases:
     commands:
       - echo Build started on $(date)
       - aws eks --region ap-southeast-2 update-kubeconfig --name $EKS_CLUSTER_NAME
-      - kubectl config set-context --current --namespace=images
-      - eksctl delete iamserviceaccount --name=images-service-account-$CLEAN_BRANCH --namespace=images --cluster=$EKS_CLUSTER_NAME
+      - kubectl config set-context --current --namespace=$EKS_NAMESPACE
+      - eksctl delete iamserviceaccount --name=images-service-account-$CLEAN_BRANCH --namespace=$EKS_NAMESPACE --cluster=$EKS_CLUSTER_NAME
       - |
-        if helm list -n images | grep -q $HELM_RELEASE_NAME; then
-          helm uninstall $HELM_RELEASE_NAME -n images
+        if helm list -n $EKS_NAMESPACE | grep -q $HELM_RELEASE_NAME; then
+          helm uninstall $HELM_RELEASE_NAME -n $EKS_NAMESPACE
         else
           echo "Release $HELM_RELEASE_NAME does not exist."
         fi

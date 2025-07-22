@@ -39,6 +39,8 @@ ingress:
   certificateArn: ""
   hostname: ""
   tls: []
+  accessLogsBucket: ""
+  accessLogsPrefix: ""
 
 resources:
   requests:
@@ -49,13 +51,40 @@ resources:
     memory: "4096Mi"  # 4GB
 
 livenessProbe:
+  enabled: true
   httpGet:
-    path: /
-    port: http
+    path: /actuator/health
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 90
+  periodSeconds: 5
+  timeoutSeconds: 15
+  successThreshold: 1
+  failureThreshold: 40 # 40 failures + initial delay of 90 seconds = 290 seconds
+
 readinessProbe:
+  enabled: true
   httpGet:
-    path: /
-    port: http
+    path: /actuator/health
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
 
 autoscaling:
   enabled: false
@@ -139,3 +168,24 @@ bie:
 headerAndFooter:
   baseURL: "https://www.ala.org.au/commonui-bs3-2019"
   version: "2"
+podEnvironment: "production"
+xmx: "3g"
+xms: "3g"
+
+elasticsearch-images:
+  deployment:
+    name: "elasticsearch-images"
+  enabled: true
+  namespace: "elasticsearch"
+  service:
+    name: "elasticsearch-images"
+    host: ""
+    port: 9200
+    username: ""
+    password: ""
+    authEnabled: false
+  persistence:
+    enabled: true
+    storageClass: "auto-ebs-sc"
+    accessMode: ReadWriteOnce
+    size: 10Gi

@@ -3,7 +3,7 @@ set -ueo pipefail
 
 ###
 # Deploy the codepipeline for the images app
-# You must have AWS CLI authentication for this to run. 
+# You must have AWS CLI authentication for this to run.
 
 usage() {
  echo "Usage: $0 [OPTIONS]"
@@ -53,7 +53,7 @@ fi
 # check if we're on a detached head
 if [[ -n $branch ]]; then
   real_branch=1
-elif [[ -z $branch && -n $BRANCH_OVERRIDE ]]; then 
+elif [[ -z $branch && -n $BRANCH_OVERRIDE ]]; then
   real_branch=0
   branch=$BRANCH_OVERRIDE
 else
@@ -149,5 +149,6 @@ aws cloudformation deploy \
         pProductComponent=$PRODUCT_COMPONENT \
         pProductName=$PRODUCT_NAME \
         pSecretName=$SECRET_NAME \
+        pEksNamespace=$EKS_NAMESPACE \
         pRestartExecutionOnUpdate=$RESTART_PIPELINE_ON_UPDATE \
 

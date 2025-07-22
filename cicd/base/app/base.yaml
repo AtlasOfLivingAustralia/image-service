@@ -153,7 +153,8 @@ Resources:
         - IsFirstBuild
         - |
           {
-             "db-password" : ""
+             "db-password" : "",
+             "cas-client-secret": ""
           }
         - !Ref "AWS::NoValue"
 
@@ -204,49 +205,43 @@ Resources:
       UserPoolId: !ImportValue
         Fn::Sub: ${pCognitoStackName}-UserPoolId
 
-  AppClientImagesServer:
-    Type: AWS::Cognito::UserPoolClient
+  LoadBalancerAccessLogsBucket:
+    Type: AWS::S3::Bucket
     Properties:
-      AccessTokenValidity: 60
-      AllowedOAuthFlows:
-        - client_credentials
-      AllowedOAuthFlowsUserPoolClient: True
-      AllowedOAuthScopes:
-        - ala/internal
-        - ala/attrs
-        - users/read
-      AuthSessionValidity: 3
-      CallbackURLs:
-        - !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
-      ClientName: !Sub
-        - ${pProductName}-${ResourceName}-server-to-server
+      BucketName: !Sub
+        - ala-${pProductName}-${ResourceName}-alb-access-logs
         - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
-      DefaultRedirectURI: !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
-      EnablePropagateAdditionalUserContextData: True
-      EnableTokenRevocation: True
-      ExplicitAuthFlows:
-        - ALLOW_ADMIN_USER_PASSWORD_AUTH
-        - ALLOW_CUSTOM_AUTH
-        - ALLOW_REFRESH_TOKEN_AUTH
-        - ALLOW_USER_SRP_AUTH
-      GenerateSecret: True
-      IdTokenValidity: 60
-      LogoutURLs:
-        - !Sub "https://${pAppClientDomain}"
-      PreventUserExistenceErrors: ENABLED
-      RefreshTokenValidity: 30
-      SupportedIdentityProviders:
-        - COGNITO
-        - Facebook
-        - Google
-        - AAF
-        - SignInWithApple
-      TokenValidityUnits:
-        AccessToken: minutes
-        IdToken: minutes
-        RefreshToken: days
-      UserPoolId: !ImportValue
-        Fn::Sub: ${pCognitoStackName}-UserPoolId
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: "ExpireOldLogs"
+            Status: Enabled
+            ExpirationInDays: 90
+            Prefix: "logs/"
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      Tags:
+        - Key: Name
+          Value: LoadBalancerAccessLogs
+
+  LoadBalancerAccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LoadBalancerAccessLogsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowELBAccess
+            Effect: Allow
+            Principal:
+              Service: "logdelivery.elasticloadbalancing.amazonaws.com"
+            Action: "s3:PutObject"
+            Resource: !Sub "arn:aws:s3:::${LoadBalancerAccessLogsBucket}/logs/AWSLogs/${AWS::AccountId}/*"
 
 Outputs:
 
@@ -276,6 +271,6 @@ Outputs:
     Description: The app client for the Image service
     Value: !Ref AppClient
 
-  ImagesServerToServerAppClient:
-    Description: The app client for the Image service
-    Value: !Ref AppClientImagesServer
+  LoadBalancerAccessLogsBucket:
+    Description: The S3 bucket for the Load Balancer access logs
+    Value: !Ref LoadBalancerAccessLogsBucket

@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Values.deployment.name }}
+  namespace: {{ .Values.namespace }}
   annotations:
     helm.sh/resource-policy: keep
     meta.helm.sh/release-name: "{{ .Release.Name }}"
@@ -23,8 +24,8 @@ spec:
           image: busybox
           command: [ "sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data" ]
           volumeMounts:
-            - name: elasticsearch-storage
-              mountPath: /usr/share/elasticsearch/data/{{ .Release.Name }}
+            - name: elasticsearch-data
+              mountPath: /usr/share/elasticsearch/data
       containers:
         - name: elasticsearch
           image: {{ .Values.image }}
@@ -41,9 +42,9 @@ spec:
               cpu: {{ .Values.resources.limits.cpu }}
               memory: {{ .Values.resources.limits.memory }}
           volumeMounts:
-            - name: elasticsearch-storage
-              mountPath: /usr/share/elasticsearch/data/{{ .Release.Name }}
+            - name: elasticsearch-data
+              mountPath: /usr/share/elasticsearch/data
       volumes:
-        - name: elasticsearch-storage
+        - name: elasticsearch-data
           persistentVolumeClaim:
-            claimName: {{ .Values.pvc.name }}
+            claimName: {{ .Values.deployment.name }}-pvc

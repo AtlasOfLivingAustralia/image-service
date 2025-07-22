@@ -1,24 +1,25 @@
 {
   "Parameters" : {
-    "pBuild"                : "{{ codebuild_build_number }}",
-    "pBackupBucket"          : "{{ backup_bucket }}",
-    "pCleanBranch"          : "{{ clean_branch }}",
-    "pEnvironment"          : "{{ environment }}",
-    "pProductComponent"     : "{{ product_component }}",
-    "pProductName"          : "{{ product_name }}",
-    "pClusterOidcIssuerUrl" : "{{ cluster_oidc_issuer_url }}",
-    "pOidcConnectProvider"  : "{{ oidc_connect_provider }}",
     "pAppClientDomain"      : "{{ app_client_domain }}",
+    "pBackupBucket"          : "{{ backup_bucket }}",
+    "pBuild"                : "{{ codebuild_build_number }}",
+    "pCleanBranch"          : "{{ clean_branch }}",
+    "pClusterOidcIssuerUrl" : "{{ cluster_oidc_issuer_url }}",
     "pCognitoStackName"     : "{{ cognito_stack_name }}",
-    "pSecretName"           : "{{ secret_name }}"
+    "pEnvironment"          : "{{ environment }}",
+    "pOidcConnectProvider"  : "{{ oidc_connect_provider }}",
+    "pProductComponent"     : "{{ product_component }}",
+    "pSecretName"           : "{{ secret_name }}",
+    "pEksNamespace"         : "{{ eks_namespace }}",
+    "pProductName"          : "{{ product_name }}"
   },
   "Tags" : {
-    "product"     : "{{ product_name }}",
+    "branch"      : "{{ src_branch }}",
+    "build"       : "{{ codebuild_build_number }}",
     "component"   : "{{ product_component }}",
     "environment" : "{{ environment }}",
-    "branch"      : "{{ src_branch }}",
-    "version"     : "{{ commit_id }}",
-    "build"       : "{{ codebuild_build_number }}"
+    "product"     : "{{ product_name }}",
+    "version"     : "{{ commit_id }}"
   },
   "StackPolicy" : {
     "Statement" : [

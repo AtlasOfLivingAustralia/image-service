@@ -8,5 +8,5 @@ spec:
   type: ExternalName
   externalName: {{ .Values.rds.externalName }}
   ports:
-    - port: 3306
-      targetPort: 3306
+    - port: 5432
+      targetPort: 5432

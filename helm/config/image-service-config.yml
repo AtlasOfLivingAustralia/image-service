@@ -60,7 +60,7 @@ security:
 #websevice jwt
 webservice:
   jwt: {{ .Values.webservice.enabled }}
-  jwt-scopes: ala/internal users/read ala/attrs
+  jwt-scopes:
   client-id: {{ .Values.webservice.clientId }}
   client-secret: {{ .Values.webservice.secret }}
 

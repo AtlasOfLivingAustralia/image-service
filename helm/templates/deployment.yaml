@@ -20,13 +20,23 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - containerPort: 8000
+            - containerPort: 8080
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          command: [ "java" ]
+          args:
+            - "-Dgrails.env={{ .Values.config.podEnvironment }}"
+            - "-Xms{{ .Values.config.xms }}"
+            - "-Xmx{{ .Values.config.xmx }}"
+            - "-jar"
+            - "app.war"
+          env:
+            - name: TZ
+              value: "Australia/Sydney"
           volumeMounts:
             - name: config-volume
               mountPath: /data/image-service/config/image-service-config.yml
-              subPath: images-service-config.yml
+              subPath: image-service-config.yml
             - name: logback-volume
               mountPath: /data/image-service/config/logback.xml
               subPath: logback.xml
@@ -36,19 +46,55 @@ spec:
             - name: system-message-volume
               mountPath: /data/image-service/config/system-message.json
               subPath: system-message.json
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.httpGet.path }}
+              port: {{ .Values.livenessProbe.httpGet.port }}
+              scheme: {{ .Values.livenessProbe.httpGet.scheme }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.startupProbe.httpGet.path }}
+              port: {{ .Values.livenessProbe.httpGet.port }}
+              scheme: {{ .Values.startupProbe.httpGet.scheme }}
+            initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.startupProbe.successThreshold }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.httpGet.path }}
+              port: {{ .Values.livenessProbe.httpGet.port }}
+              scheme: {{ .Values.readinessProbe.httpGet.scheme }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end }}
       volumes:
         - name: config-volume
           secret:
             secretName: {{ .Values.secret.name }}
         - name: logback-volume
           configMap:
-            name: logback-config
+            name: logback-config-images
             optional: true
         - name: logback-groovy-volume
           configMap:
-            name: logback-groovy-config
+            name: logback-groovy-config-images
             optional: true
         - name: system-message-volume
           configMap:
-            name: system-message-config
+            name: system-message-config-images
             optional: true

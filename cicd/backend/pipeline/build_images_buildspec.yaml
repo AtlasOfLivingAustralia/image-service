@@ -4,59 +4,56 @@ env:
   shell: bash
   variables:
     JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+  secrets-manager:
+    DOCKER_USERNAME: ala-secrets-production:dockerhub-username
+    DOCKER_PASSWORD: ala-secrets-production:dockerhub-password
   exported-variables:
     - BUILD_TAG
 
 phases:
   install:
     runtime-versions:
-      java: corretto11
+      java: corretto17
     commands:
       - echo Installing dependencies...
       - apt update -y
         && cat /etc/lsb-release
-        && apt-get -q -y install unzip
-        && apt-get -q -y install zip
-        && apt-get -q -y install curl
         && curl -s "https://get.sdkman.io" | bash
         && chmod a+x /root/.sdkman/bin/sdkman-init.sh
         && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails 6.0.0 /root/.sdkman/candidates/grails/6.0.0
-        && apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+        && apt-get install -y apt-transport-https ca-certificates software-properties-common
         && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
         && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
         && apt-get update
         && apt-get install -y docker-ce
-      - nohup /usr/local/bin/dockerd-entrypoint.sh &
-      - echo "Waiting for Docker to be ready..."
-      - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
       - java -version
+      - echo Logging in to Docker Hub...
+      - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
       - ./gradlew clean
       - ./gradlew assemble
-      - useradd -ms /bin/bash postgresuser
-      - echo "Non-root user 'postgresuser' created"
-      - chown -R postgresuser:postgresuser /tmp
 
   build:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
-      - chown -R postgresuser .
-      - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
+      - ./gradlew build --stacktrace
+      - ./gradlew bootWar
 
   post_build:
     commands:
       - echo Post-build phase...
       - echo Build completed on $(date)
-      - echo Logging in to Amazon ECR...
-      - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
       - echo Building the Docker image...
       - docker build -t ala-images .
       - echo Tagging the Docker image...
-      - export REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGES_ECR_REPOSITORY_NAME
-      - echo REPO=$REPO
+      - BUILD_TAG=$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER
+      - echo build tag is $BUILD_TAG
+      - echo "$BUILD_TAG" > /tmp/build_tag.txt
       - echo tagging
-      - docker tag ala-images:latest $REPO:$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER
-      - docker tag ala-images:latest $REPO:latest
+      - docker tag ala-images:latest $ECR_REPO:$BUILD_TAG
+      - docker tag ala-images:latest $ECR_REPO:latest
       - echo Pushing the Docker image to Amazon ECR...
-      - docker push $REPO:$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER
-      - docker push $REPO:latest
+      - docker push $ECR_REPO:$BUILD_TAG
+      - docker push $ECR_REPO:latest

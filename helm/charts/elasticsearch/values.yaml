@@ -1,21 +1,13 @@
 replicaCount: 1
 image: "docker.elastic.co/elasticsearch/elasticsearch:7.17.3"
+namespace: "elasticsearch"
 resources:
   requests:
     cpu: "1"
-    memory: "2Gi"
+    memory: "4Gi"
   limits:
     cpu: "1"
-    memory: "2Gi"
-pvc:
-  name: elasticsearch-pvc
-  enabled: true
-  accessMode: ReadWriteOnce
-  size: "5Gi"
-pv:
-  name: elasticsearch-pv
-  size: "5Gi"
-  volumeHandle: fs-xxxxxxxxxxxxx
+    memory: "4Gi"
 env:
   - name: node.name
     value: "elasticsearch"
@@ -24,8 +16,14 @@ env:
   - name: discovery.type
     value: "single-node"
 service:
-  name: elasticsearch
+  name: elasticsearch-images
   host: elasticsearch
   port: 9200
 deployment:
-  name: elasticsearch
+  name: elasticsearch-images
+
+persistence:
+  enabled: true
+  storageClass: "auto-ebs-sc"
+  accessMode: ReadWriteOnce
+  size: 10Gi

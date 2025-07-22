@@ -285,6 +285,7 @@ Resources:
                       Fn::Sub: "${pBaseStackName}-ImagesRepositoryUri"
             InputArtifacts:
               - Name: 'SourceArtifact'
+            Namespace: BuildImagesNS
             RunOrder: 2
 
           - Name: DeployImages
@@ -311,7 +312,8 @@ Resources:
                     { "name":"EKS_CLUSTER_NAME", "value":"#{ExportConfigNS.EKS_CLUSTER_NAME}" },
                     { "name":"HELM_RELEASE_NAME", "value":"#{ExportConfigNS.HELM_RELEASE_NAME}" },
                     { "name":"HOSTED_ZONE", "value":"#{ExportConfigNS.HOSTED_ZONE}" },
-                    { "name":"PRODUCT_NAME", "value":"#{ExportConfigNS.PRODUCT_NAME}" }
+                    { "name":"PRODUCT_NAME", "value":"#{ExportConfigNS.PRODUCT_NAME}" },
+                    { "name":"BUILD_TAG", "value":"#{BuildImagesNS.BUILD_TAG}" }
                   ]
                 - EcrRepo: !ImportValue
                     Fn::Sub: '${pBaseStackName}-ImagesRepositoryUri'
@@ -396,7 +398,7 @@ Resources:
               RoleArn:
                    Fn::ImportValue:
                      Fn::Sub: '${pBootstrapStackName}-CloudFormationServiceRoleArn'
-            RunOrder: 2
+            RunOrder: 4
 
   BuildImagesCodeBuildLogGroup:
     Type: AWS::Logs::LogGroup
