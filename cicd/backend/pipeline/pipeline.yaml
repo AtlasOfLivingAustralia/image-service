@@ -38,12 +38,6 @@ Parameters:
   pProductName:
     Type: String
     Description: The name of the product
-  pDomainName:
-    Type: String
-    Description: The domain name
-  pSecretName:
-    Type: String
-    Description: The name of the secret
   pRestartExecutionOnUpdate:
     Type: String
     Description: Restart that pipeline if it's been updated
@@ -252,7 +246,6 @@ Resources:
                      { "name":"PIPELINE_FINGERPRINT", "value":"#{variables.PIPELINE_FINGERPRINT}" },
                      { "name":"PRODUCT_COMPONENT", "value":"${pProductComponent}" },
                      { "name":"SRC_BRANCH", "value":"${pGitHubBranch}" },
-                     { "name":"IMAGES_SECRET_NAME", "value":"${pSecretName}" }'
                      { "name":"FILE_SYSTEM_ID", "value":"${FileSystemId}" }
                    ]
                   - FileSystemId:
@@ -307,7 +300,7 @@ Resources:
                     { "name":"COGNITO_STACK_NAME", "value":"#{ExportConfigNS.COGNITO_STACK_NAME}" },
                     { "name":"DB_READ_ENDPOINT", "value":"#{ExportConfigNS.DB_READ_ENDPOINT}" },
                     { "name":"DB_WRITE_ENDPOINT", "value":"#{ExportConfigNS.DB_WRITE_ENDPOINT}" },
-                    { "name":"DOMAIN_NAME", "value":"${pDomainName}" },
+                    { "name":"DOMAIN_NAME", "value":"#{ExportConfigNS.DOMAIN_NAME}" },
                     { "name":"ECR_REPO", "value":"${EcrRepo}" },
                     { "name":"EKS_CLUSTER_NAME", "value":"#{ExportConfigNS.EKS_CLUSTER_NAME}" },
                     { "name":"HELM_RELEASE_NAME", "value":"#{ExportConfigNS.HELM_RELEASE_NAME}" },
