@@ -36,6 +36,9 @@ Parameters:
   pSecretName:
     Type: String
     Description: The name of the secret
+  pEksNamespace:
+    Type: String
+    Description: The EKS namespace
 
 Conditions:
 
@@ -92,7 +95,7 @@ Resources:
                   "Action": "sts:AssumeRoleWithWebIdentity",
                   "Condition": {
                       "StringEquals": {
-                                        "${pClusterOidcIssuerUrl}:sub": "system:serviceaccount:${pProductName}:images-service-account",
+                                        "${pClusterOidcIssuerUrl}:sub": "system:serviceaccount:${pEksNamespace}:image-service-account-${pCleanBranch}",
                                         "${pClusterOidcIssuerUrl}:aud": "sts.amazonaws.com"
                       }
                   }
