@@ -237,8 +237,7 @@ Resources:
             Configuration:
               ProjectName: !Ref ExportConfig
               EnvironmentVariables:
-                Fn::Sub:
-                  - |
+                Fn::Sub: |
                    [
                      { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" },
                      { "name":"COMMIT_ID", "value":"#{CheckoutSrcNS.CommitId}" },
