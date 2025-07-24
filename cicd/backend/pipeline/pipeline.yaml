@@ -245,12 +245,7 @@ Resources:
                      { "name":"ENVIRONMENT", "value":"${pEnvironment}" },
                      { "name":"PIPELINE_FINGERPRINT", "value":"#{variables.PIPELINE_FINGERPRINT}" },
                      { "name":"PRODUCT_COMPONENT", "value":"${pProductComponent}" },
-                     { "name":"SRC_BRANCH", "value":"${pGitHubBranch}" },
-                     { "name":"FILE_SYSTEM_ID", "value":"${FileSystemId}" }
-                   ]
-                  - FileSystemId:
-                     Fn::ImportValue:
-                       Fn::Sub: "${pRegolithStackName}-FileSystemId"
+                     { "name":"SRC_BRANCH", "value":"${pGitHubBranch}" }
             Namespace: ExportConfigNS
             InputArtifacts:
               - Name: 'SourceArtifact'
