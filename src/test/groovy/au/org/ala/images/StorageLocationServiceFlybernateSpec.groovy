@@ -10,7 +10,7 @@ class StorageLocationServiceFlybernateSpec extends FlybernateSpec implements Ser
     def 'test migrate'() {
         setup:
         def src = new FileSystemStorageLocation(basePath: '/tmp/1').save(flush: true)
-        def dst = new S3StorageLocation(region: 'region', bucket: 'bucket', prefix: 'prefix', accessKey: 'a', secretKey: 's', publicRead: false).save(flush: true)
+        def dst = new S3StorageLocation(region: 'region', bucket: 'bucket', prefix: 'prefix', accessKey: 'a', secretKey: 's', publicRead: false, cloudfrontDomain: '').save(flush: true)
         def img1 = new Image(imageIdentifier: UUID.randomUUID().toString(), storageLocation: src).save(flush: true)
         def img2 = new Image(imageIdentifier: UUID.randomUUID().toString(), storageLocation: src).save(flush: true)
         def img3 = new Image(imageIdentifier: UUID.randomUUID().toString(), storageLocation: src).save(flush: true)
@@ -21,6 +21,8 @@ class StorageLocationServiceFlybernateSpec extends FlybernateSpec implements Ser
         service.migrate(src.id, dst.id, '1234', false)
 
         then:
+        img1 != null
+        dst != null
         1 * service.imageService.scheduleBackgroundTask(new MigrateStorageLocationTask(imageId: img1.id, destinationStorageLocationId: dst.id, userId: '1234', imageService: service.imageService, deleteSource: false))
         1 * service.imageService.scheduleBackgroundTask(new MigrateStorageLocationTask(imageId: img2.id, destinationStorageLocationId: dst.id, userId: '1234', imageService: service.imageService, deleteSource: false))
         1 * service.imageService.scheduleBackgroundTask(new MigrateStorageLocationTask(imageId: img3.id, destinationStorageLocationId: dst.id, userId: '1234', imageService: service.imageService, deleteSource: false))
