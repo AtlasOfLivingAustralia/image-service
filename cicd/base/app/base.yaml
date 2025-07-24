@@ -80,6 +80,21 @@ Resources:
         - Key: Branch
           Value: !Ref pCleanBranch
 
+  ImagesSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: IsFirstBuild
+    Properties:
+      Name: !Sub ${pSecretName}
+      Description: !Sub Images app ${pEnvironment} secrets
+      SecretString: !If
+        - IsFirstBuild
+        - |
+          {
+             "db-password" : "",
+             "cas-client-secret": ""
+          }
+        - !Ref "AWS::NoValue"
+
   ImagesRole:
     Type: AWS::IAM::Role
     Properties:
@@ -144,22 +159,6 @@ Resources:
           Value: !Sub 
               - ${pProductName}-${ResourceName}
               - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
- 
-
-  ImagesSecret:
-    Type: AWS::SecretsManager::Secret
-    Condition: IsFirstBuild
-    Properties:
-      Name: !Sub ${pSecretName}
-      Description: !Sub Images app ${pEnvironment} secrets
-      SecretString: !If
-        - IsFirstBuild
-        - |
-          {
-             "db-password" : "",
-             "cas-client-secret": ""
-          }
-        - !Ref "AWS::NoValue"
 
   AppClient:
     Type: AWS::Cognito::UserPoolClient
