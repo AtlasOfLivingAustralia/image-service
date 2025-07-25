@@ -339,7 +339,7 @@ Resources:
 
       - Name: Teardown
         Actions:
-          - Name: ApprovalForPipelineTeardown
+          - Name: ApprovalForDeploymentTeardown
             ActionTypeId:
               Owner: AWS
               Category: Approval
