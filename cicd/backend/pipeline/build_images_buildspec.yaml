@@ -13,7 +13,7 @@ env:
 phases:
   install:
     runtime-versions:
-      java: corretto17
+      java: corretto21
     commands:
       - echo Installing dependencies...
       - apt update -y
