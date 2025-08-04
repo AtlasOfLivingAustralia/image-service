@@ -21,8 +21,19 @@ class S3URLConnectionSpec extends Specification {
 
     def setupSpec() {
 
+        String endpoint
+        String region = Constants.DEFAULT_REGION
+
+        // Use external LocalStack if environment variable is set
+        // This is for code pipeline build
+        if (System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()) {
+            endpoint = "http://localhost:4566"
+        } else {
+            endpoint = Localstack.INSTANCE.endpointS3
+        }
+
         AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard().
-                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
+                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endpoint, region)).
                 withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
                 withClientConfiguration(
                         new ClientConfiguration()
@@ -35,6 +46,12 @@ class S3URLConnectionSpec extends Specification {
 
         def localstack = Localstack.INSTANCE
 
+    }
+
+    def cleanupSpec() {
+        if (!System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()) {
+            Localstack.INSTANCE.stop()
+        }
     }
 
     def "should throw an exception if the URL scheme is not 's3'"() {

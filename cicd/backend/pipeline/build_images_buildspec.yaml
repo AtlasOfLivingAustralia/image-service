@@ -34,6 +34,12 @@ phases:
       - ./gradlew clean
       - ./gradlew assemble
 
+  pre_build:
+    commands:
+      - docker run -d -p 4566:4566 -e SERVICES=s3 localstack/localstack:4.1.1
+      - export USE_EXTERNAL_LOCALSTACK=true
+      - sleep 15  # wait for LocalStack to be ready
+
   build:
     commands:
       - echo Build started on $(date)
