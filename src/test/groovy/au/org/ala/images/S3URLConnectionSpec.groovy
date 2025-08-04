@@ -27,7 +27,7 @@ class S3URLConnectionSpec extends Specification {
         // Use external LocalStack if environment variable is set
         // This is for code pipeline build
         if (System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()) {
-            endpoint = "http://localhost:4566"
+            endpoint = "http://localhost:4567"
         } else {
             endpoint = Localstack.INSTANCE.endpointS3
         }
