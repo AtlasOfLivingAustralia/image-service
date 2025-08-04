@@ -71,3 +71,7 @@ phases:
       - echo Pushing the Docker image to Amazon ECR...
       - docker push $ECR_REPO:$BUILD_TAG
       - docker push $ECR_REPO:latest
+
+artifacts:
+  files:
+    - '**/problems-report.html'
