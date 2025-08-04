@@ -36,7 +36,12 @@ phases:
 
   pre_build:
     commands:
-      - docker run -d -p 4566:4566 -e SERVICES=s3 localstack/localstack:4.1.1
+      - echo "Checking running containers"
+      - docker ps -a
+      - echo "Cleaning up existing LocalStack container"
+      - docker rm -f localstack || true
+      - echo "Starting LocalStack"
+      - docker run -d --name localstack -p 4566:4566 -e SERVICES=s3 localstack/localstack:4.1.1
       - export USE_EXTERNAL_LOCALSTACK=true
       - sleep 15  # wait for LocalStack to be ready
 
