@@ -16,7 +16,7 @@ import spock.lang.Specification
 
 
 @ExtendWith(LocalstackDockerExtension.class)
-@LocalstackDockerProperties(services = [ ServiceName.S3 ], imageTag = '4.1.1')
+@LocalstackDockerProperties(services = [ ServiceName.S3 ], imageTag = '4.1.1', portEdge = "4567")
 class S3URLConnectionSpec extends Specification {
 
     def setupSpec() {
