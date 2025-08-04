@@ -16,24 +16,13 @@ import spock.lang.Specification
 
 
 @ExtendWith(LocalstackDockerExtension.class)
-@LocalstackDockerProperties(services = [ ServiceName.S3 ], imageTag = '4.1.1', portEdge = "4567")
+@LocalstackDockerProperties(services = [ ServiceName.S3 ], imageTag = '4.1.1')
 class S3URLConnectionSpec extends Specification {
 
     def setupSpec() {
 
-        String endpoint
-        String region = Constants.DEFAULT_REGION
-
-        // Use external LocalStack if environment variable is set
-        // This is for code pipeline build
-        if (System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()) {
-            endpoint = "http://localhost:4567"
-        } else {
-            endpoint = Localstack.INSTANCE.endpointS3
-        }
-
         AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard().
-                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endpoint, region)).
+                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
                 withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
                 withClientConfiguration(
                         new ClientConfiguration()
