@@ -35,8 +35,8 @@ phases:
       - ./gradlew clean
       - ./gradlew assemble
 
-#  pre_build:
-#    commands:
+  pre_build:
+    commands:
 #      - echo "Checking running containers"
 #      - docker ps -a
 #      - echo "Cleaning up existing LocalStack container"
@@ -45,7 +45,7 @@ phases:
 #      - docker ps --filter "publish=4566" --format "{{.ID}}" | xargs -r docker rm -f
 #      - docker ps -a --filter "ancestor=localstack/localstack:4.1.1" --format "{{.ID}}" | xargs -r docker rm -f
 #      - docker run -d --name localstack -p 4567:4566 -e SERVICES=s3 localstack/localstack:4.1.1
-#      - export USE_EXTERNAL_LOCALSTACK=true
+      - export USE_EXTERNAL_LOCALSTACK=true
 #      - sleep 15  # wait for LocalStack to be ready
 
   build:
