@@ -44,16 +44,16 @@ phases:
 #      - echo "Starting LocalStack"
 #      - docker ps --filter "publish=4566" --format "{{.ID}}" | xargs -r docker rm -f
 #      - docker ps -a --filter "ancestor=localstack/localstack:4.1.1" --format "{{.ID}}" | xargs -r docker rm -f
-      - docker run -d --name localstack -p 4566:4566 -e SERVICES=s3 localstack/localstack:4.1.1
-      - sleep 20  # wait for LocalStack to be ready
-      - curl http://localhost:4566/_localstack/health || echo "LocalStack not ready yet"
+#      - docker run -d --name localstack -p 4566:4566 -e SERVICES=s3 localstack/localstack:4.1.1
+#      - sleep 20  # wait for LocalStack to be ready
+#      - curl http://localhost:4566/_localstack/health || echo "LocalStack not ready yet"
 
   build:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
       - export USE_EXTERNAL_LOCALSTACK=true
-      - ./gradlew build --stacktrace
+      - ./gradlew build --debug --full-stacktrace
       - ./gradlew bootWar
 
   post_build:
