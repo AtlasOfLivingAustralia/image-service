@@ -21,17 +21,6 @@ class S3URLConnectionSpec extends Specification {
 
     def setupSpec() {
 
-        String endpoint
-
-        boolean useExternal = System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()
-
-        // Use external endpoint for CI, otherwise use Docker-managed LocalStack
-        if (useExternal) {
-            endpoint = "http://localhost:4566"
-        } else {
-            endpoint = Localstack.INSTANCE.endpointS3
-        }
-
         AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard().
                 withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
                 withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
@@ -46,12 +35,26 @@ class S3URLConnectionSpec extends Specification {
 
         def localstack = Localstack.INSTANCE
 
+        int maxRetries = 10
+        boolean connected = false
+
+        while (maxRetries-- > 0) {
+            try {
+                clientS3.listBuckets()
+                connected = true
+                break
+            } catch (Exception e) {
+                println "Waiting for LocalStack to be ready..."
+                Thread.sleep(1000)
+            }
+        }
+
+        if (!connected) throw new RuntimeException("LocalStack not ready after timeout.")
+
     }
 
     def cleanupSpec() {
-        if (!System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()) {
-            Localstack.INSTANCE.stop()
-        }
+        Localstack.INSTANCE.stop()
     }
 
     def "should throw an exception if the URL scheme is not 's3'"() {
