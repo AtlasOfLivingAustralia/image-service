@@ -33,7 +33,7 @@ class S3URLConnectionSpec extends Specification {
         }
 
         AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard().
-                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endpoint, Constants.DEFAULT_REGION)).
+                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
                 withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
                 withClientConfiguration(
                         new ClientConfiguration()
