@@ -26,6 +26,16 @@ class S3URLConnectionSpec extends Specification {
         System.out.println(Localstack.INSTANCE.getEndpointS3())
         System.out.println(Localstack.INSTANCE.getEndpointAPIGateway())
 
+        AmazonS3ClientBuilder builder1 = AmazonS3ClientBuilder.standard().
+                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
+                withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
+                withClientConfiguration(
+                        new ClientConfiguration()
+                                .withValidateAfterInactivityMillis(200))
+        builder1.setPathStyleAccessEnabled(true)
+        AmazonS3 clientS31 = builder1.build()
+        clientS31.createBucket('example1')
+
         String endpoint = System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()
                 ? "http://localhost:4566"
                 : Localstack.INSTANCE.endpointS3
@@ -43,22 +53,6 @@ class S3URLConnectionSpec extends Specification {
         clientS3.getObject('example', 'key')
 
         def localstack = Localstack.INSTANCE
-
-        int maxRetries = 10
-        boolean connected = false
-
-        while (maxRetries-- > 0) {
-            try {
-                clientS3.listBuckets()
-                connected = true
-                break
-            } catch (Exception e) {
-                println "Waiting for LocalStack to be ready..."
-                Thread.sleep(1000)
-            }
-        }
-
-        if (!connected) throw new RuntimeException("LocalStack not ready after timeout.")
 
     }
 
