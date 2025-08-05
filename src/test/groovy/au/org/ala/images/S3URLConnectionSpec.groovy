@@ -21,6 +21,11 @@ class S3URLConnectionSpec extends Specification {
 
     def setupSpec() {
 
+        System.out.println(Localstack.INSTANCE.getServicePort(ServiceName.S3))
+        System.out.println(Localstack.INSTANCE.getEdgePort())
+        System.out.println(Localstack.INSTANCE.getEndpointS3())
+        System.out.println(Localstack.INSTANCE.getEndpointAPIGateway())
+
         String endpoint = System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()
                 ? "http://localhost:4566"
                 : Localstack.INSTANCE.endpointS3
