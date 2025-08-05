@@ -39,6 +39,7 @@ phases:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
+      - export USE_EXTERNAL_LOCALSTACK=true
       - ./gradlew build --debug --full-stacktrace
       - ./gradlew bootWar
 

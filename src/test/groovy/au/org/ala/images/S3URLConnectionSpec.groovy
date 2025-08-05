@@ -21,8 +21,12 @@ class S3URLConnectionSpec extends Specification {
 
     def setupSpec() {
 
+        String endpoint = System.getenv("USE_EXTERNAL_LOCALSTACK")?.toBoolean()
+                ? "http://localhost:4566"
+                : Localstack.INSTANCE.endpointS3
+
         AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard().
-                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
+                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endpoint, Constants.DEFAULT_REGION)).
                 withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
                 withClientConfiguration(
                         new ClientConfiguration()
