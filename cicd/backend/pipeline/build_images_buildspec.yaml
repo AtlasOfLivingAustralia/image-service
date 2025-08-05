@@ -44,20 +44,20 @@ phases:
 #      - echo "Starting LocalStack"
 #      - docker ps --filter "publish=4566" --format "{{.ID}}" | xargs -r docker rm -f
 #      - docker ps -a --filter "ancestor=localstack/localstack:4.1.1" --format "{{.ID}}" | xargs -r docker rm -f
-#      - docker run -d --name localstack -p 4567:4566 -e SERVICES=s3 localstack/localstack:4.1.1
-      - export USE_EXTERNAL_LOCALSTACK=true
-#      - sleep 15  # wait for LocalStack to be ready
+      - docker run -d --name localstack -p 4566:4566 -e SERVICES=s3 localstack/localstack:4.1.1
+      - sleep 20  # wait for LocalStack to be ready
+      - curl http://localhost:4566/_localstack/health || echo "LocalStack not ready yet"
 
   build:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
+      - export USE_EXTERNAL_LOCALSTACK=true
       - ./gradlew build --stacktrace
       - ./gradlew bootWar
 
   post_build:
     commands:
-      - cat build/reports/problems/problems-report.html
       - echo Post-build phase...
       - echo Build completed on $(date)
       - echo Building the Docker image...
@@ -72,8 +72,3 @@ phases:
       - echo Pushing the Docker image to Amazon ECR...
       - docker push $ECR_REPO:$BUILD_TAG
       - docker push $ECR_REPO:latest
-
-artifacts:
-  files:
-    - '**/problems-report.html'
-    - build/reports/problems/problems-report.html
