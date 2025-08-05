@@ -57,6 +57,7 @@ phases:
 
   post_build:
     commands:
+      - cat build/reports/problems/problems-report.html
       - echo Post-build phase...
       - echo Build completed on $(date)
       - echo Building the Docker image...
@@ -75,3 +76,4 @@ phases:
 artifacts:
   files:
     - '**/problems-report.html'
+    - build/reports/problems/problems-report.html

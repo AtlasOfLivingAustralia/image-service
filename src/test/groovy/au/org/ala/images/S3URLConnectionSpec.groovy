@@ -27,7 +27,7 @@ class S3URLConnectionSpec extends Specification {
 
         // Use external endpoint for CI, otherwise use Docker-managed LocalStack
         if (useExternal) {
-            endpoint = "http://localstack:4566"
+            endpoint = "http://localhost:4566"
         } else {
             endpoint = Localstack.INSTANCE.endpointS3
         }
