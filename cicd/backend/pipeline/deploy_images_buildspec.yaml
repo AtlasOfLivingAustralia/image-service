@@ -20,6 +20,7 @@ phases:
   build:
     commands:
       - echo $EKS_NAMESPACE
+      - echo $EKS_CLUSTER_NAME
       - echo Build started on $(date)
       - aws eks --region ap-southeast-2 update-kubeconfig --name $EKS_CLUSTER_NAME
       - kubectl config set-context --current --namespace=$EKS_NAMESPACE
