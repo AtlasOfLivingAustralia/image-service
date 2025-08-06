@@ -39,8 +39,11 @@ phases:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
-      - export USE_EXTERNAL_LOCALSTACK=true
-      - ./gradlew build --debug --full-stacktrace
+      - useradd -ms /bin/bash postgresuser
+      - echo "Non-root user 'postgresuser' created"
+      - chown -R postgresuser:postgresuser /tmp
+      - chown -R postgresuser .
+      - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
       - ./gradlew bootWar
 
   post_build:
