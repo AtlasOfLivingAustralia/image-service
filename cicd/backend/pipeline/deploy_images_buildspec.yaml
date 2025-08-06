@@ -48,7 +48,7 @@ phases:
           --set serviceAccount.name=images-service-account-$CLEAN_BRANCH \
           --set rds.name=images-pg-rds-$CLEAN_BRANCH \
           --set fullnameOverride=$HELM_RELEASE_NAME \
-          -f $CODEBUILD_SRC_DIR_ExportConfigArtifact/helm-values.yaml
+          -f $CODEBUILD_SRC_DIR_ExportConfigArtifact/helm_values.yaml
       - kubectl rollout restart deployment $HELM_RELEASE_NAME
 
   post_build:
