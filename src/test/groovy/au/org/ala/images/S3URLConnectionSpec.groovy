@@ -26,8 +26,22 @@ class S3URLConnectionSpec extends Specification {
         System.out.println(Localstack.INSTANCE.getEndpointS3())
         System.out.println(Localstack.INSTANCE.getEndpointAPIGateway())
 
+        def endpoint1 = "http://localhost:${Localstack.INSTANCE.getEdgePort()}"
+        println "Using LocalStack S3 endpoint: $endpoint1"
+
+        def host = System.getenv("LOCALSTACK_HOST") ?: "host.docker.internal"  // or a Docker network alias
+        def endpoint2 = "http://${host}:${Localstack.INSTANCE.getEdgePort()}"
+
+        println(endpoint2)
+
+        new URL(endpoint1).openConnection().with {
+            connectTimeout = 2000
+            connect()
+            println "Successfully connected to LocalStack S3 endpoint"
+        }
+
         AmazonS3ClientBuilder builder1 = AmazonS3ClientBuilder.standard().
-                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
+                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endpoint1, Constants.DEFAULT_REGION)).
                 withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
                 withClientConfiguration(
                         new ClientConfiguration()
