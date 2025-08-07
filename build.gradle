@@ -252,7 +252,7 @@ bootJar {
 }
 
 bootWar {
-    enabled = false
+    launchScript()
 }
 
 springBoot {
