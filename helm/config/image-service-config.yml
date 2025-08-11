@@ -50,10 +50,10 @@ security:
     ip:
       whitelist: 
     check:
-      serviceUrl: {{ .Values.apikey.auth.serviceUrl }}
+      serviceUrl: {{ .Values.apikey.check.serviceUrl }}
     enabled: {{ .Values.apikey.enabled }}
     auth:
-      serviceUrl: {{ .Values.apikey.check.serviceUrl }}
+      serviceUrl: {{ .Values.apikey.auth.serviceUrl }}
     userdetails:
       serviceUrl: {{ .Values.apikey.userdetails.serviceUrl }}
 
