@@ -11,7 +11,7 @@ phases:
       - echo Installing dependencies...
       - cat /etc/lsb-release
       - apt update -y
-        && apt-get -q -y install openjdk-17-jdk
+        && apt-get -q -y install openjdk-21-jdk
         && pip3 install jinja2
         && curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
         && chmod 700 get_helm.sh
