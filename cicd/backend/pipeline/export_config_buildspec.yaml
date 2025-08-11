@@ -78,8 +78,9 @@ phases:
       - echo ACCESS_LOGS_S3_BUCKET_NAME=$ACCESS_LOGS_S3_BUCKET_NAME
       - export EKS_CLUSTER_NAME=$(aws cloudformation list-exports --query "Exports[?Name=='$REGOLITH_STACK_NAME-ClusterName'].Value" --output text)
       - echo EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME
-      - export OIDC_CLIENT_ID=$(aws cloudformation list-exports --query "Exports[?Name=='$BASE_STACK_NAME-ImagesAppClient'].Value" --output text)
+      - export OIDC_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesAppClient'].OutputValue" --output text)
       - echo OIDC_CLIENT_ID=$OIDC_CLIENT_ID
+      - OIDC_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $OIDC_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
       - echo SECRET_NAME=$SECRET_NAME
       - echo BASE_STACK_NAME=$BASE_STACK_NAME
       - DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["db-password"]')
@@ -113,9 +114,9 @@ phases:
           service:
             name: elasticsearch-images-${CLEAN_BRANCH}
         app:
-          url: https://$SUB_DOMAIN.$HOSTED_ZONE
+          url: https://$DOMAIN_NAME
         db:
-          endpoint: "doi-pg-rds-${CLEAN_BRANCH}"
+          endpoint: "images-pg-rds-${CLEAN_BRANCH}"
           database_name: "${DB_NAME}"
           db_username: "${DB_USERNAME}"
           db_password: "${DB_PASSWORD}"
@@ -130,7 +131,7 @@ phases:
           enabled: $OIDC_ENABLED
           discoveryUri: https://cognito-idp.ap-southeast-2.amazonaws.com/${USER_POOL_ID}/.well-known/openid-configuration
           clientId: $OIDC_CLIENT_ID
-          logoutUrl: $USERDETAILS_OIDC_LOGOUTURL
+          logoutUrl: $OIDC_LOGOUT_URL
           secret: $OIDC_SECRET
         jwt:
           enabled: $JWT_ENABLED
@@ -150,8 +151,10 @@ phases:
           baseURL: $HEADER_AND_FOOTER_BASEURL
           version: $HEADER_AND_FOOTER_VERSION
         userdetails:
-          userdetails_app_url: "${USERDETAILS_WEB_URL}"
-          userdetails_api_url: "${USERDETAILS_API_URL}"
+          app:
+           url: "${USERDETAILS_WEB_URL}"
+          api:
+            url: "${USERDETAILS_API_URL}"
         cas:
           serverName: "${CAS_URL}"
         collectory:

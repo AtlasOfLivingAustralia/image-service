@@ -110,7 +110,7 @@ rds:
   externalName: "mysql-rds"
 
 # Config file properties
-version: ""
+version: "5.0.0"
 app:
   url: "https://images.ala.org.au"
 authCookieName: "ALA-Auth"
