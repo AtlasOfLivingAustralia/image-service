@@ -145,4 +145,4 @@ aws:
 
 elasticsearch:
     hosts:
-      - {host: {{ .Values.elasticsearch.host }}, scheme: "https", port: 9200}
+      - {host: {{ .Values.elasticsearch.host }}, scheme: "http", port: 9200}
