@@ -61,6 +61,7 @@ class ElasticSearchService {
         def hosts = grailsApplication.config.getProperty('elasticsearch.hosts', List, []).collect { host ->
             new HttpHost(host.host, host.port as Integer, host.scheme)
         }
+        println "ES hosts: $hosts"
         client = new RestHighLevelClient(
                 RestClient.builder(
                         *hosts
