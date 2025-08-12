@@ -142,3 +142,7 @@ userdetails.api.url: {{ .Values.userdetails.api.url }}
 
 aws:
   region: ap-southeast-2
+
+elasticsearch:
+    hosts:
+      - {host: {{ .Values.elasticsearch.host }}, port: 9200}

@@ -171,6 +171,8 @@ headerAndFooter:
 podEnvironment: "production"
 xmx: "3g"
 xms: "3g"
+elasticsearch:
+  host: ""
 
 elasticsearch-images:
   deployment:

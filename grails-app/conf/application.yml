@@ -339,8 +339,8 @@ elasticsearch:
   defaultPageSize: 10
   batchIndexSize: 1000
   hosts:
-      - host: "127.0.0.1"
-        scheme: "http"
+      - host: "elasticsearch-images"
+        scheme: "https"
         port: 9200
 
 # Number of days to wait before purging completed batch jobs
