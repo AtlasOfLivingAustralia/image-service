@@ -619,6 +619,7 @@ class AdminController {
     }
 
     def clearHibernateCache() {
+        // First clear the session and evict all cache regions
         StorageLocation.withSession { session ->
             session.clear()
             SessionFactory sessionFactory = session.getSessionFactory()
@@ -626,7 +627,12 @@ class AdminController {
             sessionFactory.cache.evictAll()
             sessionFactory.cache.evictAllRegions()
         }
-        sessionFactory.cache?.evictAllRegions()
+        
+        // Then use the injected sessionFactory to evict all regions again
+        if (sessionFactory) {
+            sessionFactory.cache.evictAllRegions()
+        }
+        
         flash.message = 'Hibernate cache cleared'
         redirect(action:'tools', message: 'Hibernate Cache is cleared')
     }
