@@ -9,6 +9,9 @@ Parameters:
   pBackupBucket:
     Type: String
     Description: The backup bucket
+  pImagesBucket:
+    Type: String
+    Description: The images bucket
   pCleanBranch:
     Type: String
     Description: The clean branch, can be used in resource names
@@ -152,6 +155,23 @@ Resources:
               Resource:
                 - !Sub arn:aws:s3:::${pBackupBucket}
                 - !Sub arn:aws:s3:::${pBackupBucket}/*
+          PolicyName: backups
+        - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:DeleteObject
+                - s3:DeleteObjectVersion
+                - s3:GetBucketLocation
+                - s3:GetObject
+                - s3:ListBucket
+                - s3:PutObject
+                - s3:GetObjectAttributes
+                - s3:PutObjectAcl
+              Resource:
+                - !Sub arn:aws:s3:::${pImagesBucket}
+                - !Sub arn:aws:s3:::${pImagesBucket}/*
           PolicyName: backups
       RoleName: !Sub '${AWS::StackName}--${pEnvironment}--${pBuild}'
       Tags:

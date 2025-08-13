@@ -1,7 +1,7 @@
 {
   "Parameters" : {
     "pAppClientDomain"      : "{{ app_client_domain }}",
-    "pBackupBucket"          : "{{ backup_bucket }}",
+    "pBackupBucket"         : "{{ backup_bucket }}",
     "pBuild"                : "{{ codebuild_build_number }}",
     "pCleanBranch"          : "{{ clean_branch }}",
     "pClusterOidcIssuerUrl" : "{{ cluster_oidc_issuer_url }}",
@@ -11,7 +11,8 @@
     "pProductComponent"     : "{{ product_component }}",
     "pSecretName"           : "{{ secret_name }}",
     "pEksNamespace"         : "{{ eks_namespace }}",
-    "pProductName"          : "{{ product_name }}"
+    "pProductName"          : "{{ product_name }}",
+    "pImagesBucket"         : "{{ images_bucket }}"
   },
   "Tags" : {
     "branch"      : "{{ src_branch }}",
