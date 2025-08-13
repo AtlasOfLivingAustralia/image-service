@@ -219,7 +219,7 @@ class S3StorageOperations implements StorageOperations {
     @Override
     void store(String uuid, InputStream stream, String contentType = 'image/jpeg', String contentDisposition = null, Long length = null) {
         String path = createOriginalPathFromUUID(uuid)
-        storeInternal(stream, path, contentType, contentDisposition, length, [imageType: 'original', thumbnail: 'false', tile: 'false', original: 'true'])
+        storeInternal(stream, path, contentType, contentDisposition, length, [imageType: 'original'])
     }
 
     @Override
@@ -376,12 +376,12 @@ class S3StorageOperations implements StorageOperations {
 
     @Override
     ByteSinkFactory thumbnailByteSinkFactory(String uuid) {
-        byteSinkFactory(uuid, [imageType: 'thumbnail', thumbnail: 'true', tile: 'false', original: 'false'])
+        byteSinkFactory(uuid, [imageType: 'thumbnail'])
     }
 
     @Override
     ByteSinkFactory tilerByteSinkFactory(String uuid) {
-        byteSinkFactory(uuid, [imageType: 'tile', thumbnail: 'false', tile: 'true', original: 'false'], 'tms')
+        byteSinkFactory(uuid, [imageType: 'tile'], 'tms')
     }
 
     ByteSinkFactory byteSinkFactory(String uuid, Map<String, String> tags, String... prefixes) {
