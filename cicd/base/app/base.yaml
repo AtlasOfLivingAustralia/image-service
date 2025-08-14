@@ -171,6 +171,7 @@ Resources:
                   - s3:PutObject
                   - s3:GetObjectAttributes
                   - s3:PutObjectAcl
+                  - s3:GetObjectVersion
                 Resource:
                   - !Sub arn:aws:s3:::${pImagesBucket}
                   - !Sub arn:aws:s3:::${pImagesBucket}/*
