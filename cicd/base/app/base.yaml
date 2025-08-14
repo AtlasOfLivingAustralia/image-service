@@ -139,7 +139,7 @@ Resources:
               Action:
                 - 'secretsmanager:getsecretvalue'
               Resource:
-                - !Sub ${ImagesSecret}-??????
+                - !Ref ImagesSecret
           PolicyName: secrets
         - PolicyDocument:
             Version: "2012-10-17"
