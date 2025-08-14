@@ -138,8 +138,10 @@ Resources:
             - Effect: Allow
               Action:
                 - 'secretsmanager:getsecretvalue'
-              Resource:
+              Resource: !If
+                - IsFirstBuild
                 - !Ref ImagesSecret
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${pSecretName}*
           PolicyName: secrets
         - PolicyDocument:
             Version: "2012-10-17"
