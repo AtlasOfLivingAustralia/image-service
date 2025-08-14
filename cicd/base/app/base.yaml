@@ -285,7 +285,10 @@ Outputs:
 
   ImagesSecret:
     Description: The Secrets name for Images
-    Value: !Ref ImagesSecret
+    Value: !If
+      - IsFirstBuild
+      - !Ref ImagesSecret
+      - !Ref pSecretName
 
   ImagesRoleArn:
     Description: The role ARN for the Images service
