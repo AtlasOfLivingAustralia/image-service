@@ -157,22 +157,22 @@ Resources:
                 - !Sub arn:aws:s3:::${pBackupBucket}/*
           PolicyName: backups
         - PolicyDocument:
-          Version: "2012-10-17"
-          Statement:
-            - Effect: Allow
-              Action:
-                - s3:DeleteObject
-                - s3:DeleteObjectVersion
-                - s3:GetBucketLocation
-                - s3:GetObject
-                - s3:ListBucket
-                - s3:PutObject
-                - s3:GetObjectAttributes
-                - s3:PutObjectAcl
-              Resource:
-                - !Sub arn:aws:s3:::${pImagesBucket}
-                - !Sub arn:aws:s3:::${pImagesBucket}/*
-          PolicyName: backups
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:GetObjectAttributes
+                  - s3:PutObjectAcl
+                Resource:
+                  - !Sub arn:aws:s3:::${pImagesBucket}
+                  - !Sub arn:aws:s3:::${pImagesBucket}/*
+          PolicyName: imagesBucket
       RoleName: !Sub '${AWS::StackName}--${pEnvironment}--${pBuild}'
       Tags:
         - Key: Name
