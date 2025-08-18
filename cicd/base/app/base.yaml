@@ -89,14 +89,11 @@ Resources:
     Properties:
       Name: !Sub ${pSecretName}
       Description: !Sub Images app ${pEnvironment} secrets
-      SecretString: !If
-        - IsFirstBuild
-        - |
+      SecretString: |
           {
              "db-password" : "",
              "cas-client-secret": ""
           }
-        - !Ref "AWS::NoValue"
 
   ImagesRole:
     Type: AWS::IAM::Role
@@ -138,10 +135,8 @@ Resources:
             - Effect: Allow
               Action:
                 - 'secretsmanager:getsecretvalue'
-              Resource: !If
-                - IsFirstBuild
-                - !Ref ImagesSecret
-                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${pSecretName}*
+              Resource:
+                - !Ref pSecretName
           PolicyName: secrets
         - PolicyDocument:
             Version: "2012-10-17"
@@ -286,10 +281,7 @@ Outputs:
 
   ImagesSecret:
     Description: The Secrets name for Images
-    Value: !If
-      - IsFirstBuild
-      - !Ref ImagesSecret
-      - !Ref pSecretName
+    Value: !Ref pSecretName
 
   ImagesRoleArn:
     Description: The role ARN for the Images service
