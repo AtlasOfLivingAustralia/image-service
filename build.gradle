@@ -194,6 +194,7 @@ dependencies {
     implementation "org.grails.plugins:cache-ehcache:3.0.0"
     implementation "org.hibernate:hibernate-jcache"
     runtimeOnly 'org.ehcache:ehcache'
+    implementation "com.amazonaws:aws-java-sdk-sts:$amazonAwsSdkVersion"
 
 //    testImplementation 'io.micronaut:micronaut-http-client'
 
