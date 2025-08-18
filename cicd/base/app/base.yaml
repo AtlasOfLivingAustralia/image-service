@@ -110,7 +110,7 @@ Resources:
                   "Action": "sts:AssumeRoleWithWebIdentity",
                   "Condition": {
                       "StringEquals": {
-                                        "${pClusterOidcIssuerUrl}:sub": "system:serviceaccount:${pEksNamespace}:image-service-account-${pCleanBranch}",
+                                        "${pClusterOidcIssuerUrl}:sub": "system:serviceaccount:${pEksNamespace}:images-service-account-${pCleanBranch}",
                                         "${pClusterOidcIssuerUrl}:aud": "sts.amazonaws.com"
                       }
                   }
