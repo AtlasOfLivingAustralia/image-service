@@ -17,7 +17,6 @@ import spock.lang.Ignore
 
 import static cloud.localstack.deprecated.TestUtils.DEFAULT_REGION
 
-@Ignore
 @ExtendWith(LocalstackDockerExtension.class)
 @LocalstackDockerProperties(services = [ ServiceName.S3 ], imageTag = '4.1.1')
 class S3StorageLocationSpec extends StorageLocationSpec implements DomainUnitTest<S3StorageLocation> {

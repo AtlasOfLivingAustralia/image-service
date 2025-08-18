@@ -9,7 +9,6 @@ import org.joda.time.Duration
 import org.junit.jupiter.api.extension.RegisterExtension
 import spock.lang.Ignore
 
-@Ignore
 class SwiftStorageLocationSpec extends StorageLocationSpec implements DomainUnitTest<SwiftStorageLocation> {
 
     @RegisterExtension
