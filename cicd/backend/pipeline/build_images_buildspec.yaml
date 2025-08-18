@@ -39,6 +39,7 @@ phases:
     commands:
       - echo Build started on $(date)
       - echo Building the project...
+      - chmod 666 /var/run/docker.sock
       - useradd -ms /bin/bash postgresuser
       - echo "Non-root user 'postgresuser' created"
       - chown -R postgresuser:postgresuser /tmp
