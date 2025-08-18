@@ -1,44 +1,51 @@
 package au.org.ala.images
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient
+import co.elastic.clients.elasticsearch._types.ElasticsearchException
+import co.elastic.clients.elasticsearch._types.SearchType
+import co.elastic.clients.elasticsearch._types.SortOptionsBuilders
+import co.elastic.clients.elasticsearch._types.SortOrder
+import co.elastic.clients.elasticsearch._types.Time
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate
+import co.elastic.clients.elasticsearch._types.aggregations.AggregationBuilders
+import co.elastic.clients.elasticsearch._types.aggregations.Buckets
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery
+import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders
+import co.elastic.clients.elasticsearch.core.BulkRequest
+import co.elastic.clients.elasticsearch.core.DeleteRequest
+import co.elastic.clients.elasticsearch.core.IndexRequest
+import co.elastic.clients.elasticsearch.core.IndexResponse
+import co.elastic.clients.elasticsearch.core.ScrollRequest
+import co.elastic.clients.elasticsearch.core.ScrollResponse
+import co.elastic.clients.elasticsearch.core.SearchRequest
+import co.elastic.clients.elasticsearch.core.SearchResponse
+import co.elastic.clients.elasticsearch.core.bulk.BulkOperationBuilders
+import co.elastic.clients.elasticsearch.core.search.ResponseBody
+import co.elastic.clients.elasticsearch.indices.CreateIndexRequest
+import co.elastic.clients.elasticsearch.indices.CreateIndexResponse
+import co.elastic.clients.elasticsearch.indices.DeleteIndexRequest
+import co.elastic.clients.elasticsearch.indices.GetIndexRequest
+import co.elastic.clients.elasticsearch.indices.GetMappingRequest
+import co.elastic.clients.elasticsearch.indices.GetMappingResponse
+import co.elastic.clients.elasticsearch.indices.PutMappingRequest
+import co.elastic.clients.json.jackson.JacksonJsonpMapper
+import co.elastic.clients.transport.ElasticsearchTransport
+import co.elastic.clients.transport.rest_client.RestClientTransport
 import com.opencsv.CSVWriter
 import grails.converters.JSON
 import grails.core.GrailsApplication
-import org.elasticsearch.action.admin.indices.mapping.get.GetMappingsRequest
-import org.elasticsearch.action.admin.indices.mapping.get.GetMappingsResponse
-import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest
-import org.elasticsearch.action.bulk.BulkRequest
-import org.elasticsearch.action.bulk.BulkResponse
-import org.elasticsearch.action.delete.DeleteRequest
-import org.elasticsearch.action.search.SearchScrollRequest
+import org.apache.http.HttpHeaders
+import org.apache.http.HttpResponseInterceptor
+import org.apache.http.auth.AuthScope
+import org.apache.http.auth.UsernamePasswordCredentials
+import org.apache.http.client.CredentialsProvider
+import org.apache.http.entity.ContentType
+import org.apache.http.impl.client.BasicCredentialsProvider
 import groovy.json.JsonOutput
 import grails.web.servlet.mvc.GrailsParameterMap
 import org.apache.http.HttpHost
-import org.elasticsearch.action.admin.indices.create.CreateIndexRequest
-import org.elasticsearch.action.admin.indices.create.CreateIndexResponse
-import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
-import org.elasticsearch.action.delete.DeleteResponse
-import org.elasticsearch.action.index.IndexRequest
-import org.elasticsearch.action.index.IndexResponse
-import org.elasticsearch.action.search.SearchPhaseExecutionException
-import org.elasticsearch.action.search.SearchRequest
-import org.elasticsearch.action.search.SearchResponse
-import org.elasticsearch.action.search.SearchType
-import org.elasticsearch.client.RequestOptions
+import org.apache.http.message.BasicHeader
 import org.elasticsearch.client.RestClient
-import org.elasticsearch.client.RestHighLevelClient
-import org.elasticsearch.core.TimeValue
-import org.elasticsearch.index.query.BoolQueryBuilder
-import org.elasticsearch.index.query.QueryBuilders
-import org.elasticsearch.index.query.QueryStringQueryBuilder
-import org.elasticsearch.search.Scroll
-import org.elasticsearch.search.SearchHit
-import org.elasticsearch.search.SearchHits
-import org.elasticsearch.search.aggregations.AggregationBuilders
-import org.elasticsearch.search.aggregations.BucketOrder
-import org.elasticsearch.search.builder.SearchSourceBuilder
-import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder
-import org.elasticsearch.search.sort.SortOrder
-import org.elasticsearch.xcontent.XContentType
 
 import javax.annotation.PreDestroy
 import java.util.regex.Pattern
@@ -54,18 +61,42 @@ class ElasticSearchService {
     static String UNRECOGNISED_LICENCE =  "unrecognised_licence"
     static String NOT_SUPPLIED = "not_supplied"
 
-    private RestHighLevelClient client
+    private ElasticsearchClient client
 
     @PostConstruct
     def initialize() {
         def hosts = grailsApplication.config.getProperty('elasticsearch.hosts', List, []).collect { host ->
             new HttpHost(host.host, host.port as Integer, host.scheme)
         }
-        client = new RestHighLevelClient(
-                RestClient.builder(
-                        *hosts
-                )
-        )
+
+        CredentialsProvider credentialsProvider = null
+        if (grailsApplication.config.getProperty('elasticsearch.username') && grailsApplication.config.getProperty('elasticsearch.password')) {
+            credentialsProvider = new BasicCredentialsProvider()
+            credentialsProvider.setCredentials(
+                    AuthScope.ANY,
+                    new UsernamePasswordCredentials(
+                            grailsApplication.config.getProperty('elasticsearch.username'),
+                            grailsApplication.config.getProperty('elasticsearch.password')
+                    )
+            )
+        }
+
+        def restClient = RestClient.builder(*hosts)
+                .setHttpClientConfigCallback {
+                    if (credentialsProvider) {
+                        it.setDefaultCredentialsProvider(credentialsProvider)
+                    }
+                    // Hacks for elasticsearch-java client compatibility with older ES versions
+                    it.setDefaultHeaders(List.of(new BasicHeader(HttpHeaders.CONTENT_TYPE, ContentType.APPLICATION_JSON.toString())))
+                      .addInterceptorLast((HttpResponseInterceptor) (response, context) -> {
+                          if (!response.containsHeader("X-Elastic-Product")) response.addHeader("X-Elastic-Product", "Elasticsearch")
+                      })
+                }
+                .build()
+
+        ElasticsearchTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
+        client = new ElasticsearchClient(transport);
+
         initialiseIndex()
     }
 
@@ -83,14 +114,17 @@ class ElasticSearchService {
     def reinitialiseIndex() {
         try {
             def ct = new CodeTimer("Index deletion")
-            def response = client.indices().delete(new DeleteIndexRequest(grailsApplication.config.getProperty('elasticsearch.indexName')), RequestOptions.DEFAULT)
-            if (response.isAcknowledged()) {
+            final indexName = grailsApplication.config.getProperty('elasticsearch.indexName') as String
+            def response = client.indices().delete(b -> b.index(indexName))
+            if (response.acknowledged()) {
                 log.info "The index is removed"
             } else {
                 log.error "The index could not be removed"
             }
             ct.stop(true)
 
+        } catch (ElasticsearchException e) {
+            e.error().type() == 'index_not_found_exception' ? log.info("Index not found - this is expected behaviour for a new empty system.") : log.warn("ElasticsearchException thrown.", e)
         } catch (Exception ex) {
             log.error(ex.getMessage(), ex)
             // failed to delete index - maybe because it didn't exist?
@@ -211,25 +245,41 @@ class ElasticSearchService {
 
         addAdditionalIndexFields(data)
 
-        def json = (data as JSON).toString()
-        IndexRequest request = new IndexRequest(grailsApplication.config.getProperty('elasticsearch.indexName'))
-        request.id(imageIdentifier)
-        request.source(json, XContentType.JSON)
-        IndexResponse indexResponse = client.index(request, RequestOptions.DEFAULT)
+        IndexRequest request = IndexRequest.of( b ->
+                b
+                .index(grailsApplication.config.getProperty('elasticsearch.indexName'))
+                .id(imageIdentifier)
+                .document(data)
+        )
+
+        try {
+            IndexResponse indexResponse = client.index(request)
+        } catch (ElasticsearchException e) {
+            log.error("Error indexing image ${imageIdentifier} in index: ${e.message}", e)
+        }
     }
 
     def bulkIndexImageInES(list){
-        BulkRequest bulkRequest = new BulkRequest(grailsApplication.config.getProperty('elasticsearch.indexName'))
-        list.each { data ->
-            def indexRequest = new IndexRequest()
-            addAdditionalIndexFields(data)
-            def json = (data as JSON).toString()
-            indexRequest.id(data.imageIdentifier)
-            indexRequest.source(json, XContentType.JSON)
-            bulkRequest.add(indexRequest)
+        def bulkRequest = new BulkRequest.Builder()
+            .index(grailsApplication.config.getProperty('elasticsearch.indexName'))
+            .timeout(new Time.Builder().time("5m").build())
+            .operations(
+                list.collect { data ->
+                    addAdditionalIndexFields(data)
+                    BulkOperationBuilders.index(b ->
+                        b
+                        .id(data.imageIdentifier)
+                        .document(data)
+                    )
+                }
+            )
+            .build()
+
+        try {
+            def bulkResponse = client.bulk(bulkRequest)
+        } catch (ElasticsearchException e) {
+            log.error("Error indexing images in bulk: ${e.message}", e)
         }
-        bulkRequest.timeout(TimeValue.timeValueMinutes(5))
-        BulkResponse indexResponse = client.bulk(bulkRequest, RequestOptions.DEFAULT)
     }
 
     private def addAdditionalIndexFields(data){
@@ -278,48 +328,85 @@ class ElasticSearchService {
 
     def deleteImage(Image image) {
         if (image) {
-            DeleteResponse response = client.delete(new DeleteRequest(grailsApplication.config.getProperty('elasticsearch.indexName'), image.imageIdentifier), RequestOptions.DEFAULT)
-            if (response.status() && response.status().status){
-                log.info(response.status().status.toString())
+            def deleteRequest = DeleteRequest.of(b ->
+                b
+                .index(grailsApplication.config.getProperty('elasticsearch.indexName'))
+                .id(image.imageIdentifier)
+            )
+            try {
+                def response = client.delete(deleteRequest)
+            } catch (ElasticsearchException e) {
+                log.error("Error deleting image ${image.imageIdentifier} from index: ${e.message}", e)
             }
         }
     }
 
     QueryResults<Image> simpleImageSearch(List<SearchCriteria> searchCriteria, GrailsParameterMap params) {
         log.debug "search params: ${params}"
-        SearchRequest request = buildSearchRequest(params, searchCriteria, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
-        SearchResponse searchResponse = client.search(request, RequestOptions.DEFAULT)
-        final imageList = searchResponse.hits.collect { hit -> hit.getSourceAsMap() } ?: []
+        SearchRequest.Builder request = buildSearchRequest(params, searchCriteria, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
+        SearchResponse searchResponse = client.search(request.build(), Map<String,Object>)
+        final imageList = searchResponse.hits()?.hits()?.collect { hit -> hit.source() } ?: []
         QueryResults<Image> qr = new QueryResults<Image>()
         qr.list = imageList
-        qr.totalCount = searchResponse.hits.totalHits.value
+        qr.totalCount = searchResponse.hits().total().value()
 
-        searchResponse.aggregations.each {
-            def facet = [:]
-            it.buckets.each { bucket ->
-                facet[bucket.getKeyAsString()] = bucket.getDocCount()
-            }
-            qr.aggregations.put(it.name, facet)
-        }
+        applyAggregationsToQueryResults(searchResponse, qr)
 
         qr
     }
 
     QueryResults<Image> simpleFacetSearch(List<SearchCriteria> searchCriteria, GrailsParameterMap params) {
         log.debug "search params: ${params}"
-        SearchRequest request = buildFacetRequest(params, searchCriteria, params.facet, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
-        SearchResponse searchResponse = client.search(request, RequestOptions.DEFAULT)
+        SearchRequest.Builder request = buildFacetRequest(params, searchCriteria, params.facet, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
+        SearchResponse searchResponse = client.search(request.build(), Map<String,Object>)
         QueryResults<Image> qr = new QueryResults<Image>()
 
-        searchResponse.aggregations.each {
-            def facet = [:]
-            it.buckets.each { bucket ->
-                facet[bucket.getKeyAsString()] = bucket.getDocCount()
-            }
-            qr.aggregations.put(it.name, facet)
-        }
+        applyAggregationsToQueryResults(searchResponse, qr)
 
         qr
+    }
+
+    private static applyAggregationsToQueryResults(SearchResponse searchResponse, QueryResults<Image> qr) {
+        searchResponse.aggregations().each {
+            def facet = [:]
+            def key = it.key
+            def aggregate = it.value
+            Buckets buckets
+            switch (aggregate._kind()) {
+                case Aggregate.Kind.Sterms:
+                    log.trace("Using STerms aggregation for facet: ${key}")
+                    buckets = aggregate.sterms().buckets()
+                    break
+                case Aggregate.Kind.Dterms:
+                    log.trace("Using DTerms aggregation for facet: ${key}")
+                    buckets = aggregate.dterms().buckets()
+                    break
+                case Aggregate.Kind.Srareterms:
+                    log.trace("Using Srareterms aggregation for facet: ${key}")
+                    buckets = aggregate.srareterms().buckets()
+                    break
+                case Aggregate.Kind.Umterms:
+                    log.trace("Using Umterms aggregation for facet: ${key}")
+                    buckets = aggregate.umterms().buckets()
+                    break
+                default:
+                    log.warn("Unknown aggregation type: ${aggregate._kind()}")
+                    buckets = null
+            }
+            if (buckets) {
+                if (buckets.isArray()) {
+                    buckets.array().each {
+                        facet[it.key().stringValue()] = it.docCount()
+                    }
+                } else if (buckets.isKeyed()) {
+                    buckets.keyed().each {
+                        facet[it.value.key().stringValue()] = it.value.docCount()
+                    }
+                }
+            }
+
+            qr.aggregations.put(key, facet)
+        }
     }
 
 
@@ -336,19 +423,18 @@ class ElasticSearchService {
         def totalWritten = 0
         def fields = null
 
-        final Scroll scroll = new Scroll(TimeValue.timeValueMinutes(1L));
-        SearchRequest searchRequest = buildSearchRequest(params, searchCriteria, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
-        searchRequest.scroll(scroll)
+        SearchRequest.Builder searchRequest = buildSearchRequest(params, searchCriteria, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
+        searchRequest.scroll(b -> b.time("1m"))
 
-        SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT)
+        def searchResponse = client.search(searchRequest.build(), Map<String, Object>)
 
-        String scrollId = searchResponse.getScrollId()
-        SearchHits hits = searchResponse.getHits()
+        String scrollId = searchResponse.scrollId()
+        def hits = searchResponse.hits()
 
         //Scroll until no hits are returned
-        while (hits.getHits().length != 0) {
-            for (SearchHit hit : hits.getHits()) {
-                def map = hit.properties.sourceAsMap
+        while (hits.hits().size() != 0) {
+            for (def hit : hits.hits()) {
+                def map = hit.source()
                 if (fields == null){
                     fields = ["imageURL"]
                     fields.addAll(map.keySet().sort())
@@ -367,12 +453,14 @@ class ElasticSearchService {
                 totalWritten += 1
             }
 
-            SearchScrollRequest scrollRequest = new SearchScrollRequest(scrollId)
-            scrollRequest.scroll(TimeValue.timeValueSeconds(30))
+            ScrollRequest scrollRequest = new ScrollRequest.Builder()
+                    .scrollId(scrollId)
+                    .scroll(b -> b.time("30s"))
+                    .build()
 
-            searchResponse = client.scroll(scrollRequest, RequestOptions.DEFAULT)
-            scrollId = searchResponse.getScrollId()
-            hits = searchResponse.getHits()
+            searchResponse = client.scroll(scrollRequest, Map<String,Object>)
+            scrollId = searchResponse.scrollId()
+            hits = searchResponse.hits()
         }
 
         params.offset += PAGE_SIZE
@@ -391,12 +479,12 @@ class ElasticSearchService {
      */
     QueryResults<Image> search(Map query, GrailsParameterMap params) {
         log.debug "search params: ${params}"
-        SearchRequest request = buildSearchRequest(JsonOutput.toJson(query), params, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
-        SearchResponse searchResponse = client.search(request, RequestOptions.DEFAULT)
-        final imageList = searchResponse.hits ? Image.findAllByImageIdentifierInList(searchResponse.hits*.id) ?: [] : []
+        SearchRequest.Builder request = buildSearchRequest(JsonOutput.toJson(query), params, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
+        SearchResponse searchResponse = client.search(request.build(), Map<String,Object>)
+        final imageList = searchResponse.hits() ? Image.findAllByImageIdentifierInList(searchResponse.hits().hits()*.id()) ?: [] : []
         QueryResults<Image> qr = new QueryResults<Image>()
         qr.list = imageList
-        qr.totalCount = searchResponse.hits.totalHits.value
+        qr.totalCount = searchResponse.hits().total().value()
         qr
     }
 
@@ -409,22 +497,24 @@ class ElasticSearchService {
      * @param geoSearchCriteria geo search criteria.
      * @return SearchRequest
      */
-    SearchRequest buildSearchRequest(Map params, List<SearchCriteria> criteriaList, String index) {
+    SearchRequest.Builder buildSearchRequest(Map params, List<SearchCriteria> criteriaList, String index) {
 
-        SearchRequest request = new SearchRequest()
-        request.searchType SearchType.DFS_QUERY_THEN_FETCH
+        def request = new SearchRequest.Builder()
+        request.searchType(SearchType.DfsQueryThenFetch)
 
         // set indices and types
-        request.indices(index)
-        def types = []
-        if (params.types && params.types instanceof Collection<String>) {
-            types = params.types
-        }
-        request.types(types as String[])
+        request.index(index)
+        // TODO types was deprecated in the High Level REST Client and removed in the Java Client
+        // Suggested alternative is to use filters in the query
+//        def types = []
+//        if (params.types && params.types instanceof Collection<String>) {
+//            types = params.types
+//        }
+//        request.types(types as String[])
 
         //create query builder
-        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery()
-        boolQueryBuilder.must(QueryBuilders.queryStringQuery(params.q ?: "*:*"))
+        def boolQueryBuilder = QueryBuilders.bool()
+        boolQueryBuilder.must(b -> b.queryString(b2 -> b2.query(params.q ?: "*:*")))
 
         // Add FQ query filters
         def filterQueries = params.findAll { it.key == 'fq'}
@@ -435,13 +525,13 @@ class ElasticSearchService {
                     it.value.each { filter ->
                         if(filter) {
                             def kv = filter.split(":")
-                            boolQueryBuilder.must(QueryBuilders.termQuery(kv[0], kv[1]))
+                            boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
                         }
                     }
                 } else {
                     if(it.value) {
                         def kv = it.value.split(":")
-                        boolQueryBuilder.must(QueryBuilders.termQuery(kv[0], kv[1]))
+                        boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
                     }
                 }
             }
@@ -452,23 +542,22 @@ class ElasticSearchService {
 
 
         // set pagination stuff
-        SearchSourceBuilder source = pagenateQuery(params).query(boolQueryBuilder)
+        pagenateQuery(request, params)
+        request.query(b -> b.bool(boolQueryBuilder.build()))
 
         // request aggregations (facets)
         grailsApplication.config.getProperty('facets', List).each { facet ->
-            source.aggregation(AggregationBuilders.terms(facet as String).field(facet as String).size(10))
+            request.aggregations(facet as String) { b -> b.terms(b2 -> b2.field(facet as String).size(10)) }
         }
 
         //ask for the total
-        source.trackTotalHits(true)
+        request.trackTotalHits(trackHits -> trackHits.enabled(true))
 
         if (params.highlight) {
-            source.highlight(new HighlightBuilder().preTags("<b>").postTags("</b>").field("_all", 60, 2))
+            request.highlight(highlight -> highlight.preTags("<b>").postTags("</b>").fragmentSize(60).numberOfFragments(2).requireFieldMatch(false))
         }
 
-        request.source(source)
-
-        request
+        return request
     }
 
 
@@ -483,20 +572,22 @@ class ElasticSearchService {
      */
     SearchRequest buildFacetRequest(Map params, List<SearchCriteria> criteriaList, String facet, String index) {
 
-        SearchRequest request = new SearchRequest()
-        request.searchType SearchType.DFS_QUERY_THEN_FETCH
+        SearchRequest.Builder request = new SearchRequest.Builder()
+        request.searchType(SearchType.DfsQueryThenFetch)
 
         // set indices and types
         request.indices(index)
-        def types = []
-        if (params.types && params.types instanceof Collection<String>) {
-            types = params.types
-        }
-        request.types(types as String[])
+        // TODO types was deprecated in the High Level REST Client and removed in the Java Client
+        // Suggested alternative is to use filters in the query
+//        def types = []
+//        if (params.types && params.types instanceof Collection<String>) {
+//            types = params.types
+//        }
+//        request.types(types as String[])
 
         //create query builder
-        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery()
-        boolQueryBuilder.must(QueryBuilders.queryStringQuery(params.q ?: "*:*"))
+        def boolQueryBuilder = QueryBuilders.bool()
+        boolQueryBuilder.must(b -> b.queryString(b2 -> b2.query(params.q ?: "*:*")))
 
         // Add FQ query filters
         def filterQueries = params.findAll { it.key == 'fq'}
@@ -507,13 +598,13 @@ class ElasticSearchService {
                     it.value.each { filter ->
                         if(filter) {
                             def kv = filter.split(":")
-                            boolQueryBuilder.must(QueryBuilders.termQuery(kv[0], kv[1]))
+                            boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
                         }
                     }
                 } else {
                     if(it.value) {
                         def kv = it.value.split(":")
-                        boolQueryBuilder.must(QueryBuilders.termQuery(kv[0], kv[1]))
+                        boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
                     }
                 }
             }
@@ -523,69 +614,70 @@ class ElasticSearchService {
         boolQueryBuilder = createQueryFromCriteria(boolQueryBuilder, criteriaList)
 
         // set pagination stuff
-        SearchSourceBuilder source = pagenateQuery(params).query(boolQueryBuilder)
+        pagenateQuery(request, params)
+        request.query(b -> b.bool(boolQueryBuilder.build()))
 
         // request aggregations (facets)
-        source.aggregation(AggregationBuilders.terms(facet as String).field(facet as String).size(grailsApplication.config.getProperty('elasticsearch.maxFacetSize', Integer)).order(BucketOrder.key(true)))
+        final maxFacetSize = grailsApplication.config.getProperty('elasticsearch.maxFacetSize', Integer)
+        request.aggregations(facet as String, b -> b.terms(b2 -> b2.field(facet as String).size(maxFacetSize).order(BucketOrder.key(true))))
 
         //ask for the total
-        source.trackTotalHits(false)
-
-        request.source(source)
+        request.trackTotalHits(builder -> builder.enabled(false))
 
         request
     }
 
-    private SearchSourceBuilder pagenateQuery(Map params) {
+    private void pagenateQuery(SearchRequest.Builder request, Map params) {
 
         int maxOffset = grailsApplication.config.getProperty('elasticsearch.maxOffset', Integer)
         int maxPageSize = grailsApplication.config.getProperty('elasticsearch.maxPageSize', Integer)
         int defaultPageSize = grailsApplication.config.getProperty('elasticsearch.defaultPageSize', Integer)
 
-        SearchSourceBuilder source = new SearchSourceBuilder()
+//        SearchSourceBuilder source = new SearchSourceBuilder()
 
         //set the page size
+        def pageSize
         if (params.max){
             if ((params.max as int) > maxPageSize){
-                source.size(maxPageSize)
+                pageSize = maxPageSize
             } else {
-                source.size((params.max as int))
+                pageSize = params.max as int
             }
         } else {
-            source.size(defaultPageSize)
+            pageSize = defaultPageSize
         }
+        request.size(pageSize)
 
         //set the offset
         if (params.offset){
             if ((params.offset as int) > maxOffset){
-                source.from(maxOffset - source.size())
+                request.from(maxOffset - pageSize)
             } else {
-                source.from((params.offset as int))
+                request.from((params.offset as int))
             }
         } else {
-            source.from(0)
+            request.from(0)
         }
 
-        source.sort('dateUploaded', SortOrder.DESC)
-        source
+        request.sort(b -> b.field(b2 -> b2.field("dateUploaded").order(SortOrder.Desc)))
     }
 
     private def initialiseIndex() {
         try {
-
-            boolean indexExists  = client.indices().exists(new org.elasticsearch.client.indices.GetIndexRequest(grailsApplication.config.getProperty('elasticsearch.indexName')), RequestOptions.DEFAULT)
+            def indexName = grailsApplication.config.getProperty('elasticsearch.indexName') as String
+            boolean indexExists  = client.indices().exists(b -> b.index(indexName)).value()
             if (!indexExists){
-                CreateIndexRequest request = new CreateIndexRequest(grailsApplication.config.getProperty('elasticsearch.indexName'))
-                CreateIndexResponse createIndexResponse = client.indices().create(request, RequestOptions.DEFAULT)
-                if (createIndexResponse.isAcknowledged()) {
+                CreateIndexRequest request = new CreateIndexRequest.Builder().index(indexName).build()
+                CreateIndexResponse createIndexResponse = client.indices().create(request)
+                if (createIndexResponse.acknowledged()) {
                     log.info "Successfully created index and mappings for images"
                 } else {
                     log.info "UN-Successfully created index and mappings for images"
                 }
 
-                PutMappingRequest putMappingRequest = new PutMappingRequest(grailsApplication.config.getProperty('elasticsearch.indexName'))
-                putMappingRequest.type(grailsApplication.config.getProperty('elasticsearch.indexName') as String)
-                putMappingRequest.source(
+                def putMappingRequest = new PutMappingRequest.Builder().index(indexName)
+//                putMappingRequest.type(indexName)
+                putMappingRequest.withJson(new StringReader(
                         """{
                                   "properties": {
                                     "dateUploaded": {
@@ -653,11 +745,16 @@ class ElasticSearchService {
                                     },                                                                     
                                     "thumbWidth": {
                                       "type": "integer"
-                                    }         
+                                    },
+                                    "contentMD5Hash": {
+                                      "type": "keyword"
+                                    },
+                                    "contentSHA1Hash": {
+                                      "type": "keyword"
+                                    }
                                   }
-                                }""",
-                        XContentType.JSON)
-                def resp = client.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+                                }"""))
+                def resp = client.indices().putMapping(putMappingRequest.build())
             } else {
                 log.info "Index already exists"
             }
@@ -672,7 +769,7 @@ class ElasticSearchService {
      * @param criteriaList
      * @return
      */
-    private BoolQueryBuilder createQueryFromCriteria(BoolQueryBuilder boolQueryBuilder, List<SearchCriteria> criteriaList) {
+    private BoolQuery.Builder createQueryFromCriteria(BoolQuery.Builder boolQueryBuilder, List<SearchCriteria> criteriaList) {
 
         def metaDataPattern = Pattern.compile("^(.*)[:](.*)\$")
 
@@ -694,7 +791,7 @@ class ElasticSearchService {
                     def term = matcher.group(2)?.replaceAll('\\*', '%')
                     term = term.replaceAll(":", "\\:")
 
-                    boolQueryBuilder.must(QueryBuilders.queryFilter(QueryBuilders.queryStringQuery("${matcher.group(1)}:${term}")))
+                    boolQueryBuilder.must(QueryBuilders.bool().filter(QueryBuilders.queryString().query("${matcher.group(1)}:${term}").build()).build())
                 }
             }
         }
@@ -719,43 +816,31 @@ class ElasticSearchService {
         def properties = getMetadataKeys()
         def caseInsensitive = [:]
         properties.each { caseInsensitive.put(it.toLowerCase(), it)}
-        def indexField = caseInsensitive.get(key.toLowerCase())
+        String indexField = caseInsensitive.get(key.toLowerCase())
 
         def queryString = values.collect { "\"${it}\"" }.join(" OR ")
-        QueryStringQueryBuilder queryBuilder = QueryBuilders.queryStringQuery(queryString)
+        def queryBuilder = QueryBuilders.queryString().query(queryString)
 
         //find indexed field......
         queryBuilder.defaultField(indexField)
-        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder()
-        searchSourceBuilder.query(queryBuilder)
 
         try {
-
-            if (params?.offset) {
-                searchSourceBuilder.from(params.int("offset"))
-            }
-
-            if (params?.max) {
-                searchSourceBuilder.size(params.int("max"))
-            } else {
-                searchSourceBuilder.size(grailsApplication.config.getProperty('elasticsearch.maxPageSize', Integer)) // probably way too many!
-            }
-
-            if (params?.sort) {
-                def order = params?.order == "asc" ? SortOrder.ASC : SortOrder.DESC
-                searchSourceBuilder.sort(params.sort as String, order)
-            }
-
             def ct = new CodeTimer("Index search")
-            SearchRequest searchRequest = new SearchRequest()
-            searchRequest.indices(grailsApplication.config.getProperty('elasticsearch.indexName') as String)
-            searchRequest.source(searchSourceBuilder)
-            SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT)
+            def searchRequest = new SearchRequest.Builder()
+            searchRequest.index(grailsApplication.config.getProperty('elasticsearch.indexName') as String)
+            searchRequest.query(queryBuilder.build())
+            searchRequest.from(params.int("offset"))
+            searchRequest.size(params.int("max") ?: grailsApplication.config.getProperty('elasticsearch.maxPageSize', Integer))
+            if (params?.sort) {
+                def order = params?.order == "asc" ? SortOrder.Asc : SortOrder.Desc
+                searchRequest.sort(SortOptionsBuilders.field(it -> it.field(params.sort as String).order(order)))
+            }
+            SearchResponse searchResponse = client.search(searchRequest.build())
 
             ct.stop(true)
 
-            ct = new CodeTimer("Object retrieval (${searchResponse.hits.hits.length} of ${searchResponse.hits.totalHits} hits)")
-            final hitsIdList = searchResponse.hits ? searchResponse.hits*.id : []
+            ct = new CodeTimer("Object retrieval (${searchResponse.hits().hits().size()} of ${searchResponse.hits().total().value()} hits)")
+            final hitsIdList = searchResponse.hits() ? searchResponse.hits().hits()*.id() : []
             final imageList = hitsIdList ? Image.findAllByImageIdentifierInList(hitsIdList)?.collect { image ->
                 image.metadata = null
                 image.tags = null
@@ -776,8 +861,8 @@ class ElasticSearchService {
             }
 
             return resultsKeyedByValue
-        } catch (SearchPhaseExecutionException e) {
-            log.warn(".SearchPhaseExecutionException thrown - this is expected behaviour for a new empty system.")
+        } catch (ElasticsearchException e) {
+            log.warn(".ElasticsearchException thrown - this is expected behaviour for a new empty system.")
             return [:]
         } catch (Exception e) {
             e.printStackTrace()
@@ -787,10 +872,13 @@ class ElasticSearchService {
     }
 
     def getMetadataKeys() {
-        GetMappingsRequest request = new GetMappingsRequest();
-        request.indices("images")
-        GetMappingsResponse getMappingResponse = client.indices().getMapping(request, RequestOptions.DEFAULT)
-        Map properties = getMappingResponse.mappings().values().first().values().first().sourceAsMap().properties
-        properties.keySet()
+        def indexName = grailsApplication.config.getProperty('elasticsearch.indexName') as String
+        GetMappingRequest request = new GetMappingRequest.Builder()
+            .index(indexName)
+            .build()
+        GetMappingResponse getMappingResponse = client.indices().getMapping(request)
+        def indexResponse = getMappingResponse.result().get(indexName)
+        def propertyNames = indexResponse.mappings().properties().keySet()
+        return propertyNames
     }
 }

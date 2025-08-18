@@ -2492,7 +2492,7 @@ class WebServiceController {
             ],
             tags = ["Export"]
     )
-    @Path("/ws/exportMapping/{id}")
+    @Path("/ws/exportDatasetMapping/{id}")
     @Consumes("application/json")
     @Produces("application/gzip")
     def exportDatasetMapping(){

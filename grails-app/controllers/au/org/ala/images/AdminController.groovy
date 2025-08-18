@@ -7,6 +7,7 @@ import com.opencsv.CSVWriter
 import grails.converters.JSON
 import grails.converters.XML
 import groovy.json.JsonSlurper
+import org.hibernate.SessionFactory
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.multipart.MultipartRequest
 
@@ -347,6 +348,69 @@ class AdminController {
         [batchProcessingEnabled: settingService.getBatchServiceProcessingEnabled()]
     }
 
+    def clearFailedUploads() {
+        // Display the form for entering the regex pattern
+        def regexPattern = params.regexPattern
+        def maxResults = params.int('maxResults') ?: 100 // Default limit of 100 results
+        def matchingUploads = []
+        def totalCount = 0
+        
+        // Check if this is a preview request
+        if (params.preview && regexPattern) {
+            try {
+                // Validate the regex pattern
+                def pattern = Pattern.compile(regexPattern)
+
+                // Find failed uploads that match the pattern
+//                log.debug("Finding failed uploads matching pattern: ${regexPattern}")
+                totalCount = FailedUpload.countByUrlRlike(regexPattern)
+//                matchingUploads = FailedUpload.findAllByUrlRlike(regexPattern, max: maxResults)
+                matchingUploads = FailedUpload.where {
+                    rlike('url', regexPattern)
+                }.list(max: maxResults)
+
+//                log.debug("Found ${totalCount} failed uploads matching pattern: ${regexPattern}")
+//                log.debug("Returning first ${matchingUploads} of ${totalCount} matching uploads")
+
+
+                if (totalCount > 0) {
+                    flash.message = "Found ${totalCount} failed uploads matching pattern: ${regexPattern}" + 
+                                   (totalCount > maxResults ? " (showing first ${maxResults})" : "")
+                } else {
+                    flash.message = "No failed uploads found matching pattern: ${regexPattern}"
+                }
+            } catch (Exception ex) {
+                flash.errorMessage = "Invalid regular expression: ${ex.message}"
+            }
+        }
+        
+        [matchingUploads: matchingUploads, totalCount: totalCount, regexPattern: regexPattern, maxResults: maxResults]
+    }
+
+    def doClearFailedUploads() {
+        def regexPattern = params.regexPattern
+        def count = 0
+        
+        if (regexPattern) {
+            try {
+                // Validate the regex pattern
+                def pattern = Pattern.compile(regexPattern)
+
+                count = FailedUpload.where {
+                    rlike('url', regexPattern)
+                }.deleteAll()
+                
+                flash.message = "${count} failed uploads deleted based on pattern: ${regexPattern}"
+            } catch (Exception ex) {
+                flash.errorMessage = "Invalid regular expression: ${ex.message}"
+            }
+        } else {
+            flash.errorMessage = "No regex pattern provided"
+        }
+        
+        redirect(action: 'clearFailedUploads')
+    }
+
     def localIngest() {}
 
     def reinitialiseImageIndex() {
@@ -555,7 +619,20 @@ class AdminController {
     }
 
     def clearHibernateCache() {
-        sessionFactory.cache?.evictAllRegions()
+        // First clear the session and evict all cache regions
+        StorageLocation.withSession { session ->
+            session.clear()
+            SessionFactory sessionFactory = session.getSessionFactory()
+            sessionFactory.cache.evictEntityData()
+            sessionFactory.cache.evictAll()
+            sessionFactory.cache.evictAllRegions()
+        }
+        
+        // Then use the injected sessionFactory to evict all regions again
+        if (sessionFactory) {
+            sessionFactory.cache.evictAllRegions()
+        }
+        
         flash.message = 'Hibernate cache cleared'
         redirect(action:'tools', message: 'Hibernate Cache is cleared')
     }

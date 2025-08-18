@@ -1743,7 +1743,7 @@ UNION
     }
 
     def exportDatasetMappingAvro(String datasetID, OutputStream outputStream) {
-        eachRowToAvro(outputStream, EXPORT_DATASET_MAPPING_SQL, [datasetID])
+        eachRowToAvro(outputStream, EXPORT_DATASET_MAPPING_SQL, [datasetID, datasetID])
     }
 
     def exportDatasetCSV(String datasetID, OutputStream outputStream) {
@@ -1751,7 +1751,7 @@ UNION
     }
 
     def exportDatasetAvro(String datasetID, OutputStream outputStream) {
-        eachRowToAvro(outputStream, EXPORT_DATASET_SQL, [datasetID])
+        eachRowToAvro(outputStream, EXPORT_DATASET_SQL, [datasetID, datasetID])
     }
 
     /**
