@@ -86,6 +86,18 @@ Parameters:
   pVpcStackName:
     Description: The name of the Bedrock VPC stack
     Type: String
+  pDbEngine:
+    Description: The database family. aurora-mysql or aurora-postgresql
+    Type: String
+    AllowedValues:
+      - aurora-mysql
+      - aurora-postgresql
+  pDbParamGrpFamily:
+    Description: The database parameter group family.
+    Type: String
+    AllowedValues:
+      - aurora-mysql8.0
+      - aurora-postgresql16
 
 Conditions:
   IsDev: !Equals
@@ -129,7 +141,7 @@ Resources:
     Type: AWS::RDS::DBClusterParameterGroup
     Properties:
       Description: Images PostgreSQL cluster parameter group
-      Family: aurora-postgresql15
+      Family: !Ref pDbParamGrpFamily
       Parameters:
         timezone: Australia/Sydney
       Tags:
@@ -193,7 +205,7 @@ Resources:
       DBSubnetGroupName: !Ref DbSubnetGrp
       DeletionProtection: !Ref pDeletionProtection
       EnableCloudwatchLogsExports: !If [ ExportLogs, ['error'], !Ref AWS::NoValue]
-      Engine: aurora-postgresql
+      Engine: !Ref pDbEngine
       EngineMode: provisioned
       EngineVersion: !Ref pDbVersion
       MasterUsername: !Ref pAdminUser
@@ -229,7 +241,7 @@ Resources:
       DBInstanceClass: !Ref pInstanceClass
       DBInstanceIdentifier: !Sub ${pDbInstanceName}-primary
       DBClusterIdentifier: !Ref DbCluster
-      Engine: aurora-postgresql
+      Engine: !Ref pDbEngine
       PubliclyAccessible: false
       PromotionTier: 1
       EnablePerformanceInsights: !Ref pPerformanceInsights
@@ -251,7 +263,7 @@ Resources:
       DBInstanceIdentifier: !Sub ${pDbInstanceName}-replica
       DBClusterIdentifier: !Ref DbCluster
       PubliclyAccessible: false
-      Engine: aurora-postgresql
+      Engine: !Ref pDbEngine
       PromotionTier: 2
       EnablePerformanceInsights: !Ref pPerformanceInsights
       Tags:
