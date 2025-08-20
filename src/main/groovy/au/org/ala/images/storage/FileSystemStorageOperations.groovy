@@ -236,6 +236,18 @@ class FileSystemStorageOperations implements StorageOperations {
         }
     }
 
+    void clearTilesForImage(String uuid) {
+        def tilesPath = createTilesPathFromUUID(uuid)
+        def tilesDir = new File(tilesPath)
+        if (tilesDir.exists() && tilesDir.isDirectory()) {
+            try {
+                FileUtils.deleteDirectory(tilesDir)
+            } catch (IOException e) {
+                log.error("Failed to clear tiles for image $uuid at $tilesPath", e)
+            }
+        }
+    }
+
     @Override
     String toString() {
         "FilesystemStorageOperations: $basePath"

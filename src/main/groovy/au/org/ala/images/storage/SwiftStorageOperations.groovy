@@ -324,6 +324,17 @@ class SwiftStorageOperations implements StorageOperations {
         }
     }
 
+    void clearTilesForImage(String uuid) {
+        def basePath = storagePathStrategy().createTilesPathFromUUID(uuid)
+        walkPath(basePath) { StoredObject so ->
+            try {
+                so.delete()
+            } catch (e) {
+                log.error("Couldn't delete {} from {}", so.path, this, e)
+            }
+        }
+    }
+
     @Override
     String toString() {
         return "SwiftStorageOperations $authUrl $tenantId $tenantName $containerName"

@@ -131,6 +131,38 @@ class ImageStoreService {
     def clearTileLookupCache() {
         tileCache.invalidateAll()
     }
+    
+    @NotTransactional
+    def clearTileLookupCacheForImage(String imageIdentifier) {
+        // Find all cache entries for this image identifier and invalidate them
+        tileCache.asMap().keySet().findAll { it.left == imageIdentifier }.each { key ->
+            tileCache.invalidate(key)
+        }
+    }
+
+    @NotTransactional
+    def clearTilesForImage(String imageIdentifier) {
+
+        StorageOperations operations
+
+        Image.withTransaction {
+            def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true ])
+            if (image) {
+                // TODO is this necessary?
+                // Setting zoom levels to 0 might cause leaflet to not display correctly on next load
+                image.zoomLevels = 0 // reset the zoom levels
+                operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
+                image.save()
+            } else {
+                log.warn("No image found with identifier ${imageIdentifier} to clear tiles for")
+            }
+        }
+        if (operations) {
+            operations.clearTilesForImage(imageIdentifier)
+        }
+        clearTileLookupCacheForImage(imageIdentifier)
+        auditService.log(imageIdentifier, "Tiles cleared", "N/A")
+    }
 
     @NotTransactional
     ImageDescriptor storeImage(ByteSource imageBytes, StorageOperations operations, String contentType, String originalFilename, String contentDisposition = null) {

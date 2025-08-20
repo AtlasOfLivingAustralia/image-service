@@ -164,6 +164,11 @@
                 <button class="btn btn-danger" id="btnDeleteImage" title="Delete image (admin)">
                     <i class="glyphicon glyphicon-remove  glyphicon-white"></i>
                 </button>
+                <g:if test="${isImage}">
+                    <button class="btn btn-warning" id="btnResetTiles" title="Reset image tiles and zoom factor">
+                        <i class="glyphicon glyphicon-refresh glyphicon-white"></i>
+                    </button>
+                </g:if>
             </g:if>
             <g:if test="${!isAdminView && (userId && userId.toString() == imageInstance.uploader) }">
                 <button class="btn btn-danger" id="btnDeleteImage" title="${g.message(code:'core.image.metadata.delete', default: 'Delete your image')}">

@@ -479,6 +479,13 @@ class S3StorageOperations implements StorageOperations {
         }
     }
 
+    void clearTilesForImage(String uuid) {
+        def basePath = createTilesPathFromUUID(uuid)
+        walkPrefix(basePath) { S3ObjectSummary s3ObjectSummary ->
+            s3Client.deleteObject(bucket, s3ObjectSummary.key)
+        }
+    }
+
     @Override
     String toString() {
         "S3StorageOperations: $region:$bucket:${prefix ?: ''}"

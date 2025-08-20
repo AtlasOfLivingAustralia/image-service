@@ -237,6 +237,20 @@
                     alert(<g:message code="details.problem.regeneration" />);
                 });
             });
+            
+            <auth:ifAnyGranted roles="${CASRoles.ROLE_ADMIN}">
+            $("#btnResetTiles").on('click', function(e) {
+                e.preventDefault();
+                
+                imgvwr.areYouSure({
+                    title: "Reset Image Tiles and Zoom Factor",
+                    message: "Are you sure you want to reset the tiles and zoom factor for this image? This will remove all existing tiles and regenerate them.",
+                    affirmativeAction: function() {
+                        window.location = "${createLink(absolute: true, controller:'admin', action:'resetImageTiles', id: imageInstance.id)}";
+                    }
+                });
+            });
+            </auth:ifAnyGranted>
 
             $("#btnDeleteImage").on('click', function(e) {
                 e.preventDefault();
