@@ -148,9 +148,6 @@ class ImageStoreService {
         Image.withTransaction {
             def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true ])
             if (image) {
-                // TODO is this necessary?
-                // Setting zoom levels to 0 might cause leaflet to not display correctly on next load
-                image.zoomLevels = 0 // reset the zoom levels
                 operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
                 image.save()
             } else {
