@@ -45,6 +45,7 @@ Parameters:
     Type: String
     AllowedValues:
       - provisioned
+      - serverlessv2
     Default: provisioned
   pEnhancedMonitoring:
     Description: enhanced monitoring interval in seconds, 0 to disable
@@ -133,6 +134,9 @@ Conditions:
     - !Equals
       - !Ref pCreateReplica
       - true
+  IsServerlessV2: !Equals
+    - !Ref pEngineMode
+    - serverlessv2
 
 
 Resources:
@@ -206,7 +210,7 @@ Resources:
       DeletionProtection: !Ref pDeletionProtection
       EnableCloudwatchLogsExports: !If [ ExportLogs, ['error'], !Ref AWS::NoValue]
       Engine: !Ref pDbEngine
-      EngineMode: provisioned
+      EngineMode: !If [IsServerlessV2, !Ref AWS::NoValue, provisioned]
       EngineVersion: !Ref pDbVersion
       MasterUsername: !Ref pAdminUser
       MasterUserPassword: !Sub '{{resolve:secretsmanager:${pSecretName}:SecretString:db-password}}'
@@ -223,6 +227,11 @@ Resources:
       Port: 5432
       PreferredBackupWindow: 16:00-17:00
       PreferredMaintenanceWindow: tue:17:00-tue:19:00
+      ServerlessV2ScalingConfiguration: !If
+        - IsServerlessV2
+        - MinCapacity: 0
+          MaxCapacity: 10
+        - !Ref "AWS::NoValue"
       SnapshotIdentifier: !If [ RestoreFromSnapshot, !Ref pRdsSnapshotRestore, !Ref AWS::NoValue ]
       StorageEncrypted: true
       Tags:
@@ -259,9 +268,10 @@ Resources:
     Properties:
       AllowMajorVersionUpgrade: false
       AutoMinorVersionUpgrade: true
-      DBInstanceClass: !Ref pInstanceClass
+      DBInstanceClass: !If [ IsProvisioned, !Ref pInstanceClass, db.serverless ]
       DBInstanceIdentifier: !Sub ${pDbInstanceName}-replica
       DBClusterIdentifier: !Ref DbCluster
+      DBSubnetGroupName: !Ref DbSubnetGrp
       PubliclyAccessible: false
       Engine: !Ref pDbEngine
       PromotionTier: 2
