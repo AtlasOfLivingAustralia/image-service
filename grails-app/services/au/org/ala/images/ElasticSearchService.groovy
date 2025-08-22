@@ -81,13 +81,17 @@ class ElasticSearchService {
             )
         }
 
+        def defaultHeaders = grailsApplication.config.getProperty('elasticsearch.default-headers', List, []).collect {
+            new BasicHeader(it.name, it.value)
+        }
+
         def restClient = RestClient.builder(*hosts)
                 .setHttpClientConfigCallback {
                     if (credentialsProvider) {
                         it.setDefaultCredentialsProvider(credentialsProvider)
                     }
-                    // Hacks for elasticsearch-java client compatibility with older ES versions
-                    it.setDefaultHeaders(List.of(new BasicHeader(HttpHeaders.CONTENT_TYPE, ContentType.APPLICATION_JSON.toString())))
+                    // Hacks for elasticsearch-java client compatibility with older/newer ES versions
+                    it.setDefaultHeaders(defaultHeaders)
                       .addInterceptorLast((HttpResponseInterceptor) (response, context) -> {
                           if (!response.containsHeader("X-Elastic-Product")) response.addHeader("X-Elastic-Product", "Elasticsearch")
                       })
