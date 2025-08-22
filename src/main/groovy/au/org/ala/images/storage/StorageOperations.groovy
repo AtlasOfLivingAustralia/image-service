@@ -166,4 +166,6 @@ interface StorageOperations {
 
     abstract ImageInfo tileImageInfo(String uuid, int x, int y, int z)
 
+    abstract void clearTilesForImage(String uuid)
+
 }

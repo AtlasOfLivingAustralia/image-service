@@ -648,4 +648,23 @@ class AdminController {
         flash.message = 'Tile lookup cache cleared'
         redirect(action:'tools', message: 'Tile Lookup Cache is cleared')
     }
+    
+    def resetImageTiles() {
+        def image = imageService.getImageFromParams(params)
+        if (!image) {
+            flash.errorMessage = "Could not find image with id ${params.int("id") ?: params.imageId}!"
+            redirect(action:'list', controller: 'search')
+            return
+        }
+        
+        // Clear the tile cache for this specific image only
+        imageStoreService.clearTilesForImage(image.imageIdentifier)
+
+        // Schedule tile regeneration
+        // No need for this, this should happen on the image details page anyway
+//        imageService.scheduleTileGeneration(image.id, authService.getUserId() ?: "<admin>")
+
+        flash.message = "Image tiles reset initiated. The tiles will be regenerated in the background."
+        redirect(action:'image', id: image.imageIdentifier)
+    }
 }
