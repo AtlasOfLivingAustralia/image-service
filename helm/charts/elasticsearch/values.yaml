@@ -27,3 +27,6 @@ persistence:
   storageClass: "auto-ebs-sc"
   accessMode: ReadWriteOnce
   size: 10Gi
+
+elasticsearch:
+  single_node_es: false
