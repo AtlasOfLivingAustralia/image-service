@@ -114,6 +114,7 @@ phases:
             name: elasticsearch-images-${CLEAN_BRANCH}
         elasticsearch:
           host: ${ELASTICSEARCH_HOST}
+          single_node_es: ${SINGLE_NODE_ES}
         app:
           url: https://$DOMAIN_NAME
         db:

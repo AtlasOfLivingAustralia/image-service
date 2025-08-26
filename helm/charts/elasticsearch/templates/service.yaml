@@ -1,3 +1,4 @@
+{{- if .Values.elasticsearch.single_node_es }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -19,3 +20,4 @@ spec:
       targetPort: 9300
   selector:
     app: {{ .Values.deployment.name }}
+{{- end }}
