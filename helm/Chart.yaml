@@ -22,7 +22,7 @@ version: 1.0.0
 appVersion: "5.0.0"
 
 dependencies:
-   - name: elasticsearch
+   - name: elasticsearch-images
      version: 1.0.0
      repository: file://charts/elasticsearch
      condition: elasticsearch.single_node_es

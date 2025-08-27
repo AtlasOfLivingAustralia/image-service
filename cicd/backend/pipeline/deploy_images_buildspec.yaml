@@ -35,6 +35,7 @@ phases:
       - echo "Service account created."
       - echo "Deploying images via helm..."
       - cd helm
+      - helm dependency build .
       - |
         helm upgrade --install $HELM_RELEASE_NAME . -n $EKS_NAMESPACE \
           --set image.repository=$ECR_REPO \
