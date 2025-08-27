@@ -20,3 +20,9 @@ version: 1.0.0
 # This is the version number of the application being deployed. This version number should be
 # incremented each time you make changes to the application.
 appVersion: "5.0.0"
+
+dependencies:
+   - name: elasticsearch
+     version: 1.0.0
+     repository: file://charts/elasticsearch
+     condition: elasticsearch.single_node_es
