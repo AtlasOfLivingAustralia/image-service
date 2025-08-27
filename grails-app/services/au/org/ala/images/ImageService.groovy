@@ -118,7 +118,7 @@ class ImageService {
     NULLIF(regexp_replace(i.title,             '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "title",
     NULLIF(regexp_replace(i.type,              '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "type"
 FROM image i
-WHERE data_resource_uid = ?)
+WHERE data_resource_uid = ? and date_deleted is null)
 UNION
 (SELECT
     i.image_identifier as "imageID",
@@ -137,7 +137,7 @@ UNION
     NULLIF(regexp_replace(i.title,             '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "title",
     NULLIF(regexp_replace(i.type,              '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "type"
 FROM image i
-WHERE data_resource_uid = ?)
+WHERE data_resource_uid = ? and date_deleted is null)
 '''
 
     final EXPORT_DATASET_MAPPING_SQL = '''
@@ -145,13 +145,13 @@ WHERE data_resource_uid = ?)
     image_identifier as "imageID",
     original_filename as "url"
     FROM image i
-    WHERE data_resource_uid = ?)
+    WHERE data_resource_uid = ? and date_deleted is null)
 UNION
 (SELECT
     image_identifier as "imageID",
     UNNEST(alternate_filename) as "url"
     FROM image i
-    WHERE data_resource_uid = ?)
+    WHERE data_resource_uid = ? and date_deleted is null)
     '''
 
     private static Queue<BackgroundTask> _backgroundQueue = new ConcurrentLinkedQueue<BackgroundTask>()

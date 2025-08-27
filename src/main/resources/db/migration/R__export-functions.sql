@@ -82,9 +82,16 @@ DROP FUNCTION IF EXISTS export_mapping;
 
 DROP VIEW IF EXISTS export_mapping;
 CREATE VIEW export_mapping AS
-SELECT
+(SELECT
     data_resource_uid,
     image_identifier as "imageID",
     original_filename as "url"
 FROM image i
-WHERE data_resource_uid is NOT NULL;
+WHERE data_resource_uid is NOT NULL AND date_deleted is NULL)
+UNION
+(SELECT
+     data_resource_uid,
+     image_identifier as "imageID",
+     UNNEST(alternate_filename) as "url"
+ FROM image i
+ WHERE data_resource_uid is NOT NULL AND date_deleted is NULL);
