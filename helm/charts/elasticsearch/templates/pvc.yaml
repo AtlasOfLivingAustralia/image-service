@@ -1,4 +1,4 @@
-{{- if .Values.elasticsearch.single_node_es }}
+{{- if .Values.single_node_es }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
