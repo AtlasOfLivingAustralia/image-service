@@ -112,6 +112,7 @@ phases:
             name: elasticsearch-images-${CLEAN_BRANCH}
           service:
             name: elasticsearch-images-${CLEAN_BRANCH}
+          single_node_es: ${SINGLE_NODE_ES}
         elasticsearch:
           host: ${ELASTICSEARCH_HOST}
           single_node_es: ${SINGLE_NODE_ES}
