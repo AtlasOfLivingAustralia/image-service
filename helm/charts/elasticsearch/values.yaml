@@ -28,5 +28,4 @@ persistence:
   accessMode: ReadWriteOnce
   size: 10Gi
 
-elasticsearch:
-  single_node_es: false
+single_node_es: true

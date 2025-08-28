@@ -25,4 +25,4 @@ dependencies:
    - name: elasticsearch-images
      version: 1.0.0
      repository: file://charts/elasticsearch
-     condition: elasticsearch.single_node_es
+     condition: single_node_es

@@ -130,7 +130,7 @@ jwt:
   enabled: true
   legacy:
     enabled: true
-webservices:
+webservice:
   enabled: true
   clientId: ""
   secret: ""
@@ -191,3 +191,4 @@ elasticsearch-images:
     storageClass: "auto-ebs-sc"
     accessMode: ReadWriteOnce
     size: 10Gi
+  single_node_es: true
