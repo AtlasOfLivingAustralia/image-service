@@ -110,6 +110,7 @@ abstract class ImagesIntegrationSpec extends Specification {
 
     def setup() {
         def logger = LoggerFactory.getLogger(getClass())
+        System.setProperty("http.agent", "ala-image-service/4.0 (https://images.ala.org.au)")
         alaAuthClient = Mock(AlaDirectClient)
         profileCreator = Mock()
         def creds = new OidcCredentials(
