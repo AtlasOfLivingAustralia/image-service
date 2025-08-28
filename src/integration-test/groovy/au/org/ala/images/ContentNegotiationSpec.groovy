@@ -37,6 +37,8 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
     }
 
     def setup() {
+        System.setProperty("http.agent", "ala-image-service/4.0 (https://images.ala.org.au)")
+
         MultiValueMap<String, String> form = new LinkedMultiValueMap<String, String>()
         form.add("imageUrl", "https://upload.wikimedia.org/wikipedia/commons/e/ed/Puma_concolor_camera_trap_Arizona_2.jpg")
 
