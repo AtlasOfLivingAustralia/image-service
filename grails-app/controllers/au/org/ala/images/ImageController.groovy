@@ -86,7 +86,8 @@ class ImageController {
     def proxyImage() {
         serveImage(
                 imageStoreService.originalImageInfo(imageService.getImageGUIDFromParams(params)),
-                trackThumbnails
+                trackThumbnails,
+                'original'
         )
     }
 
@@ -117,7 +118,8 @@ class ImageController {
     def getOriginalFile() {
         serveImage(
                 imageStoreService.originalImageInfo(imageService.getImageGUIDFromParams(params)),
-                trackThumbnails
+                trackThumbnails,
+                'original'
         )
     }
 
@@ -152,7 +154,8 @@ class ImageController {
     def proxyImageThumbnail() {
         serveImage(
                 imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), ''),
-                trackThumbnails
+                trackThumbnails,
+                'thumbnail'
         )
     }
 
@@ -189,7 +192,8 @@ class ImageController {
         }
         serveImage(
                 imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), type),
-                trackThumbnails
+                trackThumbnails,
+                'thumbnail-'+type
         )
     }
 
@@ -226,16 +230,33 @@ class ImageController {
         int z = params.int('z')
         serveImage(
                 imageStoreService.tileImageInfo(imageService.getImageGUIDFromParams(params), x, y, z),
-                false
+                false,
+                'tile'
         )
     }
 
+    @Value('classpath:images/no-image-fullsize.png')
+    Resource missingOriginal
+
+    @Value('classpath:images/images-placeholder-650x499.png')
+    Resource missingImageThumbnailLarge
+
+    @Value('classpath:images/images-placeholder-300x230.png')
+    Resource missingImageThumbnail
+
+    @Value('classpath:images/images-placeholder-300x300.png')
+    Resource missingImageThumbnailSquare
+
+    @Value('classpath:images/images-placeholder-300x300.png')
+    Resource missingTile
+
     private void serveImage(
             ImageInfo imageInfo,
-            boolean sendAnalytics) {
+            boolean sendAnalytics,
+            String requestType) {
         def imageIdentifier = imageInfo.imageIdentifier
         if (!imageIdentifier || !imageInfo.exists) {
-            render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+            sendMissingImage(requestType)
             return
         }
 
@@ -349,7 +370,7 @@ class ImageController {
             render(text: "Invalid range header", status: SC_REQUESTED_RANGE_NOT_SATISFIABLE, contentType: 'text/plain')
         } catch (FileNotFoundException e) {
             log.debug('Image not found in storage', e)
-            render(text: "Image not found in storage", status: SC_NOT_FOUND, contentType: 'text/plain')
+            sendMissingImage(requestType)
         } catch (ClientAbortException e) {
             // User hung up, just ignore this exception since we can't recover into a nice error response.
         } catch (Exception e) {
@@ -362,6 +383,58 @@ class ImageController {
                 response.setHeader(HEADER_ETAG, '')
             }
             throw e
+        }
+    }
+
+    private void sendMissingImage(String requestType) {
+// Serve a placeholder image from classpath instead of 404
+        Resource ph
+        switch (requestType) {
+            case 'tile':
+                ph = missingTile
+                break
+            case 'original':
+                ph = missingOriginal
+                break
+            case 'thumbnail-large':
+            case 'large':
+                ph = missingImageThumbnailLarge
+                break
+            case 'thumbnail-square':
+            case 'thumbnail-square_white':
+            case 'thumbnail-square_black':
+            case 'thumbnail-square_darkGrey':
+            case 'thumbnail-square_darkGray':
+            case 'square':
+            case 'square_white':
+            case 'square_black':
+            case 'square_darkGrey':
+            case 'square_darkGray':
+                ph = missingImageThumbnailSquare
+                break
+            case 'thumbnail':
+                ph = missingImageThumbnail
+                break
+        }
+//            Resource ph = requestType == 'tile' ? missingTile : (requestType == 'original' ? missingOriginal : missingThumbnail)
+        try {
+            def len = ph.contentLength()
+//                def lastMod = new Date(ph.lastModified())
+//                if (cacheHeaders) {
+//                    cache()
+//                }
+            response.status = SC_NOT_FOUND
+            response.contentType = 'image/png'
+            response.contentLengthLong = len
+//                response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+            if (request.method != 'HEAD') {
+                ph.inputStream.withStream { stream ->
+                    IOUtils.copy(stream, response.outputStream)
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to stream placeholder image for requestType=${requestType}", e)
+            render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
         }
     }
 
