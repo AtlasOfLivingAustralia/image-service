@@ -101,57 +101,69 @@ class ImageService {
     // missing \p{Unassigned}\p{Surrogate]\p{Control} from regex as Unicode character classes unsupported in PG.
     // TODO use jooq to generate these
     final EXPORT_DATASET_SQL = '''
-(SELECT
-    i.image_identifier as "imageID",
-    NULLIF(regexp_replace(i.original_filename, '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "identifier",
-    NULLIF(regexp_replace(i.audience,          '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "audience",
-    NULLIF(regexp_replace(i.contributor,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "contributor",
-    NULLIF(regexp_replace(i.created,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "created",
-    NULLIF(regexp_replace(i.creator,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "creator",
-    NULLIF(regexp_replace(i.description,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "description",
-    NULLIF(regexp_replace(i.mime_type,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "format",
-    NULLIF(regexp_replace(i.license,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "license",
-    NULLIF(regexp_replace(i.publisher,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "publisher",
-    NULLIF(regexp_replace(i.dc_references,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "references",
-    NULLIF(regexp_replace(i.rights_holder,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "rightsHolder",
-    NULLIF(regexp_replace(i.source,            '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "source",
-    NULLIF(regexp_replace(i.title,             '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "title",
-    NULLIF(regexp_replace(i.type,              '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "type"
-FROM image i
-WHERE data_resource_uid = ?)
-UNION
-(SELECT
-    i.image_identifier as "imageID",
-    NULLIF(regexp_replace(UNNEST(i.alternate_filename), '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "identifier",
-    NULLIF(regexp_replace(i.audience,          '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "audience",
-    NULLIF(regexp_replace(i.contributor,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "contributor",
-    NULLIF(regexp_replace(i.created,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "created",
-    NULLIF(regexp_replace(i.creator,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "creator",
-    NULLIF(regexp_replace(i.description,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "description",
-    NULLIF(regexp_replace(i.mime_type,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "format",
-    NULLIF(regexp_replace(i.license,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "license",
-    NULLIF(regexp_replace(i.publisher,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "publisher",
-    NULLIF(regexp_replace(i.dc_references,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "references",
-    NULLIF(regexp_replace(i.rights_holder,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "rightsHolder",
-    NULLIF(regexp_replace(i.source,            '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "source",
-    NULLIF(regexp_replace(i.title,             '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "title",
-    NULLIF(regexp_replace(i.type,              '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "type"
-FROM image i
-WHERE data_resource_uid = ?)
+SELECT
+  i.image_identifier AS "imageID",
+  NULLIF(regexp_replace(unnest_url,          '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "identifier",
+  NULLIF(regexp_replace(i.audience,          '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "audience",
+  NULLIF(regexp_replace(i.contributor,       '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "contributor",
+  NULLIF(regexp_replace(i.created,           '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "created",
+  NULLIF(regexp_replace(i.creator,           '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "creator",
+  NULLIF(regexp_replace(i.description,       '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "description",
+  NULLIF(regexp_replace(i.mime_type,         '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "format",
+  NULLIF(regexp_replace(i.license,           '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "license",
+  NULLIF(regexp_replace(i.publisher,         '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "publisher",
+  NULLIF(regexp_replace(i.dc_references,     '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "references",
+  NULLIF(regexp_replace(i.rights_holder,     '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "rightsHolder",
+  NULLIF(regexp_replace(i.source,            '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "source",
+  NULLIF(regexp_replace(i.title,             '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "title",
+  NULLIF(regexp_replace(i.type,              '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "type"
+FROM (
+  SELECT
+    i.image_identifier,
+    i.audience,
+    i.contributor,
+    i.created,
+    i.creator,
+    i.description,
+    i.mime_type,
+    i.license,
+    i.publisher,
+    i.dc_references,
+    i.rights_holder,
+    i.source,
+    i.title,
+    i.type,
+    CASE
+      WHEN i.alternate_filename IS NOT NULL THEN
+        ARRAY_APPEND(i.alternate_filename, i.original_filename)
+      ELSE
+        ARRAY[i.original_filename]
+    END AS all_urls
+  FROM image i
+  WHERE i.data_resource_uid = ? AND i.date_deleted IS NULL
+) AS subquery,
+unnest(subquery.all_urls) AS unnest_url;
 '''
 
     final EXPORT_DATASET_MAPPING_SQL = '''
-(SELECT
-    image_identifier as "imageID",
-    original_filename as "url"
-    FROM image i
-    WHERE data_resource_uid = ?)
-UNION
-(SELECT
-    image_identifier as "imageID",
-    UNNEST(alternate_filename) as "url"
-    FROM image i
-    WHERE data_resource_uid = ?)
+SELECT
+  image_identifier AS "imageID",
+  unnest_url AS "url"
+FROM (
+  SELECT
+    image_identifier,
+    CASE
+      WHEN alternate_filename IS NOT NULL THEN
+        ARRAY_APPEND(alternate_filename, original_filename)
+      ELSE
+        ARRAY[original_filename]
+    END AS all_urls
+  FROM
+    image
+  WHERE
+    data_resource_uid = ? AND date_deleted IS NULL
+) AS subquery,
+unnest(all_urls) AS unnest_url;
     '''
 
     private static Queue<BackgroundTask> _backgroundQueue = new ConcurrentLinkedQueue<BackgroundTask>()
@@ -1739,19 +1751,19 @@ UNION
      * @return
      */
     def exportDatasetMappingCSV(String datasetID, OutputStream outputStream) {
-        eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_DATASET_MAPPING_SQL, [datasetID, datasetID], ',', '\\')
+        eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_DATASET_MAPPING_SQL, [datasetID], ',', '\\')
     }
 
     def exportDatasetMappingAvro(String datasetID, OutputStream outputStream) {
-        eachRowToAvro(outputStream, EXPORT_DATASET_MAPPING_SQL, [datasetID, datasetID])
+        eachRowToAvro(outputStream, EXPORT_DATASET_MAPPING_SQL, [datasetID])
     }
 
     def exportDatasetCSV(String datasetID, OutputStream outputStream) {
-        eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_DATASET_SQL, [datasetID, datasetID])
+        eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_DATASET_SQL, [datasetID])
     }
 
     def exportDatasetAvro(String datasetID, OutputStream outputStream) {
-        eachRowToAvro(outputStream, EXPORT_DATASET_SQL, [datasetID, datasetID])
+        eachRowToAvro(outputStream, EXPORT_DATASET_SQL, [datasetID])
     }
 
     /**
