@@ -102,21 +102,21 @@ class ImageService {
     // TODO use jooq to generate these
     final EXPORT_DATASET_SQL = '''
 SELECT
-  i.image_identifier AS "imageID",
-  NULLIF(regexp_replace(unnest_url,          '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "identifier",
-  NULLIF(regexp_replace(i.audience,          '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "audience",
-  NULLIF(regexp_replace(i.contributor,       '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "contributor",
-  NULLIF(regexp_replace(i.created,           '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "created",
-  NULLIF(regexp_replace(i.creator,           '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "creator",
-  NULLIF(regexp_replace(i.description,       '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "description",
-  NULLIF(regexp_replace(i.mime_type,         '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "format",
-  NULLIF(regexp_replace(i.license,           '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "license",
-  NULLIF(regexp_replace(i.publisher,         '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "publisher",
-  NULLIF(regexp_replace(i.dc_references,     '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "references",
-  NULLIF(regexp_replace(i.rights_holder,     '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "rightsHolder",
-  NULLIF(regexp_replace(i.source,            '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "source",
-  NULLIF(regexp_replace(i.title,             '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "title",
-  NULLIF(regexp_replace(i.type,              '[\\\\x00-\\\\x1F\\\\x7F-\\\\x9F]',  '', 'g'), '') AS "type"
+  image_identifier AS "imageID",
+  NULLIF(regexp_replace(unnest_url,        '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "identifier",
+  NULLIF(regexp_replace(audience,          '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "audience",
+  NULLIF(regexp_replace(contributor,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "contributor",
+  NULLIF(regexp_replace(created,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "created",
+  NULLIF(regexp_replace(creator,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "creator",
+  NULLIF(regexp_replace(description,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "description",
+  NULLIF(regexp_replace(mime_type,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "format",
+  NULLIF(regexp_replace(license,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "license",
+  NULLIF(regexp_replace(publisher,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "publisher",
+  NULLIF(regexp_replace(dc_references,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "references",
+  NULLIF(regexp_replace(rights_holder,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "rightsHolder",
+  NULLIF(regexp_replace(source,            '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "source",
+  NULLIF(regexp_replace(title,             '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "title",
+  NULLIF(regexp_replace(type,              '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "type"
 FROM (
   SELECT
     i.image_identifier,
