@@ -256,7 +256,11 @@ class ImageController {
             String requestType) {
         def imageIdentifier = imageInfo.imageIdentifier
         if (!imageIdentifier || !imageInfo.exists) {
-            sendMissingImage(requestType)
+            if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
+                sendMissingImage(requestType)
+            } else {
+                render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+            }
             return
         }
 
@@ -370,7 +374,11 @@ class ImageController {
             render(text: "Invalid range header", status: SC_REQUESTED_RANGE_NOT_SATISFIABLE, contentType: 'text/plain')
         } catch (FileNotFoundException e) {
             log.debug('Image not found in storage', e)
-            sendMissingImage(requestType)
+            if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
+                sendMissingImage(requestType)
+            } else {
+                render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+            }
         } catch (ClientAbortException e) {
             // User hung up, just ignore this exception since we can't recover into a nice error response.
         } catch (Exception e) {
@@ -386,8 +394,11 @@ class ImageController {
         }
     }
 
+    /**
+     * Serve a placeholder image with a 404 status code.
+     * @param requestType The type of request, one of 'tile', 'original', 'thumbnail-large', 'thumbnail-square', 'thumbnail'
+     */
     private void sendMissingImage(String requestType) {
-// Serve a placeholder image from classpath instead of 404
         Resource ph
         switch (requestType) {
             case 'tile':
@@ -397,7 +408,6 @@ class ImageController {
                 ph = missingOriginal
                 break
             case 'thumbnail-large':
-            case 'large':
                 ph = missingImageThumbnailLarge
                 break
             case 'thumbnail-square':
@@ -405,28 +415,18 @@ class ImageController {
             case 'thumbnail-square_black':
             case 'thumbnail-square_darkGrey':
             case 'thumbnail-square_darkGray':
-            case 'square':
-            case 'square_white':
-            case 'square_black':
-            case 'square_darkGrey':
-            case 'square_darkGray':
                 ph = missingImageThumbnailSquare
                 break
             case 'thumbnail':
+            default:
                 ph = missingImageThumbnail
                 break
         }
-//            Resource ph = requestType == 'tile' ? missingTile : (requestType == 'original' ? missingOriginal : missingThumbnail)
         try {
             def len = ph.contentLength()
-//                def lastMod = new Date(ph.lastModified())
-//                if (cacheHeaders) {
-//                    cache()
-//                }
             response.status = SC_NOT_FOUND
             response.contentType = 'image/png'
             response.contentLengthLong = len
-//                response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
             if (request.method != 'HEAD') {
                 ph.inputStream.withStream { stream ->
                     IOUtils.copy(stream, response.outputStream)
