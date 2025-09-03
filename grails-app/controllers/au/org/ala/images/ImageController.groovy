@@ -65,6 +65,21 @@ class ImageController {
     @Value('${placeholder.missing.thumbnail}')
     Resource missingThumbnail
 
+    @Value('${placeholder.image.original}')
+    Resource missingOriginal
+
+    @Value('${placeholder.image.thumbnail}')
+    Resource missingImageThumbnail
+
+    @Value('classpath:images/images-placeholder-650x499.png')
+    Resource missingImageThumbnailLarge
+
+    @Value('classpath:images/images-placeholder-300x300.png')
+    Resource missingImageThumbnailSquare
+
+    @Value('classpath:images/images-placeholder-300x300.png')
+    Resource missingTile
+
     @Value('${analytics.trackThumbnails:false}')
     boolean trackThumbnails = false
 
@@ -234,21 +249,6 @@ class ImageController {
                 'tile'
         )
     }
-
-    @Value('classpath:images/no-image-fullsize.png')
-    Resource missingOriginal
-
-    @Value('classpath:images/images-placeholder-650x499.png')
-    Resource missingImageThumbnailLarge
-
-    @Value('classpath:images/images-placeholder-300x230.png')
-    Resource missingImageThumbnail
-
-    @Value('classpath:images/images-placeholder-300x300.png')
-    Resource missingImageThumbnailSquare
-
-    @Value('classpath:images/images-placeholder-300x300.png')
-    Resource missingTile
 
     private void serveImage(
             ImageInfo imageInfo,

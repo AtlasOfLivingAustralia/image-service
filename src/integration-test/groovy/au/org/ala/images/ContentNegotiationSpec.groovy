@@ -144,16 +144,15 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
      * Testing equivalent of
      * curl -X GET "https://images.ala.org.au/image/1a6dc180-96b1-45df-87da-7d0912dddd4f" -H "Accept: image/jpeg"
      */
-    void "Test accept: image/jpeg when image not found returns placeholder"() {
+    void "Test accept: image/jpeg when image not found"() {
         when:
         def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/ABC")
                 .accept("image/jpeg")
-        def resp = rest.exchange(request, byte[])
-        def imageInBytes = resp.body()
+        rest.exchange(request, byte[])
 
         then:
-        resp.status == HttpStatus.OK
-        imageInBytes != null
-        imageInBytes.length > 0
+        def e = thrown(HttpClientResponseException)
+        def resp = e.response
+        resp.status == HttpStatus.NOT_FOUND
     }
 }
