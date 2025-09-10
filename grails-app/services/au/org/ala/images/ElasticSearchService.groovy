@@ -7,7 +7,6 @@ import co.elastic.clients.elasticsearch._types.SortOptionsBuilders
 import co.elastic.clients.elasticsearch._types.SortOrder
 import co.elastic.clients.elasticsearch._types.Time
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregate
-import co.elastic.clients.elasticsearch._types.aggregations.AggregationBuilders
 import co.elastic.clients.elasticsearch._types.aggregations.Buckets
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders
@@ -16,15 +15,11 @@ import co.elastic.clients.elasticsearch.core.DeleteRequest
 import co.elastic.clients.elasticsearch.core.IndexRequest
 import co.elastic.clients.elasticsearch.core.IndexResponse
 import co.elastic.clients.elasticsearch.core.ScrollRequest
-import co.elastic.clients.elasticsearch.core.ScrollResponse
 import co.elastic.clients.elasticsearch.core.SearchRequest
 import co.elastic.clients.elasticsearch.core.SearchResponse
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperationBuilders
-import co.elastic.clients.elasticsearch.core.search.ResponseBody
 import co.elastic.clients.elasticsearch.indices.CreateIndexRequest
 import co.elastic.clients.elasticsearch.indices.CreateIndexResponse
-import co.elastic.clients.elasticsearch.indices.DeleteIndexRequest
-import co.elastic.clients.elasticsearch.indices.GetIndexRequest
 import co.elastic.clients.elasticsearch.indices.GetMappingRequest
 import co.elastic.clients.elasticsearch.indices.GetMappingResponse
 import co.elastic.clients.elasticsearch.indices.PutMappingRequest
@@ -32,14 +27,11 @@ import co.elastic.clients.json.jackson.JacksonJsonpMapper
 import co.elastic.clients.transport.ElasticsearchTransport
 import co.elastic.clients.transport.rest_client.RestClientTransport
 import com.opencsv.CSVWriter
-import grails.converters.JSON
 import grails.core.GrailsApplication
-import org.apache.http.HttpHeaders
 import org.apache.http.HttpResponseInterceptor
 import org.apache.http.auth.AuthScope
 import org.apache.http.auth.UsernamePasswordCredentials
 import org.apache.http.client.CredentialsProvider
-import org.apache.http.entity.ContentType
 import org.apache.http.impl.client.BasicCredentialsProvider
 import groovy.json.JsonOutput
 import grails.web.servlet.mvc.GrailsParameterMap
@@ -504,7 +496,7 @@ class ElasticSearchService {
     SearchRequest.Builder buildSearchRequest(Map params, List<SearchCriteria> criteriaList, String index) {
 
         def request = new SearchRequest.Builder()
-        buildSearchRequest(request, index, params, criteriaList)
+        populateCommonSearchRequest(request, index, params, criteriaList)
 
         // request aggregations (facets)
         grailsApplication.config.getProperty('facets', List).each { facet ->
@@ -534,7 +526,7 @@ class ElasticSearchService {
     SearchRequest buildFacetRequest(Map params, List<SearchCriteria> criteriaList, String facet, String index) {
 
         SearchRequest.Builder request = new SearchRequest.Builder()
-        buildSearchRequest(request, index, params, criteriaList)
+        populateCommonSearchRequest(request, index, params, criteriaList)
 
         // request aggregations (facets)
         final maxFacetSize = grailsApplication.config.getProperty('elasticsearch.maxFacetSize', Integer)
@@ -546,7 +538,7 @@ class ElasticSearchService {
         request
     }
 
-    private void buildSearchRequest(SearchRequest.Builder request, String index, Map params, List<SearchCriteria> criteriaList) {
+    private void populateCommonSearchRequest(SearchRequest.Builder request, String index, Map params, List<SearchCriteria> criteriaList) {
         request.searchType(SearchType.DfsQueryThenFetch)
 
         // set indices and types
