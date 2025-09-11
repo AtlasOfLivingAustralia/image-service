@@ -530,7 +530,7 @@ class ElasticSearchService {
 
         // request aggregations (facets)
         final maxFacetSize = grailsApplication.config.getProperty('elasticsearch.maxFacetSize', Integer)
-        request.aggregations(facet as String, b -> b.terms(b2 -> b2.field(facet as String).size(maxFacetSize).order(BucketOrder.key(true))))
+        request.aggregations(facet as String, b -> b.terms(b2 -> b2.field(facet as String).size(maxFacetSize).order(NamedValue.of("_key", SortOrder.Asc))))
 
         //ask for the total
         request.trackTotalHits(builder -> builder.enabled(false))
