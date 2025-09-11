@@ -7,7 +7,6 @@ import co.elastic.clients.elasticsearch._types.SortOptionsBuilders
 import co.elastic.clients.elasticsearch._types.SortOrder
 import co.elastic.clients.elasticsearch._types.Time
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregate
-import co.elastic.clients.elasticsearch._types.aggregations.AggregationBuilders
 import co.elastic.clients.elasticsearch._types.aggregations.Buckets
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders
@@ -16,15 +15,11 @@ import co.elastic.clients.elasticsearch.core.DeleteRequest
 import co.elastic.clients.elasticsearch.core.IndexRequest
 import co.elastic.clients.elasticsearch.core.IndexResponse
 import co.elastic.clients.elasticsearch.core.ScrollRequest
-import co.elastic.clients.elasticsearch.core.ScrollResponse
 import co.elastic.clients.elasticsearch.core.SearchRequest
 import co.elastic.clients.elasticsearch.core.SearchResponse
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperationBuilders
-import co.elastic.clients.elasticsearch.core.search.ResponseBody
 import co.elastic.clients.elasticsearch.indices.CreateIndexRequest
 import co.elastic.clients.elasticsearch.indices.CreateIndexResponse
-import co.elastic.clients.elasticsearch.indices.DeleteIndexRequest
-import co.elastic.clients.elasticsearch.indices.GetIndexRequest
 import co.elastic.clients.elasticsearch.indices.GetMappingRequest
 import co.elastic.clients.elasticsearch.indices.GetMappingResponse
 import co.elastic.clients.elasticsearch.indices.PutMappingRequest
@@ -32,14 +27,11 @@ import co.elastic.clients.json.jackson.JacksonJsonpMapper
 import co.elastic.clients.transport.ElasticsearchTransport
 import co.elastic.clients.transport.rest_client.RestClientTransport
 import com.opencsv.CSVWriter
-import grails.converters.JSON
 import grails.core.GrailsApplication
-import org.apache.http.HttpHeaders
 import org.apache.http.HttpResponseInterceptor
 import org.apache.http.auth.AuthScope
 import org.apache.http.auth.UsernamePasswordCredentials
 import org.apache.http.client.CredentialsProvider
-import org.apache.http.entity.ContentType
 import org.apache.http.impl.client.BasicCredentialsProvider
 import groovy.json.JsonOutput
 import grails.web.servlet.mvc.GrailsParameterMap
@@ -504,50 +496,7 @@ class ElasticSearchService {
     SearchRequest.Builder buildSearchRequest(Map params, List<SearchCriteria> criteriaList, String index) {
 
         def request = new SearchRequest.Builder()
-        request.searchType(SearchType.DfsQueryThenFetch)
-
-        // set indices and types
-        request.index(index)
-        // TODO types was deprecated in the High Level REST Client and removed in the Java Client
-        // Suggested alternative is to use filters in the query
-//        def types = []
-//        if (params.types && params.types instanceof Collection<String>) {
-//            types = params.types
-//        }
-//        request.types(types as String[])
-
-        //create query builder
-        def boolQueryBuilder = QueryBuilders.bool()
-        boolQueryBuilder.must(b -> b.queryString(b2 -> b2.query(params.q ?: "*:*")))
-
-        // Add FQ query filters
-        def filterQueries = params.findAll { it.key == 'fq'}
-        if (filterQueries) {
-            filterQueries.each {
-
-                if(it.value instanceof String[]){
-                    it.value.each { filter ->
-                        if(filter) {
-                            def kv = filter.split(":")
-                            boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
-                        }
-                    }
-                } else {
-                    if(it.value) {
-                        def kv = it.value.split(":")
-                        boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
-                    }
-                }
-            }
-        }
-
-        //add search criteria
-        boolQueryBuilder = createQueryFromCriteria(boolQueryBuilder, criteriaList)
-
-
-        // set pagination stuff
-        pagenateQuery(request, params)
-        request.query(b -> b.bool(boolQueryBuilder.build()))
+        populateCommonSearchRequest(request, index, params, criteriaList)
 
         // request aggregations (facets)
         grailsApplication.config.getProperty('facets', List).each { facet ->
@@ -577,10 +526,23 @@ class ElasticSearchService {
     SearchRequest buildFacetRequest(Map params, List<SearchCriteria> criteriaList, String facet, String index) {
 
         SearchRequest.Builder request = new SearchRequest.Builder()
+        populateCommonSearchRequest(request, index, params, criteriaList)
+
+        // request aggregations (facets)
+        final maxFacetSize = grailsApplication.config.getProperty('elasticsearch.maxFacetSize', Integer)
+        request.aggregations(facet as String, b -> b.terms(b2 -> b2.field(facet as String).size(maxFacetSize).order(BucketOrder.key(true))))
+
+        //ask for the total
+        request.trackTotalHits(builder -> builder.enabled(false))
+
+        request
+    }
+
+    private void populateCommonSearchRequest(SearchRequest.Builder request, String index, Map params, List<SearchCriteria> criteriaList) {
         request.searchType(SearchType.DfsQueryThenFetch)
 
         // set indices and types
-        request.indices(index)
+        request.index(index)
         // TODO types was deprecated in the High Level REST Client and removed in the Java Client
         // Suggested alternative is to use filters in the query
 //        def types = []
@@ -594,19 +556,19 @@ class ElasticSearchService {
         boolQueryBuilder.must(b -> b.queryString(b2 -> b2.query(params.q ?: "*:*")))
 
         // Add FQ query filters
-        def filterQueries = params.findAll { it.key == 'fq'}
+        def filterQueries = params.findAll { it.key == 'fq' }
         if (filterQueries) {
             filterQueries.each {
 
-                if(it.value instanceof String[]){
+                if (it.value instanceof String[]) {
                     it.value.each { filter ->
-                        if(filter) {
+                        if (filter) {
                             def kv = filter.split(":")
                             boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
                         }
                     }
                 } else {
-                    if(it.value) {
+                    if (it.value) {
                         def kv = it.value.split(":")
                         boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
                     }
@@ -620,15 +582,6 @@ class ElasticSearchService {
         // set pagination stuff
         pagenateQuery(request, params)
         request.query(b -> b.bool(boolQueryBuilder.build()))
-
-        // request aggregations (facets)
-        final maxFacetSize = grailsApplication.config.getProperty('elasticsearch.maxFacetSize', Integer)
-        request.aggregations(facet as String, b -> b.terms(b2 -> b2.field(facet as String).size(maxFacetSize).order(BucketOrder.key(true))))
-
-        //ask for the total
-        request.trackTotalHits(builder -> builder.enabled(false))
-
-        request
     }
 
     private void pagenateQuery(SearchRequest.Builder request, Map params) {
