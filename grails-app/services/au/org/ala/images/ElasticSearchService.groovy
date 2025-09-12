@@ -26,6 +26,7 @@ import co.elastic.clients.elasticsearch.indices.PutMappingRequest
 import co.elastic.clients.json.jackson.JacksonJsonpMapper
 import co.elastic.clients.transport.ElasticsearchTransport
 import co.elastic.clients.transport.rest_client.RestClientTransport
+import co.elastic.clients.util.NamedValue
 import com.opencsv.CSVWriter
 import grails.core.GrailsApplication
 import org.apache.http.HttpResponseInterceptor
