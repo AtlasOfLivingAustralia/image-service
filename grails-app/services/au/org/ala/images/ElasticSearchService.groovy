@@ -524,7 +524,7 @@ class ElasticSearchService {
      * @param geoSearchCriteria geo search criteria.
      * @return SearchRequest
      */
-    SearchRequest buildFacetRequest(Map params, List<SearchCriteria> criteriaList, String facet, String index) {
+    SearchRequest.Builder buildFacetRequest(Map params, List<SearchCriteria> criteriaList, String facet, String index) {
 
         SearchRequest.Builder request = new SearchRequest.Builder()
         populateCommonSearchRequest(request, index, params, criteriaList)
