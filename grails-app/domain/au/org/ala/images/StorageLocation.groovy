@@ -19,6 +19,7 @@ abstract class StorageLocation implements StorageOperations {
     static mapping = {
         id generator: 'identity'
         cache true
+        images lazy: true
     }
 
     abstract StorageOperations asStandaloneStorageOperations()

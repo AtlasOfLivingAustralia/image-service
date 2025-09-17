@@ -16,4 +16,9 @@ class DeletedImagesPurgeBackgroundTask extends BackgroundTask {
     void execute() {
         imageService.purgeAllDeletedImages()
     }
+
+    @Override
+    boolean isRequiresSession() {
+        return true
+    }
 }

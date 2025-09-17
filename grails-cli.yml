@@ -1,5 +1,5 @@
 applicationType: web
-defaultPackage: testapp610
+defaultPackage: au.org.ala.images
 testFramework: spock
 sourceLanguage: groovy
 buildTool: gradle

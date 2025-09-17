@@ -37,7 +37,7 @@ interface StorageOperations {
      * @param contentDisposition The content disposition if any
      */
     default void store(String uuid, byte[] bytes, String contentType = 'image/jpeg', String contentDisposition = null) {
-        store(uuid, new ByteArrayInputStream(bytes), contentType, contentDisposition, bytes.length)
+        store(uuid, new ByteArrayInputStream(bytes), contentType, contentDisposition, Long.valueOf(bytes.length))
     }
 
     /**
@@ -165,5 +165,7 @@ interface StorageOperations {
     abstract ImageInfo thumbnailImageInfo(String uuid, String type)
 
     abstract ImageInfo tileImageInfo(String uuid, int x, int y, int z)
+
+    abstract void clearTilesForImage(String uuid)
 
 }

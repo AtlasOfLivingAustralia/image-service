@@ -21,7 +21,7 @@ class IndexImageBackgroundTask extends BackgroundTask {
     void execute() {
         def imageInstance
         Image.withTransaction {
-            imageInstance = Image.get(_imageId)
+            imageInstance = Image.findById(_imageId, [fetch: [recognisedLicense: 'eager']])
         }
         if (imageInstance) {
             _elasticSearchService.indexImage(imageInstance)
@@ -56,7 +56,7 @@ class ScheduleReindexAllImagesTask extends BackgroundTask {
             def file = _imageService.exportIndexToFile()
             log.info("CSV export complete. Deleting existing index")
             // where we interrupted during CSV export?
-            if (Thread.currentThread().isInterrupted(true)) {
+            if (Thread.currentThread().isInterrupted()) {
                 log.info("Interrupted during index CSV export, not continuing")
                 return
             }

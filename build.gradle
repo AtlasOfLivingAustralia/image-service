@@ -123,12 +123,9 @@ dependencies {
     implementation 'org.javaswift:joss:0.10.4'
     runtimeOnly 'org.postgresql:postgresql:42.7.4'
 
-    implementation 'org.elasticsearch:elasticsearch:7.17.1'
-    implementation 'org.elasticsearch.client:elasticsearch-rest-high-level-client:7.17.1'
-    // override log4j in elasticsearch plugin
-    // TODO remove this once no log4j vulnerable transitive deps are used.
-//    runtimeOnly group: 'org.apache.logging.log4j', name: 'log4j-api', version: '2.17.1'
-//    runtimeOnly group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.17.1'
+    implementation 'co.elastic.clients:elasticsearch-java:7.17.29'
+    implementation 'org.elasticsearch.client:elasticsearch-rest-client:7.17.29'
+    implementation 'jakarta.json:jakarta.json-api:2.1.3'
 
     implementation 'org.imgscalr:imgscalr-lib:4.2'
     implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
@@ -239,7 +236,7 @@ tasks.withType(War).configureEach { War war ->
 webdriverBinaries {
     chromedriver '110.0.5481.77'
     geckodriver '0.32.2'
-    edgedriver '110.0.1587.57'
+//    edgedriver '110.0.1587.57'
 }
 assets {
     minifyJs = true

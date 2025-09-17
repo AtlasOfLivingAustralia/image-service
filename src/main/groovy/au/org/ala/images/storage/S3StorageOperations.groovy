@@ -25,8 +25,11 @@ import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest
 import com.amazonaws.services.s3.model.GetObjectRequest
 import com.amazonaws.services.s3.model.ObjectListing
 import com.amazonaws.services.s3.model.ObjectMetadata
+import com.amazonaws.services.s3.model.ObjectTagging
 import com.amazonaws.services.s3.model.PutObjectRequest
+import com.amazonaws.services.s3.model.S3ObjectInputStream
 import com.amazonaws.services.s3.model.S3ObjectSummary
+import com.amazonaws.services.s3.model.Tag
 import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
 import groovy.util.logging.Slf4j
@@ -46,6 +49,7 @@ class S3StorageOperations implements StorageOperations {
     boolean containerCredentials
     boolean publicRead
     boolean redirect
+    String cloudfrontDomain
 
     boolean pathStyleAccess
     String hostname = ''
@@ -134,7 +138,10 @@ class S3StorageOperations implements StorageOperations {
 //        def permission = s3Client.getObjectAcl(bucket, path).grantsAsList.find { grant ->
 //            grant.grantee == GroupGrantee.AllUsers && [Permission.Read, Permission.Write, Permission.FullControl].contains(grant.permission)
 //        }
-        if (publicRead) {
+        if (cloudfrontDomain) {
+            // If a CloudFront domain is set, use that for redirects
+            new URI("https://${cloudfrontDomain}/${path}")
+        } else if (publicRead) {
             s3Client.getUrl(bucket, path).toURI()
         } else {
             // Set the presigned URL to expire after one hour.
@@ -212,7 +219,7 @@ class S3StorageOperations implements StorageOperations {
     @Override
     void store(String uuid, InputStream stream, String contentType = 'image/jpeg', String contentDisposition = null, Long length = null) {
         String path = createOriginalPathFromUUID(uuid)
-        storeInternal(stream, path, contentType, contentDisposition, length)
+        storeInternal(stream, path, contentType, contentDisposition, length, [imageType: 'original'])
     }
 
     @Override
@@ -222,7 +229,8 @@ class S3StorageOperations implements StorageOperations {
             def bytes
             try {
                 def s3object = s3Client.getObject(new GetObjectRequest(bucket, imagePath))
-                bytes = s3object.objectContent.withStream { it.bytes }
+                def inputStream = s3object.objectContent
+                bytes = inputStream.withStream { it.bytes }
             } catch (AmazonS3Exception e) {
                 if (e.statusCode == 404) {
                     throw new FileNotFoundException("S3 path $imagePath")
@@ -243,13 +251,45 @@ class S3StorageOperations implements StorageOperations {
         }
         try {
             def s3Object = s3Client.getObject(request)
-            return s3Object.objectContent
+            return new AbortingS3ObjectInputStream(s3Object.objectContent)
         } catch (AmazonS3Exception e) {
             if (e.statusCode == 404) {
                 throw new FileNotFoundException("S3 path $path")
             } else {
                 throw e
             }
+        }
+    }
+
+    /**
+     * Wrap an S3ObjectInputStream to abort the S3Object when the stream is closed.
+     *
+     * The S3ObjectInputStream will complain at the WARN level when a stream is
+     * closed that hasn't been fully read. As we will occasionally open a stream
+     * just to read the header data for an image but want to deal in generic
+     * InputStreams that don't support the AWS SDK specific abort() operation,
+     * this class will always abort the stream on close to avoid the warning.
+     *
+     * TODO Find a way of requesting only the required image header byte range
+     */
+    @Slf4j
+    static private class AbortingS3ObjectInputStream extends FilterInputStream {
+
+        private S3ObjectInputStream inputStream
+
+        AbortingS3ObjectInputStream(S3ObjectInputStream inputStream) {
+            super(inputStream)
+            this.inputStream = inputStream
+        }
+
+        @Override
+        void close() throws IOException {
+            def available = inputStream.delegateStream.available()
+            if (available > 0) {
+                log.debug('Closing S3ObjectInputStream with {} bytes available', available)
+                inputStream.abort()
+            }
+            super.close()
         }
     }
 
@@ -336,29 +376,34 @@ class S3StorageOperations implements StorageOperations {
 
     @Override
     ByteSinkFactory thumbnailByteSinkFactory(String uuid) {
-        byteSinkFactory(uuid)
+        byteSinkFactory(uuid, [imageType: 'thumbnail'])
     }
 
     @Override
     ByteSinkFactory tilerByteSinkFactory(String uuid) {
-        byteSinkFactory(uuid, 'tms')
+        byteSinkFactory(uuid, [imageType: 'tile'], 'tms')
     }
 
-    ByteSinkFactory byteSinkFactory(String uuid, String... prefixes) {
-        return new S3ByteSinkFactory(s3Client, storagePathStrategy(), bucket, uuid, prefixes)
+    ByteSinkFactory byteSinkFactory(String uuid, Map<String, String> tags, String... prefixes) {
+        return new S3ByteSinkFactory(s3Client, storagePathStrategy(), bucket, uuid, tags, prefixes)
     }
 
     @Override
     void storeAnywhere(String uuid, InputStream stream, String relativePath, String contentType = 'image/jpeg', String contentDisposition = null, Long length = null) {
         def path = storagePathStrategy().createPathFromUUID(uuid, relativePath)
-        storeInternal(stream, path, contentType, contentDisposition, length)
+        storeInternal(stream, path, contentType, contentDisposition, length, [:])
     }
 
-    private storeInternal(InputStream stream, String absolutePath, String contentType, String contentDisposition, Long length) {
+    private storeInternal(InputStream stream, String absolutePath, String contentType, String contentDisposition, Long length, Map<String, String> tags) {
         def client = s3Client
         try {
             def result = stream.withStream {
-                client.putObject(bucket, absolutePath, stream, generateMetadata(contentType, contentDisposition, length))
+                PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, absolutePath, it, generateMetadata(contentType, contentDisposition, length))
+                if (tags) {
+                    def tagSet = tags.collect { new Tag(it.key, it.value) }
+                    putObjectRequest.setTagging(new ObjectTagging(tagSet))
+                }
+                client.putObject(putObjectRequest)
             }
             log.debug("Uploaded {} to S3 {}:{}} with result etag {}}", absolutePath, region, bucket, result.ETag)
         } catch (AmazonS3Exception exception) {
@@ -431,6 +476,13 @@ class S3StorageOperations implements StorageOperations {
             } else {
                 throw e
             }
+        }
+    }
+
+    void clearTilesForImage(String uuid) {
+        def basePath = createTilesPathFromUUID(uuid)
+        walkPrefix(basePath) { S3ObjectSummary s3ObjectSummary ->
+            s3Client.deleteObject(bucket, s3ObjectSummary.key)
         }
     }
 

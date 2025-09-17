@@ -1,18 +1,17 @@
 package au.org.ala.images
 
-import org.elasticsearch.index.query.BoolQueryBuilder
-import org.elasticsearch.index.query.QueryBuilder
-import org.elasticsearch.index.query.QueryBuilders
-
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery
+import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders
+import co.elastic.clients.elasticsearch._types.query_dsl.QueryVariant
 import java.text.SimpleDateFormat
 import java.util.regex.Pattern
 
 class ESSearchCriteriaUtils {
 
-    static void buildCriteria(BoolQueryBuilder boolQueryBuilder, List<SearchCriteria> criteriaList) {
+    static void buildCriteria(BoolQuery.Builder boolQueryBuilder, List<SearchCriteria> criteriaList) {
         criteriaList.each {
             def translator = factory(it)
-            boolQueryBuilder.must(translator.createQueryBuilder(it))
+            boolQueryBuilder.must(translator.createQueryBuilder(it)._toQuery())
         }
     }
 
@@ -86,7 +85,7 @@ class ESSearchCriteriaUtils {
         }
 
         @Override
-        QueryBuilder createQueryBuilder(SearchCriteria criteria) {
+        QueryVariant createQueryBuilder(SearchCriteria criteria) {
 
             def escape = { String term ->
                 return term.replaceAll("/", "\\\\/").replaceAll(":", "\\\\:")
@@ -94,13 +93,14 @@ class ESSearchCriteriaUtils {
             def field = criteria.criteriaDefinition.fieldName
 
             if (values.size() == 1) {
-                return QueryBuilders.queryStringQuery("${field}:${escape(values[0])}")
+                return QueryBuilders.queryString().query("${field}:${escape(values[0])}").build()
             } else {
-                def fb = QueryBuilders.boolQuery()
-                values.each {
-                    fb.filter(QueryBuilders.queryStringQuery("${field}:${escape(it)}"))
-                }
-                fb
+                def fb = QueryBuilders.bool().filter(
+                        values.collect {
+                            QueryBuilders.queryString().query("${field}:${escape(it)}").build()
+                        }
+                )
+                return fb.build()
             }
         }
 
@@ -136,17 +136,29 @@ class ESSearchCriteriaUtils {
         }
 
         @Override
-        QueryBuilder createQueryBuilder(SearchCriteria criteria) {
+        QueryVariant createQueryBuilder(SearchCriteria criteria) {
             def field = criteria.criteriaDefinition.fieldName
             switch (operator) {
                 case "eq":
-                    return QueryBuilders.queryFilter(QueryBuilders.queryString("${field}:value1"))
+                    return QueryBuilders.bool().filter(QueryBuilders.queryString().query("${field}:${value1}").build()).build()
+//                    return QueryBuilders.queryFilter(QueryBuilders.queryString("${field}:value1"))
                 case "lt":
-                    return QueryBuilders.rangeFilter(field).lte(value1)
+                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).lte(JsonData.of(value1)).build()).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().number(new NumberRangeQuery.Builder().field(field).lte(value1).build()).build()
+//                    return QueryBuilders.rangeFilter(field).lte(value1)
                 case "gt":
-                    return QueryBuilders.rangeFilter(field).gte(value1)
+                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).gte(JsonData.of(value1)).build()).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().number(new NumberRangeQuery.Builder().field(field).gte(value1).build()).build()
+//                    return QueryBuilders.rangeFilter(field).gte(value1)
                 case "bt":
-                    return QueryBuilders.rangeFilter(field).gte(value1).lte(value2)
+                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).gte(JsonData.of(value1)).lte(JsonData.of(value2)).build()).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().number(new NumberRangeQuery.Builder().field(field).gte(value1).lte(value2).build()).build()
+//                    return QueryBuilders.rangeFilter(field).gte(value1).lte(value2)
+                default:
+                    throw new RuntimeException("Unrecognized number range criteria operator: " + operator)
             }
         }
 
@@ -246,17 +258,25 @@ class ESSearchCriteriaUtils {
         }
 
         @Override
-        QueryBuilder createQueryBuilder(SearchCriteria criteria) {
+        QueryVariant createQueryBuilder(SearchCriteria criteria) {
             def field = criteria.criteriaDefinition.fieldName
             switch (operator) {
                 case "eq":
-                    return QueryBuilders.queryStringQuery("${field}:${value1}")
+                    return QueryBuilders.queryString().query("${field}:${value1}").build()
                 case "lt":
-                    return QueryBuilders.rangeQuery(field).lte(value1)
+                    return QueryBuilders.range().field(field).lte(JsonData.of(value1)).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().number(RangeQueryBuilders.number().field(field).lte(value1).build()).build()
                 case "gt":
-                    return QueryBuilders.rangeQuery(field).gte(value1)
+                    return QueryBuilders.range().field(field).gte(JsonData.of(value1)).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().number(RangeQueryBuilders.number().field(field).gte(value1).build()).build()
                 case "bt":
-                    return QueryBuilders.rangeQuery(field).gte(value1).lte(value2)
+                    return QueryBuilders.range().field(field).gte(JsonData.of(value1)).lte(JsonData.of(value2)).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().number(RangeQueryBuilders.number().field(field).gte(value1).lte(value2).build()).build()
+                default:
+                    throw new RuntimeException("Unrecognized number range criteria operator: " + operator)
             }
         }
     }
@@ -310,15 +330,26 @@ class ESSearchCriteriaUtils {
         }
 
         @Override
-        QueryBuilder createQueryBuilder(SearchCriteria criteria) {
+        QueryVariant createQueryBuilder(SearchCriteria criteria) {
             def field = criteria.criteriaDefinition.fieldName
             switch (operator) {
                 case "lt":
-                    return QueryBuilders.rangeFilter(field).lte(startDate)
+                    return QueryBuilders.range().field(field).lte(JsonData.of(startDate)).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().date(RangeQueryBuilders.date().field(field).lte(startDate).build()).build()
+//                    return QueryBuilders.rangeFilter(field).lte(startDate)
                 case "gt":
-                    return QueryBuilders.rangeFilter(field).gte(startDate)
+                    return QueryBuilders.range().field(field).gte(JsonData.of(startDate)).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().date(RangeQueryBuilders.date().field(field).gte(startDate).build()).build()
+//                    return QueryBuilders.rangeFilter(field).gte(startDate)
                 case "bt":
-                    return QueryBuilders.rangeFilter(field).gte(startDate).lte(endDate)
+                    return QueryBuilders.range().field(field).gte(JsonData.of(startDate)).lte(JsonData.of(endDate)).build()
+                    // TODO ES 8.0+ uses a different range query builder
+//                    return QueryBuilders.range().date(RangeQueryBuilders.date().field(field).gte(startDate).lte(endDate).build()).build()
+//                    return QueryBuilders.rangeFilter(field).gte(startDate).lte(endDate)
+                default:
+                    throw new RuntimeException("Unrecognized date range criteria operator: " + operator)
             }
         }
 
@@ -326,7 +357,7 @@ class ESSearchCriteriaUtils {
 
     interface ESCriteriaTranslator {
         String displayString(Closure<String> valueFormatter)
-        QueryBuilder createQueryBuilder(SearchCriteria criteria)
+        QueryVariant createQueryBuilder(SearchCriteria criteria)
     }
 
 }

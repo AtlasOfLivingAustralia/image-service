@@ -131,6 +131,35 @@ class ImageStoreService {
     def clearTileLookupCache() {
         tileCache.invalidateAll()
     }
+    
+    @NotTransactional
+    def clearTileLookupCacheForImage(String imageIdentifier) {
+        // Find all cache entries for this image identifier and invalidate them
+        tileCache.asMap().keySet().findAll { it.left == imageIdentifier }.each { key ->
+            tileCache.invalidate(key)
+        }
+    }
+
+    @NotTransactional
+    def clearTilesForImage(String imageIdentifier) {
+
+        StorageOperations operations
+
+        Image.withTransaction {
+            def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true ])
+            if (image) {
+                operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
+                image.save()
+            } else {
+                log.warn("No image found with identifier ${imageIdentifier} to clear tiles for")
+            }
+        }
+        if (operations) {
+            operations.clearTilesForImage(imageIdentifier)
+        }
+        clearTileLookupCacheForImage(imageIdentifier)
+        auditService.log(imageIdentifier, "Tiles cleared", "N/A")
+    }
 
     @NotTransactional
     ImageDescriptor storeImage(ByteSource imageBytes, StorageOperations operations, String contentType, String originalFilename, String contentDisposition = null) {
@@ -139,7 +168,7 @@ class ImageStoreService {
             log.trace('Storing image {} with content type {}, original filename {}, content disposition {} to {}', uuid, contentType, originalFilename, contentDisposition, operations)
         }
         def imgDesc = new ImageDescriptor(imageIdentifier: uuid)
-        operations.store(uuid, imageBytes.openStream(), contentType, contentDisposition)
+        operations.store(uuid, imageBytes.openStream(), contentType, contentDisposition, imageBytes.sizeIfKnown().orNull())
         def filename = ImageUtils.getFilename(originalFilename)
         if (contentType?.toLowerCase()?.startsWith('image')) {
             if (log.isTraceEnabled()) {
@@ -536,7 +565,7 @@ class ImageStoreService {
                 log.error("Error generating thumbnail for image ${imageIdentifier} of type ${typeArg}", e)
                 return null // don't cache this error
             }
-        }) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier)
+        }) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
     }
 
     @Immutable
@@ -549,7 +578,7 @@ class ImageStoreService {
     private ImageInfo ensureTileExists(String identifier, String dataResourceUid, int zoomLevels, StorageOperations operations, int x, int y, int z) {
         if (zoomLevels > 0 && z > zoomLevels) {
             // requested zoom level is beyond the zoom levels of the image so the tile will never exist
-            return new ImageInfo(exists: false, imageIdentifier: identifier)
+            return new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png')
         }
 
         // First check the origin tile for the zoom level, if it doesn't exist then we can generate
@@ -572,7 +601,7 @@ class ImageStoreService {
                 log.error("Error generating tiles for image ${imageIdentifier} with zoom level ${z}", e)
                 return null // don't cache this error
             }
-        }) ?: new ImageInfo(exists: false, imageIdentifier: identifier)
+        }) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
 
         // then if the origin was requested, return the origin info
         // or if the origin doesn't exist then any tile for the given zoom level won't exist either
@@ -592,7 +621,7 @@ class ImageStoreService {
                     log.error("Error getting tile info for image ${imageIdentifier} with co-ordinates x:${point.x}, y:${point.y}, z:${point.z}", e)
                     return null // don't cache this error
                 }
-            }) ?: new ImageInfo(exists: false, imageIdentifier: identifier)
+            }) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
             tileInfo.dataResourceUid = dataResourceUid
             return tileInfo
         }
@@ -608,9 +637,10 @@ class ImageStoreService {
             imageInfo.lastModified = image.dateUploaded
             imageInfo.contentType = image.mimeType
             imageInfo.extension = image.extension
+            imageInfo.shouldExist = true
             return imageInfo
         }
-        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier)
+        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'application/octet-stream')
     }
 
     @NotTransactional
@@ -655,12 +685,13 @@ class ImageStoreService {
                         lastModified: new Date(resource.lastModified()),
                         contentType: 'image/png',
                         extension: 'png',
-                        inputStreamSupplier: { range -> range.wrapInputStream(resource.inputStream) }
+                        inputStreamSupplier: { range -> range.wrapInputStream(resource.inputStream) },
+                        shouldExist: true
                 )
 
             }
         }
-        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier)
+        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/jpeg')
     }
 
     @NotTransactional
@@ -683,7 +714,7 @@ class ImageStoreService {
             }
         }
 
-        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier)
+        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/png')
     }
 
     long consumedSpace(Image image) {

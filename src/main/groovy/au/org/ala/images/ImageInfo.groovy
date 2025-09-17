@@ -13,5 +13,5 @@ class ImageInfo {
     URI redirectUri
     // takes an optional single Range parameter
     Closure<InputStream> inputStreamSupplier
-
+    boolean shouldExist // whether the requested image should actually exist (ie the image record exists but the bytes don't)
 }

@@ -126,6 +126,14 @@
                 This will run a background task that will remove deleted images from the filesystem and the database.
             </td>
         </tr>
+        <tr>
+            <td>
+                <button id="btnClearFailedUploads" class="btn btn-default">Clear Failed Uploads by Regex</button>
+            </td>
+            <td>
+                Delete failed upload entries based on a regular expression pattern that matches the URL.
+            </td>
+        </tr>
     </table>
 <script>
 
@@ -196,6 +204,11 @@
         $("#btnPurgeDeletedImages").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'scheduleDeletedImagesPurge')}";
+        });
+        
+        $("#btnClearFailedUploads").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearFailedUploads')}";
         });
     });
 

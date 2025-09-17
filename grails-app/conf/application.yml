@@ -296,6 +296,9 @@ placeholder:
     document:
         thumbnail: "classpath:images/200px-Document_icon.svg.png"
         large: "classpath:images/500px-Document_icon.svg.png"
+    image:
+        thumbnail: "classpath:images/no-image-thumbnail.png"
+        original: "classpath:images/no-image-fullsize.png"
     missing:
         thumbnail: "classpath:images/200px-Document_icon.svg.png"
 

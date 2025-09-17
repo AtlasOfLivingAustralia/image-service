@@ -61,6 +61,10 @@
                     <g:checkBox name="redirect" value="${s3StorageLocation.redirect}" /> Redirect
                 </label>
             </div>
+            <div class="form-group">
+                <label for="endpoint">Cloudfront Redirect Domain</label>
+                <g:textField class="form-control" name="cloudfrontDomain" value="${s3StorageLocation.cloudfrontDomain}" placeholder="images-assets.example.org" />
+            </div>
         </div>
     </g:elseif>
     <g:elseif test="${swiftStorageLocation}">
