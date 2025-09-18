@@ -338,7 +338,7 @@ class ElasticSearchService {
         }
     }
 
-    QueryResults<Image> simpleImageSearch(List<SearchCriteria> searchCriteria, GrailsParameterMap params) {
+    QueryResults<Map<String,Object>> simpleImageSearch(List<SearchCriteria> searchCriteria, GrailsParameterMap params) {
         log.debug "search params: ${params}"
         SearchRequest.Builder request = buildSearchRequest(params, searchCriteria, grailsApplication.config.getProperty('elasticsearch.indexName') as String)
         SearchResponse searchResponse = client.search(request.build(), Map<String,Object>)
@@ -786,14 +786,14 @@ class ElasticSearchService {
             def ct = new CodeTimer("Index search")
             def searchRequest = new SearchRequest.Builder()
             searchRequest.index(grailsApplication.config.getProperty('elasticsearch.indexName') as String)
-            searchRequest.query(queryBuilder.build())
+            searchRequest.query(b -> b.queryString(queryBuilder.build()))
             searchRequest.from(params.int("offset"))
             searchRequest.size(params.int("max") ?: grailsApplication.config.getProperty('elasticsearch.maxPageSize', Integer))
             if (params?.sort) {
                 def order = params?.order == "asc" ? SortOrder.Asc : SortOrder.Desc
                 searchRequest.sort(SortOptionsBuilders.field(it -> it.field(params.sort as String).order(order)))
             }
-            SearchResponse searchResponse = client.search(searchRequest.build())
+            SearchResponse searchResponse = client.search(searchRequest.build(), Map<String,Object>)
 
             ct.stop(true)
 
@@ -820,11 +820,11 @@ class ElasticSearchService {
 
             return resultsKeyedByValue
         } catch (ElasticsearchException e) {
-            log.warn(".ElasticsearchException thrown - this is expected behaviour for a new empty system.")
+            log.warn(".ElasticsearchException thrown - this is expected behaviour for a new empty system: {}", e.message)
             return [:]
         } catch (Exception e) {
             e.printStackTrace()
-            log.warn("Exception thrown - this is expected behaviour for a new empty system.")
+            log.warn("Exception thrown - this is expected behaviour for a new empty system: {}", e.message)
             return [:]
         }
     }

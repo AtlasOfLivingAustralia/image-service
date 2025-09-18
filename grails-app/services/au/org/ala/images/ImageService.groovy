@@ -103,7 +103,7 @@ class ImageService {
     final EXPORT_DATASET_SQL = '''
 SELECT
   image_identifier AS "imageID",
-  NULLIF(regexp_replace(unnest_url,        '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "identifier",
+  NULLIF(regexp_replace(regexp_replace(unnest_url, '://[^/@]+@', '://', 'g'),        '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "identifier",
   NULLIF(regexp_replace(audience,          '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "audience",
   NULLIF(regexp_replace(contributor,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "contributor",
   NULLIF(regexp_replace(created,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "created",
@@ -148,7 +148,7 @@ unnest(subquery.all_urls) AS unnest_url;
     final EXPORT_DATASET_MAPPING_SQL = '''
 SELECT
   image_identifier AS "imageID",
-  unnest_url AS "url"
+  regexp_replace(unnest_url, '://[^/@]+@', '://', 'g') AS "url"
 FROM (
   SELECT
     image_identifier,
@@ -1617,12 +1617,86 @@ unnest(all_urls) AS unnest_url;
         return image
     }
 
+    def searchResultsToImageInfoList(List<Map<String,Object>> searchResults, Boolean includeTags = false, Boolean includeMetadata = false) {
+        def results = searchResults?.collect { image ->
+            searchResultToImageInfo(image, includeTags, includeMetadata)
+        }
+        return results
+    }
+    
+    def imageListToImageInfoList(List<Image> images, Boolean includeTags = false, Boolean includeMetadata = false) {
+        def results = images?.collect { image ->
+            def map = [:]
+            addImageInfoToMap(image, map, includeTags, includeMetadata)
+            map
+        }
+        return results
+    }
 
+    def searchResultToImageInfo(Map<String,Object> searchResult, Boolean includeTags = false, Boolean includeMetadata = false) {
+        // harmonise potential original filename keys but otherwise passthrough the ES result unchanged
+        if (searchResult.containsKey('originalfilename')) {
+            searchResult.originalFilename = UrlUtils.stripCredentials(searchResult.remove('originalfilename'))
+        }
+        if (searchResult.containsKey('originalFileName')) {
+            searchResult.originalFilename = UrlUtils.stripCredentials(searchResult.remove('originalFileName'))
+        }
+        if (searchResult.containsKey('originalFilename')) {
+            searchResult.originalFilename = UrlUtils.stripCredentials(searchResult['originalFilename'])
+        }
+        return searchResult
+//        def map = [:]
+//        map.imageIdentifier = searchResult.imageIdentifier
+//        map.mimeType = searchResult.format
+//        map.originalFileName = UrlUtils.maskCredentials(searchResult.originalfilename ?: searchResult.originalFilename, false)
+//        map.sizeInBytes = searchResult.fileSize
+//        map.rights = searchResult.rights ?: ''
+//        map.rightsHolder = searchResult.rightsHolder ?: ''
+//        map.dateUploaded = searchResult.dateUploaded ?: null
+//        map.dateTaken = searchResult.dateTaken ?: null
+//        if (map.mimeType && map.mimeType.startsWith('image')){
+//            map.imageUrl = getImageUrl(searchResult.imageIdentifier)
+//            map.tileUrlPattern = "${getImageTilesUrlPattern(searchResult.imageIdentifier)}"
+//            map.mmPerPixel = searchResult.mmPerPixel ?: ''
+//            map.height = searchResult.height
+//            map.width = searchResult.width
+//            map.tileZoomLevels = searchResult.zoomLevels ?: 0
+//        }
+//        map.description = searchResult.description ?: ''
+//        map.title = searchResult.title ?: ''
+//        map.type = searchResult.type ?: ''
+//        map.audience = searchResult.audience ?: ''
+//        map.references = searchResult.references ?: ''
+//        map.publisher = searchResult.publisher ?: ''
+//        map.contributor = searchResult.contributor ?: ''
+//        map.created = searchResult.created ?: ''
+//        map.source = searchResult.source ?: ''
+//        map.creator = searchResult.creator ?: ''
+//        map.license = searchResult.license ?: ''
+//        if (searchResult.recognisedLicense) {
+//            map.recognisedLicence = [
+//                    'acronym' : searchResult.recognisedLicense.acronym,
+//                    'name' : searchResult.recognisedLicense.name,
+//                    'url' : searchResult.recognisedLicense.url,
+//                    'imageUrl' : searchResult.recognisedLicense.imageUrl
+//            ]
+//        } else {
+//            map.recognisedLicence = null
+//        }
+//        map.dataResourceUid = searchResult.dataResourceUid ?: ''
+//        map.occurrenceID = searchResult.occurrenceId ?: ''
+//
+//        if (collectoryService) {
+//            collectoryService.addMetadataForResource(map)
+//        }
+//        return map
+    }
+    
     def addImageInfoToMap(Image image, Map results, Boolean includeTags, Boolean includeMetadata) {
 
         results.imageIdentifier = image.imageIdentifier
         results.mimeType = image.mimeType
-        results.originalFileName = image.originalFilename
+        results.originalFileName = UrlUtils.stripCredentials(image.originalFilename)
         results.sizeInBytes = image.fileSize
         results.rights = image.rights ?: ''
         results.rightsHolder = image.rightsHolder ?: ''
