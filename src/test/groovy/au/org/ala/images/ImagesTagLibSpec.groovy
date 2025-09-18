@@ -1,17 +1,53 @@
 package au.org.ala.images
 
+import grails.testing.web.taglib.TagLibUnitTest
 import spock.lang.Specification
-import spock.lang.Ignore
 
-@Ignore
-class ImagesTagLibSpec extends Specification {
-
-    def taglib
+class ImagesTagLibSpec extends Specification implements TagLibUnitTest<ImagesTagLib> {
 
     def setup() {
-        taglib = new ImagesTagLib()
-        // Mock sanitiserService to return input unchanged
-        taglib.sanitiserService = [ sanitise: { String s -> s } ] as Object
+        tagLib.sanitiserService = new SanitiserService()
+    }
+
+    void 'test sanitised markup is created'() {
+        when:
+        def expected = '''<a href="http://example.org" rel="nofollow">Link</a>'''
+        def output = applyTemplate('''<img:sanitise value="${'<a href="http://example.org" onclick=alert(1)>Link</a>'}"/>''')
+
+        then:
+        output == expected
+    }
+
+    void 'sanitiseString length, image and key parameters are optional'() {
+        given:
+        def expected = '''<a href="http://example.org" rel="nofollow">Link</a>'''
+
+        expect:
+        tagLib.sanitise(value: '<a href="http://example.org" onclick=alert(1)>Link</a>') == expected
+    }
+
+    void 'sanitiseString length parameter is applied'() {
+        given:
+        def expected = '''<a href="http://example.org" rel="nofollow">Link</a>'''
+
+        expect:
+        tagLib.sanitiseString(value: '<a href="http://example.org" onclick=alert(1)>Link</a>') == expected
+    }
+
+    void 'sanitise length, image and key parameters are optional'() {
+        given:
+        def expected = '''<a href="http://example.org" rel="nofollow">Link</a>'''
+
+        expect:
+        tagLib.sanitise(value: '<a href="http://example.org" onclick=alert(1)>Link</a>') == expected
+    }
+
+    void 'sanitise length parameter is applied'() {
+        given:
+        def expected = '''<a href="http://example.org" rel="nofollow">Some...</a>'''
+
+        expect:
+        tagLib.sanitise(value: '<a href="http://example.org" onclick=alert(1)>Some Text</a>', length: 7) == expected
     }
 
     def "masks credentials for non-admin users with username and password"() {
@@ -19,7 +55,7 @@ class ImagesTagLibSpec extends Specification {
         def url = 'https://user:secret@example.com/path?x=1'
 
         when:
-        def masked = taglib.maskUrlCredentials(value: url, isAdmin: false)
+        def masked = tagLib.maskUrlCredentials(value: url, isAdmin: false)
 
         then:
         masked == 'https://****:****@example.com/path?x=1'
@@ -30,7 +66,7 @@ class ImagesTagLibSpec extends Specification {
         def url = 'http://user@example.org'
 
         when:
-        def masked = taglib.maskUrlCredentials(value: url, isAdmin: false)
+        def masked = tagLib.maskUrlCredentials(value: url, isAdmin: false)
 
         then:
         masked == 'http://****@example.org'
@@ -41,7 +77,7 @@ class ImagesTagLibSpec extends Specification {
         def url = 'https://user:secret@example.com/foo'
 
         expect:
-        taglib.maskUrlCredentials(value: url, isAdmin: true) == url
+        tagLib.maskUrlCredentials(value: url, isAdmin: true) == url
     }
 
     def "leaves non-URL strings unchanged"() {
@@ -49,6 +85,6 @@ class ImagesTagLibSpec extends Specification {
         def value = 'not a url.txt'
 
         expect:
-        taglib.maskUrlCredentials(value: value, isAdmin: false) == value
+        tagLib.maskUrlCredentials(value: value, isAdmin: false) == value
     }
 }

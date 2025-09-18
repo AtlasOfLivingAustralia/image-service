@@ -421,6 +421,6 @@ class ImagesTagLib {
             }
         }
         String masked = UrlUtils.maskCredentials(value, isAdmin)
-        return sanitiserService?.sanitise(masked) ?: masked
+        return masked
     }
 }
