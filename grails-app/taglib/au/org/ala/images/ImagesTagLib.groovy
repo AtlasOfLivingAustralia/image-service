@@ -7,7 +7,7 @@ class ImagesTagLib {
 
     static namespace = 'img'
 
-    static returnObjectForTags = ['sanitiseString']
+    static returnObjectForTags = ['sanitiseString', 'maskUrlCredentials']
 
     def imageService
     def groovyPageLocator
@@ -395,5 +395,32 @@ class ImagesTagLib {
                 out << "danger"
                 break
         }
+    }
+
+    /**
+     * Masks username/password in a URL for non-admin users. If the current user is admin, returns the URL unchanged.
+     * - Supports full URLs with credentials (scheme://user:pass@host) or (scheme://user@host)
+     * - Leaves non-URL strings unchanged
+     * - Sanitises the output via sanitiserService
+     * @attr value The original filename or URL string
+     */
+    def maskUrlCredentials = { attrs, body ->
+        String value = attrs.value as String
+        if (!value) {
+            return ''
+        }
+        Boolean adminAttr = (attrs.isAdmin instanceof Boolean) ? (attrs.isAdmin as Boolean) : null
+        boolean isAdmin = false
+        if (adminAttr != null) {
+            isAdmin = adminAttr
+        } else {
+            try {
+                isAdmin = request?.isUserInRole(au.org.ala.web.CASRoles.ROLE_ADMIN)
+            } catch (Throwable ignore) {
+                // In case request is not available in some contexts
+            }
+        }
+        String masked = UrlUtils.maskCredentials(value, isAdmin)
+        return masked
     }
 }

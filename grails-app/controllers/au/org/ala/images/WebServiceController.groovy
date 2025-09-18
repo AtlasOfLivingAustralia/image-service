@@ -784,7 +784,7 @@ class WebServiceController {
         renderResults([
                 tagID: params.tagID,
                 totalImageCount: results.totalCount,
-                images: results.list,
+                images: imageService.imageListToImageInfoList(results.list),
         ], 200, true)
     }
 
@@ -1238,7 +1238,7 @@ class WebServiceController {
           filters: filterQueries,
           searchCriteria: searchService.getSearchCriteriaList(),
           facets: results.aggregations,
-          images: results.list,
+          images: imageService.searchResultsToImageInfoList(results.list),
         ], 200, true)
     }
 
@@ -1722,6 +1722,8 @@ class WebServiceController {
                     metadata["squareThumbUrl"]  = imageService.getImageSquareThumbUrl(metadata.imageIdentifier)
                     metadata["thumbUrl"]  = imageService.getImageThumbUrl(metadata.imageIdentifier)
                     metadata["tilesUrlPattern"]  = imageService.getImageTilesUrlPattern(metadata.imageIdentifier)
+                    metadata["originalFilename"] = UrlUtils.stripCredentials(metadata.originalFilename)
+                    metadata["alternateFilename"] = metadata.alternateFilename?.collect { UrlUtils.stripCredentials(it) }
                     metadata.remove("fileSize")
                     metadata.remove("zoomLevels")
                     metadata.remove("storageLocationId")

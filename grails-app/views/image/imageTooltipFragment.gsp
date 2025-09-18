@@ -2,10 +2,10 @@
     <div>
         <g:if test="${imageInstance.description}">
             <strong><img:sanitise value="${imageInstance.description}" image="${imageInstance.imageIdentifier}" key="description" /></strong>
-            <div> ${imageInstance.originalFilename}</div>
+            <div> ${img.maskUrlCredentials(value: imageInstance.originalFilename)}</div>
         </g:if>
         <g:else>
-            <strong>${imageInstance.originalFilename}</strong>
+            <strong>${img.maskUrlCredentials(value: imageInstance.originalFilename)}</strong>
         </g:else>
         <div><g:message code="image.tooltip.frag.width.height" args="[imageInstance.width, imageInstance.height]" /></div>
         <div>${imageInstance.mimeType}&nbsp;&nbsp;<img:sizeInBytes size="${imageInstance.fileSize}" /></div>
@@ -28,7 +28,7 @@
             </div>
         </g:if>
         <g:if test="${imageInstance.parent}">
-            <div><small>*<g:message code="image.tooltip.frag.subimage.of" args="[imageInstance.parent.originalFilename]" /></small></div>
+            <div><small>*<g:message code="image.tooltip.frag.subimage.of" args="[img.maskUrlCredentials(value: imageInstance.parent?.originalFilename)]" /></small></div>
         </g:if>
 
         <a href="${createLink(absolute: true, controller: 'image', action: 'details', params:[id:imageInstance.id])}"><g:message code="image.tooltip.frag.view.metadata" /></a>
