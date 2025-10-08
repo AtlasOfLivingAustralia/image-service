@@ -14,6 +14,11 @@ metadata:
     alb.ingress.kubernetes.io/ssl-redirect: '443'
     alb.ingress.kubernetes.io/success-codes: '200'
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-3-2021-06
+    alb.ingress.kubernetes.io/tags: >
+      {{- range $key, $value := .Values.tags }}
+      {{ $key }}={{ $value }},
+      {{- end }}
     alb.ingress.kubernetes.io/load-balancer-attributes: >
       idle_timeout.timeout_seconds=90,
       access_logs.s3.enabled=true,

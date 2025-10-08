@@ -42,6 +42,14 @@ ingress:
   accessLogsBucket: ""
   accessLogsPrefix: ""
 
+tags:
+  branch: ""
+  component: ""
+  environment: ""
+  Name: ""
+  product: ""
+  version: ""
+
 resources:
   requests:
     cpu: "1"          # 1 vCPU
