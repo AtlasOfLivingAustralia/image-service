@@ -34,7 +34,7 @@ class SearchController {
 
         def query = params.q as String
 
-        QueryResults<Image> results = searchService.search(params)
+        QueryResults<Map<String,Object>> results = searchService.search(params)
 
         def userId = authService.getUserId()
 

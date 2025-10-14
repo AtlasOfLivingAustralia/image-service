@@ -15,59 +15,75 @@
             <div class="alert alert-danger" style="display: block">${flash.errorMessage}</div>
         </g:if>
 
-        <div class="row">
-            <div class="col-md-3">
-                <h1 style="margin-top:0;"><g:message code="list.total.images" args="[g.formatNumber(number:totalImageCount, format:'###,###,###')]" /></h1>
+        <div class="search-hero">
+            <div class="hero-inner container">
+                <h1 class="hero-title">ALA Images</h1>
+                <p class="hero-tagline">Explore millions of species images from across Australia – contributed by hundreds of trusted data providers.</p>
             </div>
-            <!-- search box -->
-            <div class="search col-md-7" style="margin-bottom:20px;">
-                <g:form action="list" controller="search" method="get">
-                    <div class="input-group">
-                        <input type="text" class="input-large form-control" id="keyword" name="q" value="${params.q}" />
+        </div>
+        <div class="row">
+            <div class="hero-count col-md-offset-2 col-md-8">
+                <p><g:message code="list.total.images" args="[g.formatNumber(number:totalImageCount, format:'###,###,###')]" /></p>
+            </div>
+            <div class="hero-actions col-md-2">
+                <g:if test="${request.queryString}">
+                    <auth:ifLoggedIn>
+                        <a class="btn btn-primary" href="${createLink(controller:'search', action:'download')}?${request.getQueryString()}">
+                            <span class="glyphicon glyphicon-download"></span>
+                            <g:message code="list.download.results" />
+                        </a>
+                    </auth:ifLoggedIn>
+                    <auth:ifNotLoggedIn>
+                        <!-- Button trigger modal -->
+                        <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#modal-download-login-required">
+                            <span class="glyphicon glyphicon-download"></span>
+                            <g:message code="list.download.results" />
+                        </button>
+                    </auth:ifNotLoggedIn>
+                </g:if>
+                <g:link mapping="api_doc" class="btn btn-default" type="submit">
+                    <span class="glyphicon glyphicon-wrench"></span>
+                    <g:message code="list.view.api" />
+                </g:link>
+                <g:if test="${isAdmin}">
+                    <g:link controller="admin" action="dashboard" class="btn btn-danger" type="submit">
+                        <span class="glyphicon glyphicon-cog"></span>
+                        <g:message code="list.admin" />
+                    </g:link>
+                </g:if>
+            </div>
+
+        </div>
+        <div class="row">
+            <div class="col-md-offset-2 col-md-8">
+                <g:form action="list" controller="search" method="get" class="hero-search">
+                    <div class="input-group input-group-lg">
+                        <input type="text" class="form-control" id="keyword" name="q" value="${params.q}" placeholder="Search by species, data provider, location and more..." />
                         <div class="input-group-btn">
                             <button class="btn btn-primary" type="submit">
                                 <span class="glyphicon glyphicon-search"></span>
                                 <g:message code="list.search" />
                             </button>
-                            <a id="btnAddCriteria" class="btn btn-default">
-                                <g:message code="list.advanced.search" />
-                            </a>
-                            <auth:ifLoggedIn>
-                                <a class="btn btn-default" href="${createLink(controller:'search', action:'download')}?${request.getQueryString()}">
-                                    <span class="glyphicon glyphicon-download"></span>
-                                    <g:message code="list.download.results" />
-                                </a>
-                            </auth:ifLoggedIn>
-                            <auth:ifNotLoggedIn>
-                                <!-- Button trigger modal -->
-                                <button type="button" class="btn btn-default" data-toggle="modal" data-target="#modal-download-login-required">
-                                    <span class="glyphicon glyphicon-download"></span>
-                                    <g:message code="list.download.results" />
-                                </button>
-                            </auth:ifNotLoggedIn>
                         </div>
                     </div>
                 </g:form>
             </div>
-
             <div class="col-md-2">
-                <g:if test="${isAdmin}">
-                    <g:link   controller="admin" action="dashboard" class="btn btn-danger" type="submit">
-                        <span class="glyphicon glyphicon-cog"></span>
-                        <g:message code="list.admin" />
-                    </g:link>
-                </g:if>
-                <g:link mapping="api_doc" class="btn btn-info" type="submit">
-                    <span class="glyphicon glyphicon-wrench"></span>
-                    <g:message code="list.view.api" />
-                </g:link>
+                <a id="btnAddCriteria">
+                    <g:message code="list.advanced.search" />
+                </a>
             </div>
         </div>
 
+
+
+
         <!-- results -->
+        <div class="row">
         <g:render template="imageThumbnails"
                   model="${[images: images, facets: facets, totalImageCount: totalImageCount, allowSelection: isLoggedIn,
                             selectedImageMap: selectedImageMap]}" />
+        </div>
 
         <div id="addCriteriaModal" class="modal fade" role="dialog">
             <div class="modal-dialog">

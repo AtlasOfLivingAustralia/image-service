@@ -1,4 +1,4 @@
-<table class="table table-bordered table-condensed table-striped">
+<table class="table table-condensed table-striped">
     <g:if test="${imageInstance.dateDeleted}">
         <h5 class="alert alert-danger"><g:message code="core.image.metadata.this.image.is.deleted" /></h5>
     </g:if>
