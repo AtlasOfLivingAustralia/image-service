@@ -123,16 +123,17 @@ class ImagesTagLib {
         mb.div(class: ['thumb-caption', 'caption-detail', attrs.css ?: ''].findAll().join(' ')) {
             if (attrs.image) {
                 mb.div(class: 'row') {
-                    div(class: 'col-md-12') {
+                    div(class: 'col-md-12 caption-title') {
+                        def title
                         if (attrs.image.title) {
-                            mb.a(href:createLink(controller:'image', action:'show', id:attrs.image.imageIdentifier), title: sanitiserService.sanitise(attrs.image.title)) {
-                                mkp.yield(sanitiserService.sanitise(attrs.image.title)) // TODO truncate?
-                            }
+                            title = attrs.image.title
                         } else {
                             // TODO i18n
-                            mb.a(href: '#', title: '(no title supplied)') {
-                                mkp.yield('(no title supplied)')
-                            }
+                            title = '(no title supplied)'
+                        }
+
+                        mb.a(href:createLink(controller:'image', action:'show', id:attrs.image.imageIdentifier), title: sanitiserService.sanitise(title)) {
+                            mkp.yield(sanitiserService.sanitise(title)) // TODO truncate?
                         }
                     }
                 }

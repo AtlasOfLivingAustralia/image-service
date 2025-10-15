@@ -37,20 +37,19 @@ input[type=checkbox]:checked + label:before { letter-spacing: 5px; } /* allow sp
 #imagesList {
     margin:0;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    /*grid-template-columns: repeat(4, 1fr);*/
     /*grid-template-rows: repeat(4, 1fr);*/
     justify-content: space-evenly;
     align-content: space-evenly;
 }
 
-.imgCon {
-    display: inline-block;
-    text-align: center;
-    line-height: 1.3em;
-    background-color: #DDD;
-    color: #DDD;
-    margin: 2px 0 2px 0;
-    position: relative;
+.container-fluid #imagesList {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.container #imagesList{
+    grid-template-columns: repeat(2, 1fr);
+
 }
 
 .imgCon .meta {
@@ -190,6 +189,9 @@ input[type=checkbox]:checked + label:before { letter-spacing: 5px; } /* allow sp
 
 /* Card-style thumbnails */
 .imgCon {
+    display: inline-block;
+    line-height: 1.3em;
+
     background: #fff;
     color: #333;
     border: 1px solid #e5e5e5;
@@ -197,7 +199,9 @@ input[type=checkbox]:checked + label:before { letter-spacing: 5px; } /* allow sp
     overflow: hidden;
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     margin: 8px;
+    position: relative;
 }
+
 .imgCon img { width: 100%; height: auto; display: block; }
 .thumb-caption.caption-detail {
     /*position: static; */
@@ -206,6 +210,10 @@ input[type=checkbox]:checked + label:before { letter-spacing: 5px; } /* allow sp
     color: #333;
     padding: 8px 10px;
     opacity: 90%;
+    font-size: 14px;
+}
+.thumb-caption.caption-detail .caption-title {
+    font-size: 16px;
 }
 .thumb-caption .resource-name { font-weight: 600; }
 
@@ -218,6 +226,7 @@ input[type=checkbox]:checked + label:before { letter-spacing: 5px; } /* allow sp
 }
 #facetWell h2 {
     margin-top: 0;
+    font-size: 20px;
     line-height: 28px;
 }
 #facetWell h4 {
