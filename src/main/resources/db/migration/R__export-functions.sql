@@ -85,7 +85,7 @@ CREATE VIEW export_mapping AS
 SELECT
     data_resource_uid,
     image_identifier AS "imageID",
-    unnest_url AS "url"
+    regexp_replace(unnest_url, '://[^/@]+@', '://', 'g') AS "url"
 FROM (
          SELECT
              data_resource_uid,
