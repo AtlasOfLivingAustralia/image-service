@@ -128,8 +128,7 @@ class ImagesTagLib {
                         if (attrs.image.title) {
                             title = attrs.image.title
                         } else {
-                            // TODO i18n
-                            title = '(no title supplied)'
+                            title = message(code: 'search.result.no.title', default: '(no title supplied)')
                         }
 
                         mb.a(href:createLink(controller:'image', action:'show', id:attrs.image.imageIdentifier), title: sanitiserService.sanitise(title)) {
@@ -156,7 +155,9 @@ class ImagesTagLib {
                         mkp.yield(sanitiserService.sanitise(metadataName))
                     }
                     div(class: 'col-md-6') {
-                        mkp.yield('Created by: ' + sanitiserService.sanitise(creator ?: '(unknown)'))
+                        def unknownText = message(code: 'search.result.unknown', default: '(unknown)')
+                        def creatorName = creator ?: unknownText
+                        mkp.yield(message(code: 'search.result.created.by', default: 'Created by: {0}', args: [sanitiserService.sanitise(creatorName)]))
                     }
                 }
 
@@ -165,8 +166,9 @@ class ImagesTagLib {
                         mkp.yield(g.formatDate(date: attrs.image.dateCreated, format: "dd MMM, yyyy"))
                     }
                     div(class: 'col-md-6') {
-                        def license = attrs.image.recognisedLicense ?: '(unknown)'
-                        mkp.yield('Licence: ' + sanitiserService.sanitise(license))
+                        def unknownText = message(code: 'search.result.unknown', default: '(unknown)')
+                        def license = attrs.image.recognisedLicense ?: unknownText
+                        mkp.yield(message(code: 'search.result.licence', default: 'Licence: {0}', args: [sanitiserService.sanitise(license)]))
                     }
                 }
             }
