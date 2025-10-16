@@ -55,7 +55,7 @@
 
         </div>
         <div class="row">
-            <div class="col-md-offset-2 col-md-8">
+            <div class="col-md-offset-2 col-md-9">
                 <g:form action="list" controller="search" method="get" class="hero-search">
                     <div class="input-group input-group-lg">
                         <input type="text" class="form-control" id="keyword" name="q" value="${params.q}" placeholder="Search by species, data provider, location and more..." />
@@ -68,7 +68,7 @@
                     </div>
                 </g:form>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-1">
                 <a id="btnAddCriteria">
                     <g:message code="list.advanced.search" />
                 </a>

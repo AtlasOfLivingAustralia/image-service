@@ -105,11 +105,17 @@ class ImagesTagLib {
 
     def imageThumbUrl = { attrs, body ->
         if (attrs.imageId ) {
-            if (attrs.large) {
+            if (attrs.centreCrop) {
+                if (attrs.large) {
+                    out << imageService.getImageCentreCropLargeThumbUrl(attrs.imageId as String)
+                } else {
+                    out << imageService.getImageCentreCropThumbUrl(attrs.imageId as String)
+                }
+            } else if (attrs.large) {
                 out << imageService.getImageThumbLargeUrl(attrs.imageId as String)
 
             } else if (attrs.square) {
-                out << imageService.getImageSquareThumbUrl(attrs.imageId as String)
+                out << imageService.getImageSquareThumbUrl(attrs.imageId as String, attrs.backgroundColour as String ?: 'darkGrey')
             } else {
                 out << imageService.getImageThumbUrl(attrs.imageId as String)
             }
@@ -167,7 +173,7 @@ class ImagesTagLib {
                     }
                     div(class: 'col-md-6') {
                         def unknownText = message(code: 'search.result.unknown', default: '(unknown)')
-                        def license = attrs.image.recognisedLicense ?: unknownText
+                        def license = attrs.image.recognisedLicence ?: unknownText
                         mkp.yield(message(code: 'search.result.licence', default: 'Licence: {0}', args: [sanitiserService.sanitise(license)]))
                     }
                 }

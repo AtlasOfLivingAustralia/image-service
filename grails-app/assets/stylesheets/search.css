@@ -41,6 +41,8 @@ input[type=checkbox]:checked + label:before { letter-spacing: 5px; } /* allow sp
     /*grid-template-rows: repeat(4, 1fr);*/
     justify-content: space-evenly;
     align-content: space-evenly;
+    justify-items: center;
+    align-items: center;
 }
 
 .container-fluid #imagesList {
@@ -223,6 +225,8 @@ input[type=checkbox]:checked + label:before { letter-spacing: 5px; } /* allow sp
     /*border: 1px solid #eee; */
     /*border-radius: 6px; */
     border: none;
+    box-shadow: none;
+
 }
 #facetWell h2 {
     margin-top: 0;
@@ -230,12 +234,15 @@ input[type=checkbox]:checked + label:before { letter-spacing: 5px; } /* allow sp
     line-height: 28px;
 }
 #facetWell h4 {
-    font-size: 14px;
+    font-size: 16px;
+    font-weight: 600;
     margin-top: 16px;
     color: #c44d34;
 }
 
 #facetWell .facets li {
+    font-weight: 400;
+    font-size: 14px;
     margin: 6px 0;
 }
 

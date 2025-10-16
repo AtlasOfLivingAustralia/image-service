@@ -264,6 +264,18 @@ class ImageStoreService {
         getThumbUrlByName(imageIdentifier, 'large')
     }
 
+    String getImageThumbXLargeUrl(String imageIdentifier) {
+        getThumbUrlByName(imageIdentifier, 'xlarge')
+    }
+
+    String getImageThumbCentreCropLargeUrl(String imageIdentifier) {
+        getThumbUrlByName(imageIdentifier, 'centre_crop_large')
+    }
+
+    String getImageThumbCentreCropUrl(String imageIdentifier) {
+        getThumbUrlByName(imageIdentifier, 'centre_crop')
+    }
+
     String getThumbUrlByName(String imageIdentifier, String name) {
         if (name == 'thumbnail') {
             return getImageThumbUrl(imageIdentifier)
@@ -358,6 +370,15 @@ class ImageStoreService {
         }
         if ('thumbnail_large'.equalsIgnoreCase(type) || 'large'.equalsIgnoreCase(type) || type == null) {
             thumbDefs.add(new ThumbDefinition(650, false, null, "thumbnail_large"))
+        }
+        if ('thumbnail_xlarge'.equalsIgnoreCase(type) || 'xlarge'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(new ThumbDefinition(1024, false, null, "thumbnail_xlarge"))
+        }
+        if ('thumbnail_centre_crop'.equalsIgnoreCase(type) || 'centre_crop'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(ThumbDefinition.centreCrop(size, "thumbnail_centre_crop"))
+        }
+        if ('thumbnail_centre_crop_large'.equalsIgnoreCase(type) || 'centre_crop_large'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(ThumbDefinition.centreCrop(650, "thumbnail_centre_crop_large"))
         }
 
         def results = t.generateThumbnailsNoIntermediateEncode(

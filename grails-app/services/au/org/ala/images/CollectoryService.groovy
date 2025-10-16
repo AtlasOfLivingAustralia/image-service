@@ -74,7 +74,7 @@ class CollectoryService {
         }
 
         def results = dataResourceLookupCache.get(dataResourceUid)
-        return results.orElse(EMPTY_MAP)
+        return results?.orElse(EMPTY_MAP) ?: EMPTY_MAP
     }
 
     private Optional<Object> getResourceLevelMetadataInternal(String dataResourceUid) {
@@ -106,7 +106,7 @@ class CollectoryService {
 
             //lookup the resource UID
             def results = nameLookupCache.get(uid)
-            return results.orElse(null)
+            return results?.orElse(null)
     }
 
     Optional<Object> getNameForUIDInternal(String uid){
