@@ -61,29 +61,29 @@ function setheight (images, height) {
 
 function layoutImages (maxHeight) {
 
-    console.log("Layout called");
-
-    var size = $imageContainer.innerWidth(),
-        n = 0,
-        images = $imageContainer.find('img');
-    if (maxHeight === undefined) {
-        maxHeight = MAX_HEIGHT;
-    }
-
-    w: while (images.length > 0) {
-        for (var i = 1; i < images.length + 1; ++i) {
-            var slice = images.slice(0, i);
-            var h = self.getheight(slice, size);
-            if (h < maxHeight) {
-                self.setheight(slice, h);
-                n++;
-                images = images.slice(i);
-                continue w;
-            }
-        }
-
-        self.setheight(slice, Math.min(maxHeight, h));
-        n++;
-        break;
-    }
+    // console.log("Layout called");
+    //
+    // var size = $imageContainer.innerWidth(),
+    //     n = 0,
+    //     images = $imageContainer.find('img');
+    // if (maxHeight === undefined) {
+    //     maxHeight = MAX_HEIGHT;
+    // }
+    //
+    // w: while (images.length > 0) {
+    //     for (var i = 1; i < images.length + 1; ++i) {
+    //         var slice = images.slice(0, i);
+    //         var h = self.getheight(slice, size);
+    //         if (h < maxHeight) {
+    //             self.setheight(slice, h);
+    //             n++;
+    //             images = images.slice(i);
+    //             continue w;
+    //         }
+    //     }
+    //
+    //     self.setheight(slice, Math.min(maxHeight, h));
+    //     n++;
+    //     break;
+    // }
 }

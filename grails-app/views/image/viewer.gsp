@@ -23,6 +23,17 @@
         <asset:stylesheet src="ala/images-client.css" />
     </head>
     <body style="padding:0;">
+        <div class="search-hero" style="padding:20px 0; margin-bottom:0;">
+            <div class="hero-inner container">
+                <h1 class="hero-title"><g:message code="viewer.image.title" args="[img.maskUrlCredentials(value: imageInstance.originalFilename)]" /></h1>
+                <div class="hero-actions">
+                    <a class="btn btn-default" href="${createLink(controller:'search', action:'list')}">
+                        <span class="glyphicon glyphicon-arrow-left"></span>
+                        <g:message code="list.back.to.search" default="Back to search" />
+                    </a>
+                </div>
+            </div>
+        </div>
         <div id="imageViewerContainer" class="container-fluid">
             <div id="imageViewer"> </div>
         </div>

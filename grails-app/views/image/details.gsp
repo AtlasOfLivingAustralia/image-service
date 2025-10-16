@@ -16,9 +16,18 @@
                 padding-right:5px;
             }
             .tab-pane { padding-top: 20px !important; }
-            .tabbable { font-size: 9pt; margin-top:10px; }
+            /*.tabbable { font-size: 9pt; margin-top:10px; }*/
             div#main { padding-top: 0px; }
             .subimages_thumbs { max-height:100px; }
+            #imageTabs .nav-tabs {
+                font-size: 20px;
+            }
+            #imageTabs .tab-content .table>tbody>tr>td {
+                border-top: none;
+            }
+            .coreMetadataContainer {
+                font-size: 16px;
+            }
         </style>
     </head>
     <body>
@@ -75,7 +84,7 @@
                                 <div class="metadataSource-container"></div>
                             </div>
                             <div class="tab-pane" id="tabSystem" metadataSource="${au.org.ala.images.MetaDataSourceType.SystemDefined}" >
-                                <table class="table table-bordered table-condensed table-striped">
+                                <table class="table table-condensed table-striped">
                                     <tr>
                                         <td class="property-name"><g:message code="details.data.resource.uid" /></td>
                                         <td class="property-value">${imageInstance.dataResourceUid}</td>

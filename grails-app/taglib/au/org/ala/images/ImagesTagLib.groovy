@@ -105,7 +105,20 @@ class ImagesTagLib {
 
     def imageThumbUrl = { attrs, body ->
         if (attrs.imageId ) {
-            out << imageService.getImageThumbUrl(attrs.imageId as String)
+            if (attrs.centreCrop) {
+                if (attrs.large) {
+                    out << imageService.getImageCentreCropLargeThumbUrl(attrs.imageId as String)
+                } else {
+                    out << imageService.getImageCentreCropThumbUrl(attrs.imageId as String)
+                }
+            } else if (attrs.large) {
+                out << imageService.getImageThumbLargeUrl(attrs.imageId as String)
+
+            } else if (attrs.square) {
+                out << imageService.getImageSquareThumbUrl(attrs.imageId as String, attrs.backgroundColour as String ?: 'darkGrey')
+            } else {
+                out << imageService.getImageThumbUrl(attrs.imageId as String)
+            }
         }
     }
 
@@ -113,36 +126,60 @@ class ImagesTagLib {
 
         def mb = new MarkupBuilder(out)
 
-        if (attrs.image) {
-            def creator = ''
-            if (attrs.image.creator && attrs.image.creator != ElasticSearchService.NOT_SUPPLIED){
-                creator = attrs.image.creator
-            }
+        mb.div(class: ['thumb-caption', 'caption-detail', attrs.css ?: ''].findAll().join(' ')) {
+            if (attrs.image) {
+                mb.div(class: 'row') {
+                    div(class: 'col-md-12 caption-title') {
+                        def title
+                        if (attrs.image.title) {
+                            title = attrs.image.title
+                        } else {
+                            title = message(code: 'search.result.no.title', default: '(no title supplied)')
+                        }
 
-            if(attrs.image.dataResourceUid){
-                def metadata = collectoryService.getResourceLevelMetadata(attrs.image.dataResourceUid)
-                mb.div(class: ['thumb-caption', 'caption-detail', attrs.css ?: ''].findAll().join(' ')) {
-                    mb.span(class: 'resource-name') {
-                        mkp.yield(metadata.name ?: '')
-                    }
-                    if (metadata.name && (attrs.image.title || creator)) {
-                        mkp.yield(' - ')
-                    }
-
-                    def text = "${attrs.image.title? attrs.image.title: ''} ${creator}"
-                    mb.span {
-                        mkp.yieldUnescaped(sanitiserService.truncateAndSanitise(text, attrs.image.imageIdentifier, 'title+creator', 100))
+                        mb.a(href:createLink(controller:'image', action:'show', id:attrs.image.imageIdentifier), title: sanitiserService.sanitise(title)) {
+                            mkp.yield(sanitiserService.sanitise(title)) // TODO truncate?
+                        }
                     }
                 }
-            } else {
-                if (attrs.image.dataResourceUid || attrs.image.title || creator) {
-                    mb.div(class: ['thumb-caption', 'caption-detail', attrs.css ?: ''].findAll().join(' ')) {
-                        def output = "${attrs.image.dataResourceUid ? attrs.image.dataResourceUid: ''} ${attrs.image.title ? attrs.image.title :''} ${creator}"
-                        mkp.yieldUnescaped(sanitiserService.truncateAndSanitise(output, attrs.image.imageIdentifier, 'drUid+title+creator', 100))
+
+                def creator = ''
+                if (attrs.image.creator && attrs.image.creator != ElasticSearchService.NOT_SUPPLIED){
+                    creator = attrs.image.creator
+                }
+
+                def metadataName
+                if(attrs.image.dataResourceUid){
+                    def metadata = collectoryService.getResourceLevelMetadata(attrs.image.dataResourceUid)
+                    metadataName = metadata.name ?: attrs.image.dataResourceUid
+                } else {
+                    metadataName = ''
+                }
+
+                mb.div(class: 'row') {
+                    div(class: 'col-md-6') {
+                        mkp.yield(sanitiserService.sanitise(metadataName))
+                    }
+                    div(class: 'col-md-6') {
+                        def unknownText = message(code: 'search.result.unknown', default: '(unknown)')
+                        def creatorName = creator ?: unknownText
+                        mkp.yield(message(code: 'search.result.created.by', default: 'Created by: {0}', args: [sanitiserService.sanitise(creatorName)]))
+                    }
+                }
+
+                mb.div(class: 'row') {
+                    div(class: 'col-md-6') {
+                        mkp.yield(g.formatDate(date: attrs.image.dateCreated, format: "dd MMM, yyyy"))
+                    }
+                    div(class: 'col-md-6') {
+                        def unknownText = message(code: 'search.result.unknown', default: '(unknown)')
+                        def license = attrs.image.recognisedLicence ?: unknownText
+                        mkp.yield(message(code: 'search.result.licence', default: 'Licence: {0}', args: [sanitiserService.sanitise(license)]))
                     }
                 }
             }
         }
+
     }
 
     def facetDataResourceResult = { attrs, body ->

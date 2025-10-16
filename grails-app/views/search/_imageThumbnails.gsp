@@ -67,7 +67,7 @@
                     <g:render template="${headerTemplate}" model="${[image: image]}" />
                 </g:if>
                 <a href="${createLink(mapping: 'image_url', params: [imageId: image.imageIdentifier])}">
-                    <img src="<img:imageThumbUrl imageId='${image.imageIdentifier}'/>" />
+                    <img src="<img:imageThumbUrl imageId='${image.imageIdentifier}' centreCrop="true" large="true"/>" />
                 </a>
                 <g:if test="${footerTemplate}">
                     <g:render template="${footerTemplate}" model="${[image: image]}" />
