@@ -15,7 +15,6 @@ import org.junit.jupiter.api.extension.ExtendWith
 import spock.lang.Ignore
 import spock.lang.Specification
 
-@Ignore
 @ExtendWith(LocalstackDockerExtension.class)
 @LocalstackDockerProperties(services = [ ServiceName.S3 ], imageTag = '4.1.1')
 class S3URLConnectionSpec extends Specification {

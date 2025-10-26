@@ -20,7 +20,8 @@ phases:
         && cat /etc/lsb-release
         && curl -s "https://get.sdkman.io" | bash
         && chmod a+x /root/.sdkman/bin/sdkman-init.sh
-        && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails 6.0.0 /root/.sdkman/candidates/grails/6.0.0
+        && GRAILS_VERSION=$(grep '^grailsVersion=' gradle.properties | cut -d'=' -f2)
+        && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails $GRAILS_VERSION /root/.sdkman/candidates/grails/$GRAILS_VERSION
         && apt-get install -y apt-transport-https ca-certificates software-properties-common
         && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
         && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
@@ -32,6 +33,7 @@ phases:
       - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - export GRADLE_OPTS="-Dgrails.env=travis"
       - ./gradlew clean
       - ./gradlew assemble
 
@@ -45,7 +47,7 @@ phases:
       - chown -R postgresuser:postgresuser /tmp
       - chown -R postgresuser .
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
-      - ./gradlew bootWar
+      - ./gradlew bootJar
 
   post_build:
     commands:

@@ -13,5 +13,5 @@ RUN export JAVA_HOME=$(readlink -f /usr/bin/java | sed 's/\/bin\/java//')
 ENV PATH=$JAVA_HOME/bin:$PATH
 
 WORKDIR /app
-COPY build/libs/*.war app.war
-CMD ["java", "-jar", "app.war"]
+COPY build/libs/*.jar app.jar
+CMD ["java", "-jar", "app.jar"]
