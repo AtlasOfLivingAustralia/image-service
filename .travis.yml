@@ -23,6 +23,9 @@ cache:
     - $HOME/.gradle/wrapper/
 
 before_install:
+  - echo "Removing BellSoft URL from /etc/apt/sources.list..."
+  - sudo sed -i '/apt\.bell-sw\.com/d' /etc/apt/sources.list
+  - sudo apt-get update
   - wget -O - https://packages.adoptium.net/artifactory/api/gpg/key/public | sudo apt-key add -
   - echo "deb https://packages.adoptium.net/artifactory/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/adoptium.list
   - sudo apt-get update
