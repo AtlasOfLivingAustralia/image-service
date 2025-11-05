@@ -36,6 +36,7 @@ phases:
       - echo "Deploying images via helm..."
       - cd helm
       - helm dependency build .
+      - cat -n $CODEBUILD_SRC_DIR_ExportConfigArtifact/helm_values.yaml | sed -n '1,15p'
       - |
         helm upgrade --install $HELM_RELEASE_NAME . -n $EKS_NAMESPACE \
           --set image.repository=$ECR_REPO \
