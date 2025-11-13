@@ -688,9 +688,10 @@ unnest(all_urls) AS unnest_url;
                 preExisting = image != null
                 if (image) {
                     if (image.dateDeleted) {
-                        log.warn("Deleted Image has been re-uploaded.  Will undelete.")
+                        log.warn("Deleted Image ${image.originalFilename} has been re-uploaded.  Will undelete.")
                         image.dateDeleted = null //reset date deleted if image resubmitted...
-                    } else if (createDuplicates && image.originalFilename != originalFilename) {
+                    }
+                    if (createDuplicates && image.originalFilename != originalFilename) {
                         log.warn("Existing image found at different URL ${image.originalFilename} to ${originalFilename}. Will add duplicate.")
 
                         // we have seen this image before, but the URL has changed at source
