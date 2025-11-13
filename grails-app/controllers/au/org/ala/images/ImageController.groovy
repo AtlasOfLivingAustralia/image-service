@@ -74,6 +74,9 @@ class ImageController {
     @Value('classpath:images/images-placeholder-650x499.png')
     Resource missingImageThumbnailLarge
 
+    @Value('classpath:images/images-placeholder-650x650.png')
+    Resource missingImageThumbnailSquareLarge
+
     @Value('classpath:images/images-placeholder-300x300.png')
     Resource missingImageThumbnailSquare
 
@@ -407,6 +410,9 @@ class ImageController {
             case 'original':
                 ph = missingOriginal
                 break
+            case 'thumbnail-centre_crop_large':
+                ph = missingImageThumbnailSquareLarge
+                break
             case 'thumbnail-large':
                 ph = missingImageThumbnailLarge
                 break
@@ -415,6 +421,7 @@ class ImageController {
             case 'thumbnail-square_black':
             case 'thumbnail-square_darkGrey':
             case 'thumbnail-square_darkGray':
+            case 'thumbnail-centre_crop':
                 ph = missingImageThumbnailSquare
                 break
             case 'thumbnail':
