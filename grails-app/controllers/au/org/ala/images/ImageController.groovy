@@ -102,10 +102,12 @@ class ImageController {
      */
     @Deprecated
     def proxyImage() {
+        boolean noRedirect = params.containsKey('nr')
         serveImage(
                 imageStoreService.originalImageInfo(imageService.getImageGUIDFromParams(params)),
                 trackThumbnails,
-                'original'
+                'original',
+                noRedirect
         )
     }
 
@@ -134,10 +136,12 @@ class ImageController {
     @Produces("image/jpeg")
     @Path("/image/{id}/original")
     def getOriginalFile() {
+        boolean noRedirect = params.containsKey('nr')
         serveImage(
                 imageStoreService.originalImageInfo(imageService.getImageGUIDFromParams(params)),
                 trackThumbnails,
-                'original'
+                'original',
+                noRedirect
         )
     }
 
@@ -170,10 +174,13 @@ class ImageController {
     @Produces("image/jpeg")
     @Path("/image/{id}/thumbnail")
     def proxyImageThumbnail() {
+        boolean invalidate = params.containsKey('i')
+        boolean noRedirect = params.containsKey('nr')
         serveImage(
-                imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), ''),
+                imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), '', invalidate),
                 trackThumbnails,
-                'thumbnail'
+                'thumbnail',
+                noRedirect
         )
     }
 
@@ -204,14 +211,17 @@ class ImageController {
     @Path("/image/{id}/{type}")
     def proxyImageThumbnailType() {
         String type = params.thumbnailType ?: params.type ?:  'large' // for backwards compat thumbnailType URL param takes precedence
+        boolean invalidate = params.containsKey('i')
+        boolean noRedirect = params.containsKey('nr')
         if (!imageService.validateThumbnailType(type)) {
             render(text: "Invalid thumbnail type", status: SC_NOT_FOUND, contentType: 'text/plain')
             return
         }
         serveImage(
-                imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), type),
+                imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), type, invalidate),
                 trackThumbnails,
-                'thumbnail-'+type
+                'thumbnail-'+type,
+                noRedirect
         )
     }
 
@@ -246,17 +256,21 @@ class ImageController {
         int x = params.int('x')
         int y = params.int('y')
         int z = params.int('z')
+        boolean invalidate = params.containsKey('i')
+        boolean noRedirect = params.containsKey('nr')
         serveImage(
-                imageStoreService.tileImageInfo(imageService.getImageGUIDFromParams(params), x, y, z),
+                imageStoreService.tileImageInfo(imageService.getImageGUIDFromParams(params), x, y, z, invalidate),
                 false,
-                'tile'
+                'tile',
+                noRedirect
         )
     }
 
     private void serveImage(
             ImageInfo imageInfo,
             boolean sendAnalytics,
-            String requestType) {
+            String requestType,
+            boolean noRedirect = false) {
         def imageIdentifier = imageInfo.imageIdentifier
         if (!imageIdentifier || !imageInfo.exists) {
             if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
@@ -273,7 +287,7 @@ class ImageController {
             analyticsService.sendAnalytics(imageInfo.exists, imageInfo.dataResourceUid, 'imageview', request.getHeader("User-Agent"))
         }
 
-        if (imageInfo.redirectUri) {
+        if (!noRedirect && imageInfo.redirectUri) {
             URI uri = imageInfo.redirectUri
             if (uri) {
                 response.status = SC_FOUND
