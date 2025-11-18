@@ -1,0 +1,13 @@
+version: 0.2
+###
+# Deletes all objects from the load balancer access logs bucket, this needs to be done
+# before the teardown action so the bucket can be removed
+
+env:
+  shell: bash
+
+phases:
+  build:
+    commands:
+      - echo The load balancer access logs bucket is $LOAD_BALANCER_ACCESS_LOGS_BUCKET, deleting all objects
+      - aws s3 rm s3://$LOAD_BALANCER_ACCESS_LOGS_BUCKET --recursive

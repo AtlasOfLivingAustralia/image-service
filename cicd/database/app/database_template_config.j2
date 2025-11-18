@@ -1,0 +1,43 @@
+{
+  "Parameters" : {
+    "pAdminUser"           : "{{ admin_user }}",
+    "pBackupRetention"     : "{{ backup_retention }}",
+    "pBuild"               : "{{ codebuild_build_number }}",
+    "pCleanBranch"         : "{{ clean_branch }}",
+    "pCreateReplica"       : "{{ create_replica }}",
+    "pDbInstanceName"      : "{{ db_instance_name }}",
+    "pDbVersion"           : "{{ db_version }}",
+    "pDatabaseInsightsMode": "{{ database_insights_mode }}",
+    "pDeletionProtection"  : "{{ deletion_protection }}",
+    "pEngineMode"          : "{{ engine_mode }}",
+    "pEnhancedMonitoring"  : "{{ enhanced_monitoring }}",
+    "pEnvironment"         : "{{ environment }}",
+    "pExportLogs"          : "{{ export_logs }}",
+    "pInstanceClass"       : "{{ instance_class }}",
+    "pPerformanceInsights" : "{{ performance_insights }}",
+    "pProductName"         : "{{ product_name }}",
+    "pRdsSnapshotRestore"  : "{{ rds_snapshot_restore }}",
+    "pSecretName"          : "{{ secret_name }}",
+    "pVpcStackName"        : "{{ vpc_stack_name }}",
+    "pDbEngine"            : "{{ db_engine }}",
+    "pDbParamGrpFamily"    : "{{ db_param_grp_family }}"
+  },
+  "Tags" : {
+    "product"     : "{{ product_name }}",
+    "component"   : "{{ product_component }}",
+    "environment" : "{{ environment }}",
+    "branch"      : "{{ src_branch }}",
+    "version"     : "{{ commit_id }}",
+    "build"       : "{{ codebuild_build_number }}"
+  },
+  "StackPolicy" : {
+    "Statement" : [
+      {
+        "Effect" : "Allow",
+        "Action" : "Update:*",
+        "Principal": "*",
+        "Resource" : "*"
+      }
+    ]
+  }
+}

@@ -1,0 +1,202 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ""
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+secret:
+  name: "images-config-secret"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: "alb"
+  certificateArn: ""
+  hostname: ""
+  tls: []
+  accessLogsBucket: ""
+  accessLogsPrefix: ""
+
+tags:
+  branch: ""
+  component: ""
+  environment: ""
+  Name: ""
+  product: ""
+  version: ""
+
+resources:
+  requests:
+    cpu: "1"          # 1 vCPU
+    memory: "4096Mi"  # 4GB
+  limits:
+    cpu: "1"          # 1 vCPU
+    memory: "4096Mi"  # 4GB
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 90
+  periodSeconds: 5
+  timeoutSeconds: 15
+  successThreshold: 1
+  failureThreshold: 40 # 40 failures + initial delay of 90 seconds = 290 seconds
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+rds:
+  name: "mysql-rds"
+  externalName: "mysql-rds"
+
+# Config file properties
+version: "5.0.0"
+app:
+  url: "https://images.ala.org.au"
+authCookieName: "ALA-Auth"
+defaultLogoutRedirectUri: "https://www.ala.org.au"
+affiliation:
+  enabled: true
+cookie:
+  enabled: true
+  domain: ".ala.org.au"
+oidc:
+  enabled: true
+  clientId: ""
+  secret: ""
+  discoveryUri: ""
+  logoutUrl: ""
+jwt:
+  enabled: true
+  legacy:
+    enabled: true
+webservice:
+  enabled: true
+  clientId: ""
+  secret: ""
+apikey:
+  enabled: true
+  auth:
+    serviceUrl: "https://auth.ala.org.au/apikey/ws/check/"
+  check:
+    serviceUrl: "https://auth.ala.org.au/apikey/ws/check?apikey="
+  userdetails:
+    serviceUrl: "https://auth.ala.org.au/userdetails/userDetails/"
+userdetails:
+  api:
+    url: "https://api.ala.org.au/userdetails/"
+  app:
+    url: https://userdetails.ala.org.au/
+cas:
+  serverName: https://auth.ala.org.au
+
+db:
+  endpoint: ""
+  database_name: ""
+  db_username: ""
+  db_password: ""
+
+biocache:
+  url: "https://biocache.ala.org.au"
+collectory:
+  url: "https://collections.ala.org.au"
+ala:
+  baseURL: "https://www.ala.org.au"
+bie:
+  baseURL: "https://bie.ala.org.au"
+
+headerAndFooter:
+  baseURL: "https://www.ala.org.au/commonui-bs3-2019"
+  version: "2"
+podEnvironment: "production"
+xmx: "3g"
+xms: "3g"
+elasticsearch:
+  host: ""
+
+elasticsearch-images:
+  deployment:
+    name: "elasticsearch-images"
+  enabled: true
+  namespace: "elasticsearch"
+  service:
+    name: "elasticsearch-images"
+    host: ""
+    port: 9200
+    username: ""
+    password: ""
+    authEnabled: false
+  persistence:
+    enabled: true
+    storageClass: "auto-ebs-sc"
+    accessMode: ReadWriteOnce
+    size: 10Gi
+  single_node_es: true

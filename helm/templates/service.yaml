@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-{{ include "ala-images.fullname" . }}
+  labels:
+    {{- include "ala-images.labels" . | nindent 4 }}
+spec:
+  type: LoadBalancer
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort}}
+      protocol: TCP
+  selector:
+    {{- include "ala-images.selectorLabels" . | nindent 4 }}

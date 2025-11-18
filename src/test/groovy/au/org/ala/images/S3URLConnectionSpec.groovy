@@ -12,8 +12,8 @@ import com.amazonaws.client.builder.AwsClientBuilder
 import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import org.junit.jupiter.api.extension.ExtendWith
+import spock.lang.Ignore
 import spock.lang.Specification
-
 
 @ExtendWith(LocalstackDockerExtension.class)
 @LocalstackDockerProperties(services = [ ServiceName.S3 ], imageTag = '4.1.1')
@@ -35,6 +35,10 @@ class S3URLConnectionSpec extends Specification {
 
         def localstack = Localstack.INSTANCE
 
+    }
+
+    def cleanupSpec() {
+        Localstack.INSTANCE.stop()
     }
 
     def "should throw an exception if the URL scheme is not 's3'"() {

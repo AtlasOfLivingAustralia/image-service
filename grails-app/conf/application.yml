@@ -346,6 +346,11 @@ elasticsearch:
         scheme: "http"
         port: 9200
 
+management:
+  health:
+    elasticsearch:
+      enabled: false
+
 # Number of days to wait before purging completed batch jobs
 purgeCompletedAgeInDays: 3
 

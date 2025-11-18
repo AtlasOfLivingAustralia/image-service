@@ -13,6 +13,7 @@ import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import grails.testing.gorm.DomainUnitTest
 import org.junit.jupiter.api.extension.ExtendWith
+import spock.lang.Ignore
 
 import static cloud.localstack.deprecated.TestUtils.DEFAULT_REGION
 

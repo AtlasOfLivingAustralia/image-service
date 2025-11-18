@@ -132,7 +132,10 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
         def md5Hash = md.digest(imageInBytes)
 
         //compare image with source
-        def imageAsBytes = new URL("https://upload.wikimedia.org/wikipedia/commons/e/ed/Puma_concolor_camera_trap_Arizona_2.jpg").getBytes()
+        def url = new URL("https://upload.wikimedia.org/wikipedia/commons/e/ed/Puma_concolor_camera_trap_Arizona_2.jpg")
+        def connection = url.openConnection()
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+        def imageAsBytes = connection.inputStream.bytes
 
         def md5Hash2 =  md.digest(imageAsBytes)
 

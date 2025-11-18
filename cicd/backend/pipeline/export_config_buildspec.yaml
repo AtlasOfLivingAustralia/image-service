@@ -1,0 +1,200 @@
+version: 0.2
+###
+# This build project exports any variables needed for later stages and actions,
+# builds the template configs used to launch the CloudFormation templates
+
+env:
+  shell: bash
+  git-credential-helper: yes
+  variables:
+    DEBIAN_FRONTEND: "noninteractive"
+  exported-variables:
+    - BASE_STACK_FILE_PFIX
+    - BASE_STACK_NAME
+    - CODEBUILD_BUILD_NUMBER
+    - CODEBUILD_BUILD_NUMBER
+    - COGNITO_STACK_NAME
+    - DB_READ_ENDPOINT
+    - DB_WRITE_ENDPOINT
+    - DOMAIN_NAME
+    - EKS_CLUSTER_NAME
+    - HELM_RELEASE_NAME
+    - CERTIFICATE_ARN
+    - HOSTED_ZONE
+    - PRODUCT_COMPONENT
+    - PRODUCT_NAME
+    - SECRET_NAME
+    - EKS_NAMESPACE
+    - ACCESS_LOGS_S3_BUCKET_NAME
+    - SLACK_ALERT_CHANNEL
+    - SLACK_DEPLOY_NOTIFICATION
+
+phases:
+
+  install:
+    commands:
+      - echo Running on $(lsb_release -d | cut -f2)
+      - echo aws-cli version $(aws --version)
+      - pip install jinja2
+      - export CUR_PIPELINE_FINGERPRINT=$(md5sum cicd/$PRODUCT_COMPONENT/pipeline/pipeline.yaml | awk '{print $1}')
+      - # This next bit checks if the running pipeline is out of sync with the pipeline in the
+      - # current code revision. If it is it re-launches itself! For a normal branch commit the
+      - # pipeline is set to autorun on update so it will restart automatically and launch the
+      - # latest revision on the branch. For a rollback we dont want it to restart automatically as
+      - # we need to run a specific commit, not the latest. In this case the pipeline is set NOT to
+      - # autorun on update. It will have to be manually started after the rollback pipeline
+      - # has finished launching
+      - | 
+          if [[ $PIPELINE_FINGERPRINT != $CUR_PIPELINE_FINGERPRINT ]]; then
+            echo existing pipeline is out of sync with current code revision, relaunching!
+            cd cicd/$PRODUCT_COMPONENT/pipeline/
+            ./deploy_pipeline.sh -e ${ENVIRONMENT:0:4} -b $SRC_BRANCH
+            # pipeline execution should now stop if this is a rollback, 
+            # or restart automatically if this a normal branch deploy
+            exit 1
+          else
+            echo existing pipeline is in sync with current code revision, proceeding with the deploy!
+          fi
+    finally:
+      - #echo This always runs even if the update or install command fails
+
+  pre_build:
+    commands:
+      - echo Entered the pre_build phase...
+      - echo source branch is $SRC_BRANCH
+      - echo clean branch is $CLEAN_BRANCH
+      - echo Environment is $ENVIRONMENT
+      - echo generating environment vars...
+      - cicd/gen_env_vars.py --env $ENVIRONMENT --clean-branch $CLEAN_BRANCH --conf cicd/$PRODUCT_COMPONENT/config.ini > env.txt
+      - echo loading config..
+      - set -a ; source env.txt ; set +a
+      - ECR_REPO=$(aws cloudformation list-exports --query "Exports[?Name=='$BASE_STACK_NAME-ImagesRepositoryUri'].Value" --output text)
+      - echo ECR_REPO=$ECR_REPO
+      - DB_READ_ENDPOINT=$(aws cloudformation describe-stacks --stack-name $DATABASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ReadEndpoint'].OutputValue" --output text)
+      - DB_WRITE_ENDPOINT=$(aws cloudformation describe-stacks --stack-name $DATABASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='WriteEndpoint'].OutputValue" --output text)
+      - echo DB_READ_ENDPOINT=$DB_READ_ENDPOINT
+      - echo DB_WRITE_ENDPOINT=$DB_WRITE_ENDPOINT
+      - ACCESS_LOGS_S3_BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerAccessLogsBucket'].OutputValue" --output text)
+      - echo ACCESS_LOGS_S3_BUCKET_NAME=$ACCESS_LOGS_S3_BUCKET_NAME
+      - export EKS_CLUSTER_NAME=$(aws cloudformation list-exports --query "Exports[?Name=='$REGOLITH_STACK_NAME-ClusterName'].Value" --output text)
+      - echo EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME
+      - export OIDC_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesAppClient'].OutputValue" --output text)
+      - echo OIDC_CLIENT_ID=$OIDC_CLIENT_ID
+      - echo SECRET_NAME=$SECRET_NAME
+      - echo BASE_STACK_NAME=$BASE_STACK_NAME
+      - DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["db-password"]')
+      - CAS_CLIENT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["cas-client-secret"]')
+      - export USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $COGNITO_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
+      - export CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $OIDC_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
+      - echo creating the configmap for the images deployment...
+      - |
+        source cicd/unset_codebuild_env_vars.sh
+        for var in $(printenv | awk -F= '{print $1}'); do
+          echo "$var=\"$(printenv $var)\"" >> app.env
+        done
+    finally:
+      - #echo This always runs
+
+  build:
+    commands:
+      - echo Entered the build phase...
+      - DB_NAME=$PRODUCT_NAME$ENVIRONMENT
+      - DB_HOSTNAME=$([[ "$ENVIRONMENT" == "development" ]] && echo "$CLEAN_BRANCH" || echo "$ENVIRONMENT")
+      - |
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            CLIENT_ID=${CAS_CLIENT_ID}
+            CLIENT_SECRET=${CAS_CLIENT_SECRET}
+          fi
+      - |
+        echo "
+        elasticsearch-images:
+          deployment:
+            name: elasticsearch-images-${CLEAN_BRANCH}
+          service:
+            name: elasticsearch-images-${CLEAN_BRANCH}
+          single_node_es: ${SINGLE_NODE_ES}
+        elasticsearch:
+          host: "${ELASTICSEARCH_HOST}"
+        app:
+          url: https://$DOMAIN_NAME
+        db:
+          endpoint: "images-pg-rds-${CLEAN_BRANCH}"
+          database_name: "${DB_NAME}"
+          db_username: "${DB_USERNAME}"
+          db_password: "${DB_PASSWORD}"
+        authCookieName: $AUTH_COOKIE_NAME
+        defaultLogoutRedirectUri: $DEFAULT_LOGOUT_REDIRECT_URL
+        affiliation:
+          enabled: $AFFILIATION_ENABLED
+        cookie:
+          enabled: $AUTH_COOKIE_ENABLED
+          domain: $AUTH_COOKIE_DOMAIN
+        oidc:
+          enabled: $OIDC_ENABLED
+          discoveryUri: https://cognito-idp.ap-southeast-2.amazonaws.com/${USER_POOL_ID}/.well-known/openid-configuration
+          clientId: $OIDC_CLIENT_ID
+          logoutUrl: $OIDC_LOGOUT_URL
+          secret: $CLIENT_SECRET
+        jwt:
+          enabled: $JWT_ENABLED
+          legacy:
+            enabled: $JWT_FALLBACK_TO_LEGACY
+        webservice:
+          enabled: $WEB_SERVICE_ENABLED
+        apikey:
+          enabled: $APIKEY_ENABLED
+          auth:
+            serviceUrl: $APIKEY_AUTH_URL
+          check:
+            serviceUrl: $APIKEY_CHECK_URL
+          userdetails:
+            serviceUrl: $APIKEY_USERDETAILS_URL
+        headerAndFooter:
+          baseURL: $HEADER_AND_FOOTER_BASEURL
+          version: $HEADER_AND_FOOTER_VERSION
+        userdetails:
+          app:
+           url: "${USERDETAILS_WEB_URL}"
+          api:
+            url: "${USERDETAILS_API_URL}"
+        cas:
+          serverName: "${CAS_URL}"
+        collectory:
+          url: $COLLECTORY_URL
+        biocache:
+            url: $BIOCACHE_URL
+        ala:
+          baseURL: $ALA_BASE_URL
+        bie:
+          baseURL: $BIE_BASE_URL
+        podEnvironment: "${POD_ENVIRONMENT}"
+        xmx: "${HEAP_SIZE_INITIAL}"
+        xms: "${HEAP_SIZE_MAX}"
+        ingress:
+          accessLogsPrefix: "logs"
+          accessLogsBucket: "${ACCESS_LOGS_S3_BUCKET_NAME}"
+        tags:
+          product: "${PRODUCT_NAME}"
+          component: "${PRODUCT_COMPONENT}"
+          environment: "${ENVIRONMENT}"
+          branch: "${CLEAN_BRANCH}"
+          version: "${COMMIT_ID}"
+          Name: "${HELM_RELEASE_NAME}"
+        resources:
+          requests:
+            cpu: ${CPU_REQUEST}
+            memory: ${MEMORY_REQUEST}
+          limits:
+            cpu: ${CPU_LIMIT}
+            memory: ${MEMORY_LIMIT}" > helm_values.yaml
+    finally:
+      - #echo This always runs
+
+
+  post_build:
+    commands:
+      - #echo Entered the post_build phase...
+
+artifacts:
+  files:
+    - '**/*'

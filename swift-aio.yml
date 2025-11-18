@@ -17,4 +17,3 @@ services:
     ports: 
       - "48080:8080"
       - "49022:22"
-version: "2"
