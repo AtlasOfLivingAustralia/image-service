@@ -5,33 +5,29 @@ import org.apache.commons.io.IOUtils;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
-import org.apache.tika.parser.mp3.Mp3Parser;
+import org.apache.tika.parser.mp4.MP4Parser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.helpers.DefaultHandler;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/**
- * A {@link au.org.ala.images.metadata.AbstractMetadataParser} that can extract tags from MP3 audio files
- */
-public class MP3MetadataParser extends AbstractMetadataParser {
+public class MP4MetadataExtractor extends AbstractMetadataParser {
 
-    public static final Logger log = LoggerFactory.getLogger(MP3MetadataParser.class);
+    private static final Logger log = LoggerFactory.getLogger(MP4MetadataExtractor.class);
 
     @Override
     public Pattern getContentTypePattern() {
-        return Pattern.compile("^audio/mp3$|^audio/mpeg$");
+        return Pattern.compile("^(audio|application|video)/mp4$");
     }
 
     @Override
-    public void extractMetadata(byte[] bytes, Map<String, String> md) {
-            InputStream input = new FastByteArrayInputStream(bytes);
-            extractMetadata(input, md);
+    public void extractMetadata(byte[] bytes, Map<String, String> metadata) {
+        InputStream input = new FastByteArrayInputStream(bytes);
+        extractMetadata(input, metadata);
     }
 
     @Override
@@ -39,21 +35,22 @@ public class MP3MetadataParser extends AbstractMetadataParser {
         try(InputStream input = unopenedStream) {
             ContentHandler handler = new DefaultHandler();
             Metadata metadata = new Metadata();
-            Parser parser = new Mp3Parser();
+            Parser parser = new MP4Parser();
             ParseContext parseCtx = new ParseContext();
             parser.parse(input, handler, metadata, parseCtx);
 
             // List all metadata
             String[] metadataNames = metadata.names();
 
-            for(String name : metadataNames){
+            for(String name : metadataNames) {
                 md.put(name, metadata.get(name));
             }
 
             // Consume the input stream to avoid resource leaks
             IOUtils.consume(input);
+
         } catch (Exception e) {
-            log.error("Exception extracting MP3 metadata", e);
+            log.error("Exception extracting MP4 metadata", e);
         }
     }
 }

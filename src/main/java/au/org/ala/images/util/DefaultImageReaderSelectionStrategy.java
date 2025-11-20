@@ -1,33 +1,35 @@
 package au.org.ala.images.util;
 
 import javax.imageio.ImageReader;
+import java.util.Iterator;
 import java.util.List;
 
 public class DefaultImageReaderSelectionStrategy implements ImageReaderSelectionStrategy {
 
-    public ImageReader selectImageReader(List<ImageReader> candidates) {
+    public static final DefaultImageReaderSelectionStrategy INSTANCE = new DefaultImageReaderSelectionStrategy();
 
-        if (candidates == null || candidates.size() == 0) {
+    public ImageReader selectImageReader(Iterator<ImageReader> candidates) {
+
+        if (candidates == null) {
             return null;
         }
 
-        if (candidates.size() == 1) {
-            return candidates.get(0);
-        }
+        ImageReader first = null;
+
 
         ImageReader preferred = null;
-        for (ImageReader reader : candidates) {
+        while (candidates.hasNext()) {
+            ImageReader reader = candidates.next();
+            if (first == null) {
+                first = reader;
+            }
             if (reader.getClass().getCanonicalName().contains("twelvemonkeys")) {
-                preferred = reader;
+                preferred = first;
                 break;
             }
         }
-        if (preferred != null) {
-            return preferred;
-        }
 
-        return candidates.get(0);
-
+        return preferred != null ? preferred : first;
     }
 
 }

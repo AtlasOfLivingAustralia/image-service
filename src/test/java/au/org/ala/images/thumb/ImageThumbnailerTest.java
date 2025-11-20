@@ -44,6 +44,9 @@ public class ImageThumbnailerTest extends TestBase{
             thumbList.add(new ThumbDefinition(300, true, Color.white, "thumbnail_square_white.jpg"));
             thumbList.add(new ThumbDefinition(300, true, Color.darkGray, "thumbnail_square_darkGray.jpg"));
             thumbList.add(new ThumbDefinition(650, false, Color.white, "thumbnail_large.jpg"));
+            thumbList.add(new ThumbDefinition(800, false, null, "thumbnail_xlarge.jpg"));
+            thumbList.add(new ThumbDefinition(300, true, null, "thumbnail_centre_crop.jpg"));
+            thumbList.add(new ThumbDefinition(650, false, Color.white, "thumbnail_centre_crop_large.jpg"));
 
             List<ThumbnailingResult> results = new ImageThumbnailer().generateThumbnails(imageBytes, tempDir.toFile(), thumbList);
             for (ThumbnailingResult r : results) {

@@ -12,13 +12,15 @@ import javax.imageio.*;
 import javax.imageio.spi.IIORegistry;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
 
 public class ImageTiler {
 
@@ -26,8 +28,10 @@ public class ImageTiler {
 
     private int _tileSize = 256;
     private int _maxColsPerStrip = 6;
-    private int _ioThreadCount = 2;
-    private int _maxLevelThreads = 2;
+//    private int _ioThreadCount = 2;
+//    private int _maxLevelThreads = 2;
+    private ExecutorService _levelThreadPool;
+    private ExecutorService _ioThreadPool;
     private TileFormat _tileFormat = TileFormat.JPEG;
     private Color _tileBackgroundColor = Color.gray;
     private boolean _exceptionOccurred =  false; // crude mechanism for the worker threads to communicate serious failure
@@ -41,8 +45,10 @@ public class ImageTiler {
 
     public ImageTiler(ImageTilerConfig config) {
         if (config != null) {
-            _ioThreadCount = config.getIOThreadCount();
-            _maxLevelThreads = config.getLevelThreadCount();
+//            _ioThreadCount = config.getIOThreadCount();
+//            _maxLevelThreads = config.getLevelThreadCount();
+            _levelThreadPool = config.getLevelExecutor();
+            _ioThreadPool = config.getIoExecutor();
             _tileSize = config.getTileSize();
             _maxColsPerStrip = config.getMaxColumnsPerStrip();
             _tileFormat = config.getTileFormat();
@@ -56,25 +62,43 @@ public class ImageTiler {
     }
 
     public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink) throws IOException, InterruptedException {
+        return tileImage(imageInputStream, tilerSink, 0, Integer.MAX_VALUE);
+    }
+
+    public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException, InterruptedException {
+
+        if (minLevel < 0 || maxLevel < 0 || minLevel > maxLevel) {
+            throw new IllegalArgumentException("Invalid min/max levels");
+        }
 
         try {
             _exceptionOccurred = false; // reset the error flag
             byte[] imageBytes = IOUtils.toByteArray(imageInputStream);
             int[] pyramid = _zoomFactorStrategy.getZoomFactors(imageBytes);
 
-            ExecutorService levelThreadPool = Executors.newFixedThreadPool(Math.min(pyramid.length, _maxLevelThreads));
-            ExecutorService ioThreadPool = Executors.newFixedThreadPool(_ioThreadCount);
+//            ExecutorService levelThreadPool = Executors.newVirtualThreadPerTaskExecutor();
+//            ExecutorService ioThreadPool = Executors.newVirtualThreadPerTaskExecutor();
+//            ExecutorService levelThreadPool = Executors.newFixedThreadPool(Math.min(pyramid.length, _maxLevelThreads));
+//            ExecutorService ioThreadPool = Executors.newFixedThreadPool(_ioThreadCount);
+
+            int to = Math.max(0, minLevel);
+            int from = Math.min(pyramid.length - 1, maxLevel);
 
             // Submit it reverse order so the big jobs get started first
-            for (int level = pyramid.length - 1; level >= 0 ; level--) {
-                submitLevelForProcessing(level, imageBytes, pyramid, tilerSink.getLevelSink(level), levelThreadPool, ioThreadPool);
+            List<Future<?>> futures = new ArrayList<>(from - to + 1);
+            for (int level = from; level >= to ; level--) {
+                futures.add(submitLevelForProcessing(level, imageBytes, pyramid, tilerSink.getLevelSink(level)));
             }
 
-            levelThreadPool.shutdown();
-            levelThreadPool.awaitTermination(30, TimeUnit.MINUTES);
+            for (Future<?> future : futures) {
+                future.get();
+            }
 
-            ioThreadPool.shutdown();
-            ioThreadPool.awaitTermination(30, TimeUnit.MINUTES);
+//            levelThreadPool.shutdown();
+//            levelThreadPool.awaitTermination(30, TimeUnit.MINUTES);
+//
+//            ioThreadPool.shutdown();
+//            ioThreadPool.awaitTermination(30, TimeUnit.MINUTES);
 
             if (!_exceptionOccurred) {
                 return new ImageTilerResults(true, pyramid.length);
@@ -89,47 +113,64 @@ public class ImageTiler {
         return new ImageTilerResults(false, 0);
     }
 
-    private void submitLevelForProcessing(int level, byte[] imageBytes, int[] pyramid, TilerSink.LevelSink levelSink, ExecutorService levelThreadPool, ExecutorService ioThreadPool) {
+    private Future<?> submitLevelForProcessing(int level, byte[] imageBytes, int[] pyramid, TilerSink.LevelSink levelSink) {
         int subSample = pyramid[level];
-        levelThreadPool.submit(new TileImageTask(imageBytes, subSample, levelSink, ioThreadPool));
+        log.debug("Submitting level {} (subsample {}) for processing", level, subSample);
+        return _levelThreadPool.submit(new TileImageTask(imageBytes, subSample, levelSink));
     }
 
-    private void tileImageAtSubSampleLevel(byte[] bytes, int subsample, TilerSink.LevelSink levelSink, ExecutorService ioThreadPool) throws IOException {
+    private void tileImageAtSubSampleLevel(byte[] bytes, int subsample, TilerSink.LevelSink levelSink) throws IOException {
 
         ImageReader reader = ImageReaderUtils.findCompatibleImageReader(bytes);
 
         if (reader != null) {
 
-            int srcHeight = reader.getHeight(0);
-            int srcWidth = reader.getWidth(0);
+            try {
+                int srcHeight = reader.getHeight(0);
+                int srcWidth = reader.getWidth(0);
 
-            int height = (int) Math.ceil( ((double) reader.getHeight(0)) / ((double) subsample));
-            int rows = (int) Math.ceil( ((double) height) / ((double) _tileSize));
+                int height = (int) Math.ceil( ((double) srcHeight) / ((double) subsample));
+                int rows = (int) Math.ceil( ((double) height) / ((double) _tileSize));
 
-            int stripWidth = _tileSize * subsample * _maxColsPerStrip;
-            int numberOfStrips = (int) Math.ceil( ((double) srcWidth) / ((double) stripWidth));
+                int stripWidth = _tileSize * subsample * _maxColsPerStrip;
+                int numberOfStrips = (int) Math.ceil( ((double) srcWidth) / ((double) stripWidth));
 
-            for (int stripIndex = 0; stripIndex < numberOfStrips; stripIndex++) {
+                log.debug("Image size: subsample {} srcWidth {} srcHeight {} height {} rows {} stripWidth {} numberOfStrips {}", subsample, srcWidth, srcHeight, height, rows, stripWidth, numberOfStrips);
 
-                int srcStripOffset = stripIndex * stripWidth;
-                if (srcStripOffset > srcWidth) {
-                    continue;
+                for (int stripIndex = 0; stripIndex < numberOfStrips; stripIndex++) {
+
+                    int srcStripOffset = stripIndex * stripWidth;
+                    if (srcStripOffset > srcWidth) {
+                        log.debug("Skipping subsample {} strip {} as it is beyond the image width", subsample, stripIndex);
+                        continue;
+                    }
+
+                    Rectangle stripRect = new Rectangle(srcStripOffset, 0, stripWidth, srcHeight);
+                    log.debug("Processing subsample {} strip {} at offset {}", subsample, stripIndex, srcStripOffset);
+                    ImageReadParam params = reader.getDefaultReadParam();
+                    params.setSourceRegion(stripRect);
+                    params.setSourceSubsampling(subsample, subsample, 0, 0);
+                    BufferedImage strip = reader.read(0, params);
+                    splitStripIntoTiles(strip, levelSink, rows, stripIndex);
                 }
-
-                Rectangle stripRect = new Rectangle(srcStripOffset, 0, stripWidth, srcHeight);
-                ImageReadParam params = reader.getDefaultReadParam();
-                params.setSourceRegion(stripRect);
-                params.setSourceSubsampling(subsample, subsample, 0, 0);
-                BufferedImage strip = reader.read(0, params);
-                splitStripIntoTiles(strip, levelSink, rows, stripIndex, ioThreadPool);
+            } finally {
+                var input = reader.getInput();
+                if (input instanceof Closeable) {
+                    try {
+                        ((Closeable) input).close();
+                    } catch (Exception e) {
+                        // ignored
+                    }
+                }
+                reader.dispose();
             }
-            reader.dispose();
+
         } else {
             throw new RuntimeException("No readers found suitable for file");
         }
     }
 
-    private void splitStripIntoTiles(BufferedImage strip, TilerSink.LevelSink levelSink, int rows, int stripIndex, ExecutorService ioThreadPool) {
+    private void splitStripIntoTiles(BufferedImage strip, TilerSink.LevelSink levelSink, int rows, int stripIndex) {
         // Now divide the strip up into tiles
         for (int col = 0; col < _maxColsPerStrip; col++) {
 
@@ -192,7 +233,7 @@ public class ImageTiler {
                 g.dispose();
                 // Shunt this off to the io writers.
                 ByteSink tileSink = columnSink.getTileSink(rows - y - 1);
-                ioThreadPool.submit(new ImageTiler.SaveTileTask(tileSink, destTile));
+                _ioThreadPool.submit(new ImageTiler.SaveTileTask(tileSink, destTile));
             }
         }
     }
@@ -248,18 +289,16 @@ public class ImageTiler {
         private byte[] _bytes;
         private int _subSample;
         private TilerSink.LevelSink _levelSink;
-        private ExecutorService _ioThreadPool;
 
-        public TileImageTask(byte[] bytes, int subSample, TilerSink.LevelSink levelSink, ExecutorService ioThreadPool) {
+        public TileImageTask(byte[] bytes, int subSample, TilerSink.LevelSink levelSink) {
             _bytes = bytes;
             _subSample = subSample;
             _levelSink = levelSink;
-            _ioThreadPool = ioThreadPool;
         }
 
         public void run() {
             try {
-                tileImageAtSubSampleLevel(_bytes, _subSample, _levelSink, _ioThreadPool);
+                tileImageAtSubSampleLevel(_bytes, _subSample, _levelSink);
             } catch (Exception | Error ex) {
                 _exceptionOccurred = true;
                 log.error("Exception occurred during tiling image task", ex);

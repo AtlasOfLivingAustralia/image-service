@@ -1,5 +1,6 @@
 package au.org.ala.images.metadata;
 
+import java.io.InputStream;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -21,5 +22,7 @@ public abstract class AbstractMetadataParser {
      * @param metadata A map to which metadata key value pairs should be added
      */
     public abstract void extractMetadata(byte[] bytes, Map<String, String> metadata);
+
+    public abstract void extractMetadata(InputStream inputStream, Map<String, String> metadata);
 
 }
