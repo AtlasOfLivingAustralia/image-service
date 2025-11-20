@@ -427,7 +427,7 @@ class ImageStoreService {
                 }
             }
         } else {
-            log.warn("Image tiling failed! ${results}");
+            log.warn("Image tiling for $imageIdentifier with z = $z failed! Results zoomLevels: ${results.zoomLevels}")
         }
         auditService.log(imageIdentifier, "TMS tiles generated", "N/A")
         ct.stop(true)
