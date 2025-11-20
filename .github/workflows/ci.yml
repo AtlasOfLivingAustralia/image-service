@@ -27,20 +27,21 @@ jobs:
     runs-on: ubuntu-latest
 
     # Set up PostgreSQL service directly in the runner
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: runner
-          POSTGRES_PASSWORD: ''
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # No postgres required because CI build only uses embedded postgres
+#    services:
+#      postgres:
+#        image: postgres:15
+#        env:
+#          POSTGRES_USER: postgres
+#          POSTGRES_PASSWORD: postgres
+#          POSTGRES_DB: images
+#        ports:
+#          - 5432:5432
+#        options: >-
+#          --health-cmd pg_isready
+#          --health-interval 10s
+#          --health-timeout 5s
+#          --health-retries 5
 
     steps:
       - name: Checkout code
