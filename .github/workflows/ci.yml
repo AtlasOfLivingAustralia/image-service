@@ -17,7 +17,7 @@ on:
 env:
   # Corresponds to 'env: global:'
   JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
-  GRADLE_OPTS_BASE: -Dgrails.env=travis
+  GRADLE_OPTS_BASE: -Dgrails.env=ghactions
   TRAVIS_DEPLOY_USERNAME: ${{ secrets.TRAVIS_DEPLOY_USERNAME }}
   TRAVIS_DEPLOY_PASSWORD: ${{ secrets.TRAVIS_DEPLOY_PASSWORD }}
 
