@@ -65,6 +65,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
     StorageLocation storageLocation
 
     def setup() {
+        controller.trackThumbnails = true
         controller.boundaryCounter = new AtomicLong(0) // reset this for each run
         storageLocation = new FileSystemStorageLocation(basePath: '/tmp')
         defineBeans {
@@ -76,8 +77,9 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
     @Unroll
     def "test serve image (range: #rangeHeader etag: #etag lastMod: #lastModified #headRequest)"(String fileMimeType, String rangeHeader, int statusCode, String contentType, long length, String etag, Date lastModified, boolean headRequest) {
         setup:
+        String identifier = UUID.randomUUID().toString()
         Image image = new Image(
-                imageIdentifier: UUID.randomUUID().toString(),
+                imageIdentifier: identifier,
                 contentSHA1Hash: sha1ContentHash,
                 fileSize: fileContent.length,
                 mimeType: fileMimeType,
@@ -93,16 +95,8 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.getOriginalFile()
 
         then:
-        if (statusCode != 304 && request.method != 'HEAD') {
-            for (def range : ranges) {
-                1 * controller.imageStoreService.originalInputStream(image, range) >> { range.wrapInputStream(new ByteArrayInputStream(fileContent)) }
-            }
-        } else {
-            for (def range : ranges) {
-                0 * controller.imageStoreService.originalInputStream(image, range)
-            }
-        }
-        1 * controller.analyticsService.sendAnalytics(image, 'imageview', userAgent)
+        1 * controller.imageStoreService.originalImageInfo(identifier) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: image.fileSize, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: image.mimeType, extension: 'jpg', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(fileContent)) }) }
+        1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, fileContent)
 
         where:
@@ -140,13 +134,8 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.proxyImageThumbnail()
 
         then:
-        if (statusCode != 304) {
-            fileMimeType.count('image/') * controller.imageStoreService.thumbnailStoredLength(image) >> { bytes.length }
-            for (def range : ranges) {
-                fileMimeType.count('image/') * controller.imageStoreService.thumbnailInputStream(image, range) >> { range.wrapInputStream(new ByteArrayInputStream(bytes)) }
-            }
-        }
-        1 * controller.analyticsService.sendAnalytics(image, 'imageview', userAgent)
+        1 * controller.imageStoreService.thumbnailImageInfo(image.imageIdentifier, '', _) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: bytes.length, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: bytes == fileContent ? 'image/jpeg' : 'image/png' , extension: bytes == fileContent ? 'jpg' : 'png', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
+        1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
         where:
@@ -183,21 +172,8 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.proxyImageThumbnailType()
 
         then:
-        if (statusCode != 304) {
-            if (fileMimeType.startsWith('image')) {
-                1 * controller.imageStoreService.thumbnailTypeStoredLength(image, type) >> { bytes.length }
-            } else {
-                0 * controller.imageStoreService.thumbnailTypeStoredLength(image, type)
-            }
-            for (def range : ranges) {
-                if (fileMimeType.startsWith('image')) {
-                    1 * controller.imageStoreService.thumbnailTypeInputStream(image, type, range) >> { range.wrapInputStream(new ByteArrayInputStream(bytes)) }
-                } else {
-                    0 * controller.imageStoreService.thumbnailTypeInputStream(image, type, range)
-                }
-            }
-        }
-        1 * controller.analyticsService.sendAnalytics(image, 'imageview', userAgent)
+        1 * controller.imageStoreService.thumbnailImageInfo(image.imageIdentifier, type, _) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: bytes.length, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: bytes == fileContent ? type == 'square' ? 'image/png' : 'image/jpeg' : 'image/png' , extension: bytes == fileContent ? type == 'square' ? 'png' : 'jpg' : 'png', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
+        1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
         where:
@@ -238,19 +214,8 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.proxyImageTile()
 
         then:
-        if (statusCode != 304) {
-            1 * controller.imageStoreService.tileStoredLength(image, x, y, z) >> {
-                if (fileMimeType.startsWith('image')) bytes.length else throw new FileNotFoundException('')
-            }
-            for (def range : ranges) {
-                if (fileMimeType.startsWith('image')) {
-                    1 * controller.imageStoreService.tileInputStream(image, range, x, y, z) >> { range.wrapInputStream(new ByteArrayInputStream(bytes)) }
-                } else {
-                    0 * controller.imageStoreService.tileInputStream(image, range, x, y, z)
-                }
-            }
-        }
-        0 * controller.analyticsService.sendAnalytics(image, 'imageview', userAgent)
+        1 * controller.imageStoreService.tileImageInfo(image.imageIdentifier, x, y, z, _) >> { new ImageInfo(exists: fileMimeType.startsWith('image/'), imageIdentifier: image.imageIdentifier, length: bytes.length, etag: sha1ContentHash, lastModified: dateUploaded, contentType: 'image/jpeg', extension: 'jpg', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
+        0 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
         where:
@@ -330,8 +295,8 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.details()
 
         then:
-        1 * controller.imageStoreService.originalInputStream(image, range) >> { range.wrapInputStream(new ByteArrayInputStream(fileContent)) }
-        1 * controller.analyticsService.sendAnalytics(image, 'imageview', userAgent)
+        1 * controller.imageStoreService.originalImageInfo(image.imageIdentifier) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, dataResourceUid: image.dataResourceUid, length: image.fileSize, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: image.mimeType, extension: 'jpg', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(fileContent)) }) }
+        1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
         checkGetImageAssertions(image, [range], 200, image.fileSize, image.mimeType, fileContent)
     }
 
@@ -431,7 +396,6 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
 
     private void checkGetImageAssertions(Image image, List<Range> ranges, int statusCode, long expectedLength, String expectedContentType, byte[] content) {
         assert response.status == statusCode
-        assert response.contentLengthLong == expectedLength
         assert response.contentType == expectedContentType
         if (statusCode < 400) {
             assert response.header('etag') == image.contentSHA1Hash
@@ -447,7 +411,16 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
                 assert response.contentAsByteArray == content[(ranges[0].start())..(ranges[0].end())] as byte[]
             }
         }
+        if (statusCode == 206 && ranges.size() == 1) {
+            assert response.header('Content-Range') == "bytes ${ranges[0].start()}-${ranges[0].end()}/${content.length}"
+        }
         // TODO test multipart response body
+        if (statusCode == 206 && request.method != 'HEAD' && ranges.size() > 1) {
+            assert response.contentAsByteArray.length == expectedLength
+        }
+
+        assert response.contentLengthLong == expectedLength
+
         response.reset()
         response.resetBuffer()
 

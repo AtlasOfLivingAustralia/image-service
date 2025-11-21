@@ -161,12 +161,14 @@
             </g:if>
             <a class="btn btn-default" href="${createLink(controller:'image', action:'getOriginalFile', id:imageInstance.id, params:[contentDisposition: 'true'])}" title="${g.message(code:'core.image.metadata.download', default: 'Download full image')}" target="imageWindow"><i class="glyphicon glyphicon-download-alt"></i></a>
             <g:if test="${isAdminView}">
-                <button class="btn btn-default" id="btnRegen" title="Regenerate artifacts"><i class="glyphicon glyphicon-refresh"></i></button>
-            </g:if>
-            <g:if test="${isAdminView}">
                 <button class="btn btn-danger" id="btnDeleteImage" title="Delete image (admin)">
                     <i class="glyphicon glyphicon-remove  glyphicon-white"></i>
                 </button>
+                <g:if test="${isImage}">
+                    <button class="btn btn-warning" id="btnResetTiles" title="Reset image tiles and zoom factor">
+                        <i class="glyphicon glyphicon-refresh glyphicon-white"></i>
+                    </button>
+                </g:if>
             </g:if>
             <g:if test="${!isAdminView && (userId && userId.toString() == imageInstance.uploader) }">
                 <button class="btn btn-danger" id="btnDeleteImage" title="${g.message(code:'core.image.metadata.delete', default: 'Delete your image')}">

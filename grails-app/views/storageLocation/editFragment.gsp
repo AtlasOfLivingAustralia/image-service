@@ -39,6 +39,11 @@
                 <g:textField class="form-control" name="prefix" value="${s3StorageLocation.prefix}" placeholder="images/prefix" />
             </div>
             <div class="form-group">
+                <label>
+                    <g:checkBox name="containerCredentials" value="${s3StorageLocation.containerCredentials}" /> Use Container Credentials instead of Access Key and Secret Key
+                </label>
+            </div>
+            <div class="form-group">
                 <label for="accessKey">Access Key</label>
                 <g:textField class="form-control" name="accessKey" value="${s3StorageLocation.accessKey}" placeholder="" />
             </div>
@@ -55,6 +60,10 @@
                 <label>
                     <g:checkBox name="redirect" value="${s3StorageLocation.redirect}" /> Redirect
                 </label>
+            </div>
+            <div class="form-group">
+                <label for="endpoint">Cloudfront Redirect Domain</label>
+                <g:textField class="form-control" name="cloudfrontDomain" value="${s3StorageLocation.cloudfrontDomain}" placeholder="images-assets.example.org" />
             </div>
         </div>
     </g:elseif>

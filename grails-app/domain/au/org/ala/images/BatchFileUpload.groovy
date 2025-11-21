@@ -34,5 +34,6 @@ class BatchFileUpload {
     }
     static mapping = {
         version false
+        batchFiles lazy: false
     }
 }

@@ -7,7 +7,7 @@ class ImagesTagLib {
 
     static namespace = 'img'
 
-    static returnObjectForTags = ['sanitiseString']
+    static returnObjectForTags = ['sanitiseString', 'maskUrlCredentials']
 
     def imageService
     def groovyPageLocator
@@ -105,7 +105,20 @@ class ImagesTagLib {
 
     def imageThumbUrl = { attrs, body ->
         if (attrs.imageId ) {
-            out << imageService.getImageThumbUrl(attrs.imageId as String)
+            if (attrs.centreCrop) {
+                if (attrs.large) {
+                    out << imageService.getImageCentreCropLargeThumbUrl(attrs.imageId as String)
+                } else {
+                    out << imageService.getImageCentreCropThumbUrl(attrs.imageId as String)
+                }
+            } else if (attrs.large) {
+                out << imageService.getImageThumbLargeUrl(attrs.imageId as String)
+
+            } else if (attrs.square) {
+                out << imageService.getImageSquareThumbUrl(attrs.imageId as String, attrs.backgroundColour as String ?: 'darkGrey')
+            } else {
+                out << imageService.getImageThumbUrl(attrs.imageId as String)
+            }
         }
     }
 
@@ -253,13 +266,15 @@ class ImagesTagLib {
         }
     }
 
+    static final List<String> SYSTEM_USERNAMES = [BatchService.BATCH_UPDATE_USERNAME]
+
     /**
      * @attr userId User id
      */
     def userDisplayName = { attrs, body ->
         String userId = attrs.userId as String
         def displayName = ""
-        if (userId) {
+        if (userId && !SYSTEM_USERNAMES.contains(userId)) {
             displayName = authService.getUserForUserId(userId)?.displayName
         }
 
@@ -360,5 +375,65 @@ class ImagesTagLib {
         if (md) {
             out << sanitiserService.sanitise(new MetaDataValueFormatRules(grailsApplication).formatValue(md))
         }
+    }
+
+    def batchFileUploadStatus = { attrs, body ->
+        def status = attrs.status
+        //${batchFileUpload.status == 'LOADING' ? 'active' : ''}
+        // ${batchFileUpload.status == 'COMPLETE' ? 'success' : ''}
+        // ${batchFileUpload.status == 'PARTIALLY_COMPLETE' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'WAITING_PROCESSING' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'QUEUED' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'STOPPED' ? 'danger' : ''}
+        switch (status) {
+            case BatchService.UNPACKING:
+            case BatchService.UNZIPPED:
+                out << ""
+                break
+            case BatchService.LOADING:
+            case BatchService.WAITING__PROCESSING:
+                out << "info"
+                break
+            case BatchService.COMPLETE:
+                out << "success"
+                break
+            case BatchService.PARTIALLY__COMPLETE:
+                out << "primary"
+                break
+            case BatchService.QUEUED:
+                out << "warning"
+                break
+            case BatchService.STOPPED:
+            case BatchService.CORRUPT__AVRO__FILES:
+                out << "danger"
+                break
+        }
+    }
+
+    /**
+     * Masks username/password in a URL for non-admin users. If the current user is admin, returns the URL unchanged.
+     * - Supports full URLs with credentials (scheme://user:pass@host) or (scheme://user@host)
+     * - Leaves non-URL strings unchanged
+     * - Sanitises the output via sanitiserService
+     * @attr value The original filename or URL string
+     */
+    def maskUrlCredentials = { attrs, body ->
+        String value = attrs.value as String
+        if (!value) {
+            return ''
+        }
+        Boolean adminAttr = (attrs.isAdmin instanceof Boolean) ? (attrs.isAdmin as Boolean) : null
+        boolean isAdmin = false
+        if (adminAttr != null) {
+            isAdmin = adminAttr
+        } else {
+            try {
+                isAdmin = request?.isUserInRole(au.org.ala.web.CASRoles.ROLE_ADMIN)
+            } catch (Throwable ignore) {
+                // In case request is not available in some contexts
+            }
+        }
+        String masked = UrlUtils.maskCredentials(value, isAdmin)
+        return masked
     }
 }

@@ -8,7 +8,7 @@ package au.org.ala.images
 class QueryResults <T> {
 
     public List<T> list = []
-    public int totalCount = 0
+    public long totalCount = 0
     public Map<String, Map<String, Object>> aggregations = [:]
     public Map<Object,Object> filters = [:]
 }

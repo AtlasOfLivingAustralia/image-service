@@ -29,22 +29,6 @@
         </tr>
         <tr>
             <td>
-                <button id="btnRegenArtifacts" class="btn btn-default">Regenerate Image Artifacts</button>
-            </td>
-            <td>
-                Regenerate all tiles and thumbnails for all images in the repository. Progress can be tracked on the dashboard.
-            </td>
-        </tr>
-        <tr>
-            <td>
-                <button id="btnRegenThumbnails" class="btn btn-default">Regenerate Image Thumbnails</button>
-            </td>
-            <td>
-                Regenerate just thumbnails for all images in the repository. Progress can be tracked on the dashboard.
-            </td>
-        </tr>
-        <tr>
-            <td>
                 <button id="btnRebuildKeywords" class="btn btn-default">Rebuild Keywords</button>
             </td>
             <td>
@@ -112,6 +96,22 @@
         </tr>
         <tr>
             <td>
+                <button id="btnClearThumbnailLookupCache" class="btn btn-default">Clear thumbnail existence cache</button>
+            </td>
+            <td>
+                Clear the thumbnail lookup cache, useful if thumbnails need to be regenerated
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearTileLookupCache" class="btn btn-default">Clear tile existence cache</button>
+            </td>
+            <td>
+                Clear the tile lookup cache, useful if tiles need to be regenerated
+            </td>
+        </tr>
+        <tr>
+            <td>
                 <button id="btnMissingImagesCheck" class="btn btn-default">Missing images check</button>
             </td>
             <td>
@@ -126,6 +126,14 @@
                 This will run a background task that will remove deleted images from the filesystem and the database.
             </td>
         </tr>
+        <tr>
+            <td>
+                <button id="btnClearFailedUploads" class="btn btn-default">Clear Failed Uploads by Regex</button>
+            </td>
+            <td>
+                Delete failed upload entries based on a regular expression pattern that matches the URL.
+            </td>
+        </tr>
     </table>
 <script>
 
@@ -134,20 +142,6 @@
         $("#btnMissingImagesCheck").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'checkForMissingImages')}";
-        });
-
-        $("#btnRegenArtifacts").on('click', function(e) {
-            e.preventDefault();
-            $.ajax("${createLink(controller:'webService', action:'scheduleArtifactGeneration')}").done(function() {
-                window.location = "${createLink(action:'tools')}";
-            });
-        });
-
-        $("#btnRegenThumbnails").on('click', function(e) {
-            e.preventDefault();
-            $.ajax("${createLink(controller:'webService', action:'scheduleThumbnailGeneration')}").done(function() {
-                window.location = "${createLink(action:'tools')}";
-            });
         });
 
         $("#btnRebuildKeywords").on('click', function(e) {
@@ -198,9 +192,23 @@
             window.location = "${createLink(action:'clearHibernateCache')}";
         });
 
+        $("#btnClearThumbnailLookupCache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearThumbnailLookupCache')}";
+        });
+        $("#btnClearTileLookupCache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearTileLookupCache')}";
+        });
+
         $("#btnPurgeDeletedImages").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'scheduleDeletedImagesPurge')}";
+        });
+        
+        $("#btnClearFailedUploads").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearFailedUploads')}";
         });
     });
 

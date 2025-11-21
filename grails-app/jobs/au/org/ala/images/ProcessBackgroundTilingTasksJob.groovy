@@ -1,9 +1,11 @@
 package au.org.ala.images
 
+import groovy.util.logging.Slf4j
+
+@Slf4j
 class ProcessBackgroundTilingTasksJob {
 
     def imageService
-    def logService
     def settingService
 
     static concurrent = false
@@ -18,7 +20,7 @@ class ProcessBackgroundTilingTasksJob {
                 imageService.processTileBackgroundTasks()
             }
         } catch (Exception ex) {
-            logService.error("Exception thrown in tiling job handler", ex)
+            log.error("Exception thrown in tiling job handler", ex)
             throw ex
         }
     }

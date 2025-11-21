@@ -32,10 +32,19 @@
                             <a id="btnAddCriteria" class="btn btn-default">
                                 <g:message code="list.advanced.search" />
                             </a>
-                            <a class="btn btn-default" href="${createLink(controller:'search', action:'download')}?${request.getQueryString()}">
-                                <span class="glyphicon glyphicon-download"></span>
-                                <g:message code="list.download.results" />
-                            </a>
+                            <auth:ifLoggedIn>
+                                <a class="btn btn-default" href="${createLink(controller:'search', action:'download')}?${request.getQueryString()}">
+                                    <span class="glyphicon glyphicon-download"></span>
+                                    <g:message code="list.download.results" />
+                                </a>
+                            </auth:ifLoggedIn>
+                            <auth:ifNotLoggedIn>
+                                <!-- Button trigger modal -->
+                                <button type="button" class="btn btn-default" data-toggle="modal" data-target="#modal-download-login-required">
+                                    <span class="glyphicon glyphicon-download"></span>
+                                    <g:message code="list.download.results" />
+                                </button>
+                            </auth:ifNotLoggedIn>
                         </div>
                     </div>
                 </g:form>
@@ -81,6 +90,22 @@
                     <div class="modal-footer">
                         <button id="btnSaveCriteria" type="button" class="btn btn-small btn-primary pull-right"><g:message code="list.add.criteria" /></button>
                         <button type="button" class="btn btn-default" data-dismiss="modal"><g:message code="list.close" /></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal fade" id="modal-download-login-required" tabindex="-1" role="dialog" aria-labelledby="label-download-login-required">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                        <h4 class="modal-title" id="label-download-login-required"><g:message code="list.download.loginRequiredModal.title" default="Login Required"/></h4>
+                    </div>
+                    <div class="modal-body">
+                        <p><g:message code="list.download.loginRequiredModal.body" default="Please login to download image search results."/></p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-default" data-dismiss="modal"><g:message code="list.download.loginRequiredModal.close" default="Close"/></button>
                     </div>
                 </div>
             </div>

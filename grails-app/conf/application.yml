@@ -178,6 +178,26 @@ environments:
               inbox: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-incoming'
           exportDir: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-exports'
           batchUpload: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-uploads'
+    ghactions:
+      grails:
+        config:
+          locations: [ ]
+      flyway:
+        baselineOnMigrate: false
+      dataSource:
+        embeddedPostgres: true
+        pooled: true
+        jmxExport: true
+        embeddedPort: 6543
+        username: postgres
+        password: postgres
+        url: jdbc:postgresql://localhost:6543/postgres?autoReconnect=true&connectTimeout=0&useUnicode=true&characterEncoding=UTF-8
+      imageservice:
+        imagestore:
+          root: '${RUNNER_TEMP}/temp-store'
+          inbox: '${RUNNER_TEMP}/temp-incoming'
+        exportDir: '${RUNNER_TEMP}/temp-exports'
+        batchUpload: '${RUNNER_TEMP}/temp-uploads'
     production:
         hibernate:
             dialect: net.kaleidos.hibernate.PostgresqlExtensionsDialect
@@ -296,6 +316,9 @@ placeholder:
     document:
         thumbnail: "classpath:images/200px-Document_icon.svg.png"
         large: "classpath:images/500px-Document_icon.svg.png"
+    image:
+        thumbnail: "classpath:images/no-image-thumbnail.png"
+        original: "classpath:images/no-image-fullsize.png"
     missing:
         thumbnail: "classpath:images/200px-Document_icon.svg.png"
 
@@ -364,3 +387,9 @@ http:
     default:
         connectTimeoutMs: 120000
         readTimeoutMs: 120000
+
+tiling:
+    tileSize: 256
+    maxColsPerStrip: 6
+    levelThreads: 2
+    ioThreads: 2

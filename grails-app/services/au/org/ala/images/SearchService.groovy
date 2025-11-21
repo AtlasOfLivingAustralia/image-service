@@ -13,7 +13,7 @@ class SearchService {
 
     public static final String SEARCH_CRITERIA_SESSION_KEY = "session.key.searchCriteria"
 
-    QueryResults<Image> search(GrailsParameterMap params) {
+    QueryResults<Map<String,Object>> search(GrailsParameterMap params) {
         return elasticSearchService.simpleImageSearch(getSearchCriteriaList(), params)
     }
 

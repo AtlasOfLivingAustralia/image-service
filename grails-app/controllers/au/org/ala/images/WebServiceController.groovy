@@ -6,6 +6,7 @@ import au.org.ala.web.SSO
 import com.google.common.base.Suppliers
 import grails.converters.JSON
 import grails.converters.XML
+import groovy.util.logging.Slf4j
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.headers.Header
@@ -29,6 +30,7 @@ import static io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.PATH
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
 
+@Slf4j
 class WebServiceController {
 
     static String LEGACY_API_KEY_HEADER_NAME = 'apiKey'
@@ -38,7 +40,6 @@ class WebServiceController {
     def imageStoreService
     def tagService
     def searchService
-    def logService
     def batchService
     def elasticSearchService
     def collectoryService
@@ -249,10 +250,10 @@ class WebServiceController {
                 imageService.scheduleArtifactGeneration(imageInstance.id, userId)
                 results.message = "Image artifact generation scheduled for image ${imageInstance.id}"
             } else {
-                def count = forEachImageId { imageId ->
-                    imageService.scheduleArtifactGeneration(imageId, userId)
-                }
-                results.message = "Image artifact generation scheduled for ${count} images."
+//                def count = forEachImageId { imageId ->
+//                    imageService.scheduleArtifactGeneration(imageId, userId)
+//                }
+                results.message = "Not performing indexing on all images."
             }
             flash.message  = results.message
             renderResults(results)
@@ -783,7 +784,7 @@ class WebServiceController {
         renderResults([
                 tagID: params.tagID,
                 totalImageCount: results.totalCount,
-                images: results.list,
+                images: imageService.imageListToImageInfoList(results.list),
         ], 200, true)
     }
 
@@ -1237,7 +1238,7 @@ class WebServiceController {
           filters: filterQueries,
           searchCriteria: searchService.getSearchCriteriaList(),
           facets: results.aggregations,
-          images: results.list,
+          images: imageService.searchResultsToImageInfoList(results.list),
         ], 200, true)
     }
 
@@ -1721,6 +1722,8 @@ class WebServiceController {
                     metadata["squareThumbUrl"]  = imageService.getImageSquareThumbUrl(metadata.imageIdentifier)
                     metadata["thumbUrl"]  = imageService.getImageThumbUrl(metadata.imageIdentifier)
                     metadata["tilesUrlPattern"]  = imageService.getImageTilesUrlPattern(metadata.imageIdentifier)
+                    metadata["originalFilename"] = UrlUtils.stripCredentials(metadata.originalFilename)
+                    metadata["alternateFilename"] = metadata.alternateFilename?.collect { UrlUtils.stripCredentials(it) }
                     metadata.remove("fileSize")
                     metadata.remove("zoomLevels")
                     metadata.remove("storageLocationId")
@@ -1783,7 +1786,7 @@ class WebServiceController {
             return
         }
 
-        logService.log("Cancelling job (Ticket: ${job.ticket} for image ${job.image.imageIdentifier}")
+        log.info("Cancelling job (Ticket: ${job.ticket} for image ${job.image.imageIdentifier}")
 
         // Push the job back on the queue
         if (job.taskType == ImageTaskType.TMSTile) {
@@ -2138,7 +2141,7 @@ class WebServiceController {
                 def newImage = results[srcImage.sourceUrl ?: srcImage.imageUrl]
                 if (newImage && newImage.success) {
                     imageService.setMetadataItems(newImage.image, srcImage, MetaDataSourceType.SystemDefined, userId)
-                    imageService.scheduleArtifactGeneration(newImage.image.id, userId)
+//                    imageService.scheduleArtifactGeneration(newImage.image.id, userId)
                     imageService.scheduleImageIndex(newImage.image.id)
                     newImage.image = null
                 }
@@ -2397,6 +2400,31 @@ class WebServiceController {
 
     @Operation(
             method = "GET",
+            summary = "Export Avro of entire image catalogue",
+            description = "Export Avro of entire image catalogue",
+            responses = [
+                    @ApiResponse(content = [@Content(mediaType = "application/octet-stream", schema = @Schema(implementation = Map, format= 'binary'))],responseCode = "200",
+                            headers = [
+                                    @Header(name = 'Access-Control-Allow-Headers', description = "CORS header", schema = @Schema(type = "String")),
+                                    @Header(name = 'Access-Control-Allow-Methods', description = "CORS header", schema = @Schema(type = "String")),
+                                    @Header(name = 'Access-Control-Allow-Origin', description = "CORS header", schema = @Schema(type = "String"))
+                            ])
+            ],
+            tags = ["Export"]
+    )
+    @Path("/ws/exportAvro")
+    @Consumes("application/json")
+    @Produces("application/octet-stream")
+    def exportAvro(){
+        response.setHeader("Content-disposition", "attachment;filename=images-export.avro")
+        response.contentType = "application/octet-stream"
+        def os = response.outputStream
+        imageService.exportAvro(os)
+        os.flush()
+    }
+
+    @Operation(
+            method = "GET",
             summary = "Export CSV of URL to imageIdentifier mappings",
             description = "Export CSV of URL to imageIdentifier mappings.",
             responses = [
@@ -2422,6 +2450,30 @@ class WebServiceController {
 
     @Operation(
             method = "GET",
+            summary = "Export AVRO of URL to imageIdentifier mappings",
+            description = "Export AVRO of URL to imageIdentifier mappings.",
+            responses = [
+                    @ApiResponse(content = [@Content(mediaType = "application/octet-stream", schema = @Schema(implementation = Map, format= 'binary'))],responseCode = "200",
+                            headers = [
+                                    @Header(name = 'Access-Control-Allow-Headers', description = "CORS header", schema = @Schema(type = "String")),
+                                    @Header(name = 'Access-Control-Allow-Methods', description = "CORS header", schema = @Schema(type = "String")),
+                                    @Header(name = 'Access-Control-Allow-Origin', description = "CORS header", schema = @Schema(type = "String"))
+                            ])],
+            tags = ["Export"]
+    )
+    @Path("/ws/exportMappingAvro")
+    @Consumes("application/json")
+    @Produces("application/octet-stream")
+    def exportMappingAvro(){
+        response.setHeader("Content-disposition", "attachment;filename=image-mapping.avro")
+        response.contentType = "application/octet-stream"
+        def os = response.outputStream
+        imageService.exportMappingAvro(os)
+        os.flush()
+    }
+
+    @Operation(
+            method = "GET",
             summary = "Export dataset mappings",
             description = "Export dataset mappings.",
             parameters = [
@@ -2442,12 +2494,12 @@ class WebServiceController {
             ],
             tags = ["Export"]
     )
-    @Path("/ws/exportMapping/{id}")
+    @Path("/ws/exportDatasetMapping/{id}")
     @Consumes("application/json")
     @Produces("application/gzip")
     def exportDatasetMapping(){
         if (!params.id){
-            renderResults([success: false, message: "Failed to store image!"], 400)
+            renderResults([success: false, message: "id param is missing"], 400)
         } else {
             response.setHeader("Content-disposition", "attachment;filename=image-mapping-${params.id}.csv.gz")
             response.contentType = "application/gzip"
@@ -2455,6 +2507,43 @@ class WebServiceController {
             imageService.exportDatasetMappingCSV(params.id, bos)
             bos.flush()
             bos.close()
+        }
+    }
+
+    @Operation(
+            method = "GET",
+            summary = "Export dataset mappings as AVRO",
+            description = "Export dataset mappings as AVRO.",
+            parameters = [
+                    @Parameter(name = "id", in = PATH, required = true, description = "Data Resource UID", schema = @Schema(implementation = String))
+            ],
+            responses = [
+                    @ApiResponse(content = [@Content(mediaType = "application/octet-stream", schema = @Schema(implementation = Map, format= 'binary'))],responseCode = "200",
+                            headers = [
+                                    @Header(name = 'Access-Control-Allow-Headers', description = "CORS header", schema = @Schema(type = "String")),
+                                    @Header(name = 'Access-Control-Allow-Methods', description = "CORS header", schema = @Schema(type = "String")),
+                                    @Header(name = 'Access-Control-Allow-Origin', description = "CORS header", schema = @Schema(type = "String"))
+                            ]),
+                    @ApiResponse(responseCode = "400", content = [@Content(mediaType = "application/json", schema = @Schema(implementation = Map))], headers = [
+                            @Header(name = 'Access-Control-Allow-Headers', description = "CORS header", schema = @Schema(type = "String")),
+                            @Header(name = 'Access-Control-Allow-Methods', description = "CORS header", schema = @Schema(type = "String")),
+                            @Header(name = 'Access-Control-Allow-Origin', description = "CORS header", schema = @Schema(type = "String"))
+                    ]),
+            ],
+            tags = ["Export"]
+    )
+    @Path("/ws/exportDatasetMappingAvro/{id}")
+    @Consumes("application/json")
+    @Produces("application/octet-stream")
+    def exportDatasetMappingAvro(){
+        if (!params.id){
+            renderResults([success: false, message: "id param is missing"], 400)
+        } else {
+            response.setHeader("Content-disposition", "attachment;filename=image-mapping-${params.id}.avro")
+            response.contentType = "application/octet-stream"
+            def os = response.outputStream
+            imageService.exportDatasetMappingAvro(params.id, os)
+            os.flush()
         }
     }
 
@@ -2500,7 +2589,7 @@ class WebServiceController {
     @Produces("application/gzip")
     def exportDataset(){
         if (!params.id){
-            renderResults([success: false, message: "Failed to store image!"], 400)
+            renderResults([success: false, message: "id param is missing"], 400)
         } else {
             response.setHeader("Content-disposition", "attachment;filename=image-export-${params.id}.csv.gz")
             response.contentType = "application/gzip"
@@ -2508,6 +2597,58 @@ class WebServiceController {
             imageService.exportDatasetCSV(params.id, bos)
             bos.flush()
             bos.close()
+        }
+    }
+
+    @Operation(
+            method = "GET",
+            summary = "Export AVRO of URL to imageIdentifier mappings",
+            description = """Exports the following fields in AVRO:
+                image_identifier as "imageID"
+                identifier
+                audience
+                contributor
+                created
+                creator
+                description
+                format
+                license
+                publisher
+                references
+                rightsHolder
+                source
+                title
+                type""",
+            parameters = [
+                    @Parameter(name = "id", in = PATH, required = true, description = "Data Resource UID", schema = @Schema(implementation = String))
+            ],
+            responses = [
+                    @ApiResponse(content = [@Content(mediaType = "application/octet-stream", schema = @Schema(implementation = Map, format= 'binary'))],responseCode = "200",
+                            headers = [
+                                    @Header(name = 'Access-Control-Allow-Headers', description = "CORS header", schema = @Schema(type = "String")),
+                                    @Header(name = 'Access-Control-Allow-Methods', description = "CORS header", schema = @Schema(type = "String")),
+                                    @Header(name = 'Access-Control-Allow-Origin', description = "CORS header", schema = @Schema(type = "String"))
+                            ]),
+                    @ApiResponse(responseCode = "400", content = [@Content(mediaType = "application/json", schema = @Schema(implementation = Map))], headers = [
+                            @Header(name = 'Access-Control-Allow-Headers', description = "CORS header", schema = @Schema(type = "String")),
+                            @Header(name = 'Access-Control-Allow-Methods', description = "CORS header", schema = @Schema(type = "String")),
+                            @Header(name = 'Access-Control-Allow-Origin', description = "CORS header", schema = @Schema(type = "String"))
+                    ]),
+            ],
+            tags = ["Export"]
+    )
+    @Path("/ws/exportDatasetAvro/{id}")
+    @Consumes("application/json")
+    @Produces("application/octet-stream")
+    def exportDatasetAvro(){
+        if (!params.id){
+            renderResults([success: false, message: "id param is missing"], 400)
+        } else {
+            response.setHeader("Content-disposition", "attachment;filename=image-export-${params.id}.avro")
+            response.contentType = "application/octet-stream"
+            def os = response.outputStream
+            imageService.exportDatasetAvro(params.id, os)
+            os.flush()
         }
     }
 }

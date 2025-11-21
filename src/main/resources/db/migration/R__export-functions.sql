@@ -84,7 +84,20 @@ DROP VIEW IF EXISTS export_mapping;
 CREATE VIEW export_mapping AS
 SELECT
     data_resource_uid,
-    image_identifier as "imageID",
-    original_filename as "url"
-FROM image i
-WHERE data_resource_uid is NOT NULL;
+    image_identifier AS "imageID",
+    regexp_replace(unnest_url, '://[^/@]+@', '://', 'g') AS "url"
+FROM (
+         SELECT
+             data_resource_uid,
+             image_identifier,
+             CASE
+                 WHEN alternate_filename IS NOT NULL THEN
+                     ARRAY_APPEND(alternate_filename, original_filename)
+                 ELSE
+                     ARRAY[original_filename]
+                 END AS all_urls
+         FROM image
+         WHERE
+             data_resource_uid IS NOT NULL AND date_deleted IS NULL
+     ) AS subquery,
+     unnest(subquery.all_urls) AS unnest_url;

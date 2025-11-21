@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.PATH
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
+import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST
 import static javax.servlet.http.HttpServletResponse.SC_FOUND
 import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND
 import static javax.servlet.http.HttpServletResponse.SC_NOT_MODIFIED
@@ -43,7 +44,6 @@ class ImageController {
 
     def imageService
     def imageStoreService
-    def logService
     def imageStagingService
     def batchService
     def collectoryService
@@ -65,6 +65,30 @@ class ImageController {
     @Value('${placeholder.missing.thumbnail}')
     Resource missingThumbnail
 
+    @Value('${placeholder.image.original}')
+    Resource missingOriginal
+
+    @Value('${placeholder.image.thumbnail}')
+    Resource missingImageThumbnail
+
+    @Value('classpath:images/images-placeholder-650x499.png')
+    Resource missingImageThumbnailLarge
+
+    @Value('classpath:images/images-placeholder-650x650.png')
+    Resource missingImageThumbnailSquareLarge
+
+    @Value('classpath:images/images-placeholder-300x300.png')
+    Resource missingImageThumbnailSquare
+
+    @Value('classpath:images/images-placeholder-300x300.png')
+    Resource missingTile
+
+    @Value('${analytics.trackThumbnails:false}')
+    boolean trackThumbnails = false
+
+    @Value('${images.cache.headers:true}')
+    boolean cacheHeaders = true
+
     static AtomicLong boundaryCounter = new AtomicLong(0)
 
     def index() { }
@@ -78,13 +102,12 @@ class ImageController {
      */
     @Deprecated
     def proxyImage() {
+        boolean noRedirect = params.containsKey('nr')
         serveImage(
-                { Image image -> image.fileSize },
-                { Image image -> image.storageLocation.originalRedirectLocation(image.imageIdentifier) },
-                { Image image, Range range -> imageStoreService.originalInputStream(image, range) },
-                { Image image -> image.mimeType },
-                { Image image -> image.extension },
-                grailsApplication.config.getProperty('analytics.trackThumbnails', Boolean, false)
+                imageStoreService.originalImageInfo(imageService.getImageGUIDFromParams(params)),
+                trackThumbnails,
+                'original',
+                noRedirect
         )
     }
 
@@ -113,13 +136,12 @@ class ImageController {
     @Produces("image/jpeg")
     @Path("/image/{id}/original")
     def getOriginalFile() {
+        boolean noRedirect = params.containsKey('nr')
         serveImage(
-                { Image image -> image.fileSize },
-                { Image image -> image.storageLocation.originalRedirectLocation(image.imageIdentifier) },
-                { Image image, Range range -> imageStoreService.originalInputStream(image, range) },
-                { Image image -> image.mimeType },
-                { Image image -> image.extension },
-                grailsApplication.config.getProperty('analytics.trackThumbnails', Boolean, false)
+                imageStoreService.originalImageInfo(imageService.getImageGUIDFromParams(params)),
+                trackThumbnails,
+                'original',
+                noRedirect
         )
     }
 
@@ -152,44 +174,23 @@ class ImageController {
     @Produces("image/jpeg")
     @Path("/image/{id}/thumbnail")
     def proxyImageThumbnail() {
+        boolean invalidate = params.containsKey('i')
+        boolean noRedirect = params.containsKey('nr')
         serveImage(
-                { Image image ->
-                    if (image.mimeType.startsWith('image')) {
-                        imageStoreService.thumbnailStoredLength(image)
-                    } else if (image.mimeType.startsWith('audio')) {
-                        audioThumbnail.contentLength()
-                    } else {
-                        documentThumbnail.contentLength()
-                    }
-                },
-                { Image image ->
-                    if (image.mimeType.startsWith('image')) {
-                        image.storageLocation.thumbnailRedirectLocation(image.imageIdentifier)
-                    } else {
-                        null
-                    }
-                },
-                { Image image, Range range ->
-                    if (image.mimeType.startsWith('image')) {
-                        imageStoreService.thumbnailInputStream(image, range)
-                    } else if (image.mimeType.startsWith('audio')) {
-                        range.wrapInputStream(audioThumbnail.inputStream)
-                    } else {
-                        range.wrapInputStream(documentThumbnail.inputStream)
-                    }
-                },
-                { Image image -> image.mimeType.startsWith('image') ? 'image/jpeg' : 'image/png' },
-                { Image image -> image.mimeType.startsWith('image') ? 'jpg' : 'png' },
-                grailsApplication.config.getProperty('analytics.trackThumbnails', Boolean, false)
+                imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), '', invalidate),
+                trackThumbnails,
+                'thumbnail',
+                noRedirect
         )
     }
 
     @Operation(
             method = "GET",
-            summary = "Get image thumbnail large version.",
-            description = "Get image thumbnail large version.",
+            summary = "Get an image thumbnail version.",
+            description = "Get an image thumbnail version.",
             parameters = [
-                    @Parameter(name="id", in = PATH, description = 'Image Id', required = true)
+                    @Parameter(name="id", in = PATH, description = 'Image Id', required = true),
+                    @Parameter(name="type", in = PATH, description = 'Thumbnail type (one of: large, square, square_black, square_white, square_darkGrey, square_darkGray)', required = true)
             ],
             responses = [
                     @ApiResponse(content = [@Content(mediaType='image/jpeg')],responseCode = "200",
@@ -207,38 +208,20 @@ class ImageController {
             tags = ['Access to image derivatives (e.g. thumbnails, tiles and originals)']
     )
     @Produces("image/jpeg")
-    @Path("/image/{id}/large")
+    @Path("/image/{id}/{type}")
     def proxyImageThumbnailType() {
-        String type = params.thumbnailType ?: 'large'
+        String type = params.thumbnailType ?: params.type ?:  'large' // for backwards compat thumbnailType URL param takes precedence
+        boolean invalidate = params.containsKey('i')
+        boolean noRedirect = params.containsKey('nr')
+        if (!imageService.validateThumbnailType(type)) {
+            render(text: "Invalid thumbnail type", status: SC_NOT_FOUND, contentType: 'text/plain')
+            return
+        }
         serveImage(
-                { Image image ->
-                    if (image.mimeType.startsWith('image')) {
-                        imageStoreService.thumbnailTypeStoredLength(image, type)
-                    } else if (image.mimeType.startsWith('audio')) {
-                        audioLargeThumbnail.contentLength()
-                    } else {
-                        documentLargeThumbnail.contentLength()
-                    }
-                },
-                { Image image ->
-                    if (image.mimeType.startsWith('image')) {
-                        image.storageLocation.thumbnailTypeRedirectLocation(image.imageIdentifier, type)
-                    } else {
-                        null
-                    }
-                },
-                { Image image, Range range ->
-                    if (image.mimeType.startsWith('image')) {
-                        imageStoreService.thumbnailTypeInputStream(image, type, range)
-                    } else if (image.mimeType.startsWith('audio')) {
-                        range.wrapInputStream(audioLargeThumbnail.inputStream)
-                    } else {
-                        range.wrapInputStream(documentLargeThumbnail.inputStream)
-                    }
-                },
-                { Image image -> image.mimeType.startsWith('image') ? type == 'square' ? 'image/png' : 'image/jpeg' : 'image/png' },
-                { Image image -> image.mimeType.startsWith('image') ? type == 'square' ? 'png' : 'jpg' : 'png' },
-                grailsApplication.config.getProperty('analytics.trackThumbnails', Boolean, false)
+                imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), type, invalidate),
+                trackThumbnails,
+                'thumbnail-'+type,
+                noRedirect
         )
     }
 
@@ -273,44 +256,39 @@ class ImageController {
         int x = params.int('x')
         int y = params.int('y')
         int z = params.int('z')
+        boolean invalidate = params.containsKey('i')
+        boolean noRedirect = params.containsKey('nr')
         serveImage(
-                { Image image -> imageStoreService.tileStoredLength(image, x, y, z) },
-                { Image image -> image.storageLocation.tileRedirectLocation(image.imageIdentifier, x, y, z) },
-                { Image image, Range range -> imageStoreService.tileInputStream(image, range, x, y, z) },
-                { Image image -> 'image/jpeg' },
-                { Image image -> 'jpg' },
-                false
+                imageStoreService.tileImageInfo(imageService.getImageGUIDFromParams(params), x, y, z, invalidate),
+                false,
+                'tile',
+                noRedirect
         )
     }
 
     private void serveImage(
-            Closure<Long> getLength,
-            Closure<URI> getRedirectUri,
-            Closure<InputStream> getInputStream,
-            Closure<String> getContentType,
-            Closure<String> getExtension,
-            boolean sendAnalytics) {
-        def imageIdentifier = imageService.getImageGUIDFromParams(params)
-        if (!imageIdentifier) {
-            render(message: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
-            return
-        }
-
-        def imageInstance = Image.findByImageIdentifier(imageIdentifier, [ cache: true])
-        if (!imageInstance) {
-            render(message: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+            ImageInfo imageInfo,
+            boolean sendAnalytics,
+            String requestType,
+            boolean noRedirect = false) {
+        def imageIdentifier = imageInfo.imageIdentifier
+        if (!imageIdentifier || !imageInfo.exists) {
+            if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
+                sendMissingImage(requestType)
+            } else {
+                render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+            }
             return
         }
 
         boolean contentDisposition = params.boolean("contentDisposition", false)
-        boolean cacheHeaders = grailsApplication.config.getProperty('images.cache.headers', Boolean, true)
 
         if (sendAnalytics) {
-            analyticsService.sendAnalytics(imageInstance, 'imageview', request.getHeader("User-Agent"))
+            analyticsService.sendAnalytics(imageInfo.exists, imageInfo.dataResourceUid, 'imageview', request.getHeader("User-Agent"))
         }
 
-        if (imageInstance.storageLocation.supportsRedirect) {
-            URI uri = getRedirectUri(imageInstance)
+        if (!noRedirect && imageInfo.redirectUri) {
+            URI uri = imageInfo.redirectUri
             if (uri) {
                 response.status = SC_FOUND
                 response.setHeader('Location', uri.toString())
@@ -323,12 +301,16 @@ class ImageController {
         try {
             // could use withCacheHeaders here but they add Etag/LastModified even if we throw an exception during
             // the generate closure
-            def etag = imageInstance.contentSHA1Hash
-            def lastMod = imageInstance.dateUploaded
+            def etag = imageInfo.etag
+            def lastMod = imageInfo.lastModified
             def changed = checkForNotModified(etag, lastMod)
             if (changed) {
-                response.setHeader(HEADER_ETAG, etag)
-                response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+                if (etag) {
+                    response.setHeader(HEADER_ETAG, etag)
+                }
+                if (lastMod) {
+                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+                }
                 if (cacheHeaders) {
                     cache(shared: true, neverExpires: true)
                 }
@@ -336,15 +318,19 @@ class ImageController {
                 return
             }
 
-            length = getLength(imageInstance)
+            length = imageInfo.length
             def ranges = decodeRangeHeader(length)
-            def contentType = getContentType(imageInstance)
-            def extension = getExtension(imageInstance)
+            def contentType = imageInfo.contentType
+            def extension = imageInfo.extension
 
             if (ranges.size() > 1) {
                 def boundary = startMultipartResponse(ranges, contentType)
-                response.setHeader(HEADER_ETAG, etag)
-                response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+                if (etag) {
+                    response.setHeader(HEADER_ETAG, etag)
+                }
+                if (lastMod) {
+                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+                }
                 if (cacheHeaders) {
                     cache(shared: true, neverExpires: true)
                 }
@@ -360,10 +346,10 @@ class ImageController {
                 def pw = out.newPrintWriter()
 
                 for (def range: ranges) {
-                    writeRangePart(range, imageInstance, boundary, contentType, pw, out, getInputStream)
+                    writeRangePart(range, imageInfo, boundary, contentType, pw, out)
                 }
                 finaliseMultipartResponse(boundary, pw)
-                response.flushBuffer()
+//                response.flushBuffer()
             } else {
                 Range range = ranges[0]
                 long rangeLength = range.length()
@@ -374,8 +360,12 @@ class ImageController {
                 } else {
                     response.setHeader("Accept-Ranges", "bytes")
                 }
-                response.setHeader(HEADER_ETAG, etag)
-                response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+                if (etag) {
+                    response.setHeader(HEADER_ETAG, etag)
+                }
+                if (lastMod) {
+                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+                }
                 if (cacheHeaders) {
                     cache(shared: true, neverExpires: true)
                 }
@@ -391,9 +381,9 @@ class ImageController {
                     return
                 }
 
-                getInputStream(imageInstance, range).withStream { stream ->
+                imageInfo.inputStreamSupplier.call(range).withStream { stream ->
                     IOUtils.copy(stream, response.outputStream)
-                    response.flushBuffer()
+//                    response.flushBuffer()
                 }
             }
         } catch (Range.InvalidRangeHeaderException e) {
@@ -401,10 +391,13 @@ class ImageController {
             render(text: "Invalid range header", status: SC_REQUESTED_RANGE_NOT_SATISFIABLE, contentType: 'text/plain')
         } catch (FileNotFoundException e) {
             log.debug('Image not found in storage', e)
-            render(text: "Image not found in storage", status: SC_NOT_FOUND, contentType: 'text/plain')
+            if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
+                sendMissingImage(requestType)
+            } else {
+                render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+            }
         } catch (ClientAbortException e) {
             // User hung up, just ignore this exception since we can't recover into a nice error response.
-            throw e
         } catch (Exception e) {
             log.error("Exception serving image", e)
             cache(false)
@@ -419,6 +412,54 @@ class ImageController {
     }
 
     /**
+     * Serve a placeholder image with a 404 status code.
+     * @param requestType The type of request, one of 'tile', 'original', 'thumbnail-large', 'thumbnail-square', 'thumbnail'
+     */
+    private void sendMissingImage(String requestType) {
+        Resource ph
+        switch (requestType) {
+            case 'tile':
+                ph = missingTile
+                break
+            case 'original':
+                ph = missingOriginal
+                break
+            case 'thumbnail-centre_crop_large':
+                ph = missingImageThumbnailSquareLarge
+                break
+            case 'thumbnail-large':
+                ph = missingImageThumbnailLarge
+                break
+            case 'thumbnail-square':
+            case 'thumbnail-square_white':
+            case 'thumbnail-square_black':
+            case 'thumbnail-square_darkGrey':
+            case 'thumbnail-square_darkGray':
+            case 'thumbnail-centre_crop':
+                ph = missingImageThumbnailSquare
+                break
+            case 'thumbnail':
+            default:
+                ph = missingImageThumbnail
+                break
+        }
+        try {
+            def len = ph.contentLength()
+            response.status = SC_NOT_FOUND
+            response.contentType = 'image/png'
+            response.contentLengthLong = len
+            if (request.method != 'HEAD') {
+                ph.inputStream.withStream { stream ->
+                    IOUtils.copy(stream, response.outputStream)
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to stream placeholder image for requestType=${requestType}", e)
+            render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+        }
+    }
+
+    /**
      * Check whether a 304 response should be sent
      * @param etag The etag of the current URL
      * @param lastMod the last modified date of the current URL
@@ -426,7 +467,7 @@ class ImageController {
      */
     private boolean checkForNotModified(String etag, Date lastMod) {
         def possibleTags = request.getHeader('If-None-Match')
-        def modifiedDate = -1
+        long modifiedDate = -1
         try {
             modifiedDate = request.getDateHeader('If-Modified-Since')
         }
@@ -492,7 +533,7 @@ class ImageController {
         return boundary
     }
 
-    private void writeRangePart(Range range, Image imageInstance, String boundary, String contentType, PrintWriter pw, OutputStream out, Closure<InputStream> getInputStream) {
+    private void writeRangePart(Range range, ImageInfo imageInfo, String boundary, String contentType, PrintWriter pw, OutputStream out) {
         pw.write(NEW_LINE)
         pw.write('--')
         pw.write(boundary)
@@ -507,7 +548,7 @@ class ImageController {
         pw.write(NEW_LINE)
         pw.flush()
 
-        getInputStream(imageInstance, range).withStream { stream ->
+        imageInfo.inputStreamSupplier.call(range).withStream { stream ->
             IOUtils.copy(stream, out)
         }
         out.flush()
@@ -569,13 +610,15 @@ class ImageController {
             imageService.scheduleArtifactGeneration(imageInstance.id, userId)
             results.message = "Image artifact generation scheduled for image ${imageInstance.id}"
         } else {
-            def imageList = Image.findAll()
-            long count = 0
-            imageList.each { image ->
-                imageService.scheduleArtifactGeneration(image.id, userId)
-                count++
-            }
-            results.message = "Image artifact generation scheduled for ${count} images."
+            // Removing this because loading the whole db is probably not a good idea now
+//            def imageList = Image.findAll()
+//            long count = 0
+//            imageList.each { image ->
+//                imageService.scheduleArtifactGeneration(image.id, userId)
+//                count++
+//            }
+//            results.message = "Image artifact generation scheduled for ${count} images."
+            render(status: SC_BAD_REQUEST, contentType: 'text/plain', text: 'Image not found')
         }
 
         renderResults(results)
@@ -640,7 +683,7 @@ class ImageController {
                     }
                 } else {
                     response.status = SC_NOT_FOUND
-                    render([success:false] as JSON)
+                    render([success:false] as JSON, status: SC_NOT_FOUND)
                 }
             }
             xml {
@@ -650,7 +693,7 @@ class ImageController {
                     render(imageInstance as XML)
                 } else {
                     response.status = SC_NOT_FOUND
-                    render([success:false] as XML)
+                    render([success:false] as XML, status: SC_NOT_FOUND)
                 }
             }
         }
@@ -672,7 +715,7 @@ class ImageController {
         def resourceLevel = collectoryService.getResourceLevelMetadata(image.dataResourceUid)
 
         if (grailsApplication.config.getProperty('analytics.trackDetailedView', Boolean, false)) {
-            analyticsService.sendAnalytics(image, 'imagedetailedview', request.getHeader("User-Agent"))
+            analyticsService.sendAnalytics(image != null, image?.dataResourceUid, 'imagedetailedview', request.getHeader("User-Agent"))
         }
 
         [imageInstance: image, subimages: subimages,
@@ -689,7 +732,7 @@ class ImageController {
         def subimages = Subimage.findAllByParentImage(image)*.subimage
 
         if (grailsApplication.config.getProperty('analytics.trackLargeViewer', Boolean, false)) {
-            analyticsService.sendAnalytics(image, 'imagelargeviewer', request.getHeader("User-Agent"))
+            analyticsService.sendAnalytics(image != null, image?.dataResourceUid, 'imagelargeviewer', request.getHeader("User-Agent"))
         }
 
         render (view: 'viewer', model: [imageInstance: image, subimages: subimages])
@@ -767,7 +810,7 @@ class ImageController {
             return
         }
         if (grailsApplication.config.getProperty('analytics.trackLargeViewer', Boolean)) {
-            analyticsService.sendAnalytics(imageInstance, 'imagelargeviewer', request.getHeader("User-Agent"))
+            analyticsService.sendAnalytics(imageInstance != null, imageInstance?.dataResourceUid, 'imagelargeviewer', request.getHeader("User-Agent"))
         }
         [imageInstance: imageInstance, auxDataUrl: params.infoUrl]
     }

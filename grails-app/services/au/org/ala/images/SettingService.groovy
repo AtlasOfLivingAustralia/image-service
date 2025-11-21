@@ -1,6 +1,7 @@
 package au.org.ala.images
 
 import grails.gorm.transactions.Transactional
+import groovy.util.logging.Slf4j
 import org.codehaus.groovy.runtime.StackTraceUtils
 
 import java.lang.reflect.Method
@@ -11,9 +12,8 @@ import java.util.concurrent.locks.ReentrantLock
  * To add a new setting simply define a getter with the preferred type of the setting (currently boolean or String)
  * and mark it with the @ImageServiceSetting annotation to describe it's name, description and default (initial) value
  */
+@Slf4j
 class SettingService {
-
-    def logService
 
     @ImageServiceSetting(name = 'background.tiling.enabled', description = "Should the service perform image tiling in the background", defaultValue = "true")
     boolean getTilingEnabled() {
@@ -188,9 +188,9 @@ class SettingService {
                         settingType = SettingType.Boolean
                     }
                     def setting = getOrCreateSetting(annotation.name(),settingType,annotation.defaultValue(), annotation.description())
-                    logService.log("${method.name} returns \"${setting?.value}\"")
+                    log.info("${method.name} returns \"${setting?.value}\"")
                 } catch (Exception ex) {
-                    logService.error("", ex)
+                    log.error("", ex)
                 }
             }
         }
