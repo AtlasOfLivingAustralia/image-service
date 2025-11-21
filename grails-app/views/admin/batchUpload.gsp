@@ -121,8 +121,8 @@ Individual file details for the upload ${batchFileUpload.id} received on upload 
             <td>${batchFile.newImages}</td>
             <td>${batchFile.metadataUpdates}</td>
             <td>${batchFile.errorCount}</td>
-            <td><prettytime:display date="${batchFile.dateCreated}" /></td>
-            <td><prettytime:display date="${batchFile.lastUpdated}" /></td>
+            <td><prettytime:display date="${batchFile.dateCreated}" html5wrapper="true"/></td>
+            <td><prettytime:display date="${batchFile.lastUpdated}" html5wrapper="true"/></td>
             <td>
                 <g:if test="${batchFile.timeTakenToLoad}">
                     <g:set var="hours" value="${((batchFile.timeTakenToLoad.toInteger() / 60).toInteger() /60).toInteger() }"/>
@@ -138,7 +138,7 @@ Individual file details for the upload ${batchFileUpload.id} received on upload 
                 <g:else>
                     0 secs
                 </g:else>
-            <td><prettytime:display date="${batchFile.dateCompleted}" /></td>
+            <td><prettytime:display date="${batchFile.dateCompleted}" html5wrapper="true"/></td>
             <td>${batchFile.status}</td>
             <td>
                 <div class="btn-group" role="group">

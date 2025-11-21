@@ -361,11 +361,14 @@ unnest(all_urls) AS unnest_url;
             'original',
             'thumbnail',
             'thumbnail_large',
+            'thumbnail_xlarge',
             'thumbnail_square',
             'thumbnail_square_black',
             'thumbnail_square_white',
             'thumbnail_square_darkGrey',
-            'thumbnail_square_darkGray'
+            'thumbnail_square_darkGray',
+            'thumbnail_centre_crop',
+            'thumbnail_centre_crop_large',
     ] as Set
 
     boolean validateThumbnailType(String thumbnailType) {
@@ -685,9 +688,10 @@ unnest(all_urls) AS unnest_url;
                 preExisting = image != null
                 if (image) {
                     if (image.dateDeleted) {
-                        log.warn("Deleted Image has been re-uploaded.  Will undelete.")
+                        log.warn("Deleted Image ${image.originalFilename} has been re-uploaded.  Will undelete.")
                         image.dateDeleted = null //reset date deleted if image resubmitted...
-                    } else if (createDuplicates && image.originalFilename != originalFilename) {
+                    }
+                    if (createDuplicates && image.originalFilename != originalFilename) {
                         log.warn("Existing image found at different URL ${image.originalFilename} to ${originalFilename}. Will add duplicate.")
 
                         // we have seen this image before, but the URL has changed at source
@@ -826,6 +830,18 @@ unnest(all_urls) AS unnest_url;
 
     String getImageThumbLargeUrl(String imageIdentifier) {
         return imageStoreService.getImageThumbLargeUrl(imageIdentifier)
+    }
+
+    String getImageThumbXLargeUrl(String imageIdentifier) {
+        return imageStoreService.getImageThumbXLargeUrl(imageIdentifier)
+    }
+
+    String getImageCentreCropLargeThumbUrl(String imageIdentifier) {
+        return imageStoreService.getImageThumbCentreCropLargeUrl(imageIdentifier)
+    }
+
+    String getImageCentreCropThumbUrl(String imageIdentifier) {
+        return imageStoreService.getImageThumbCentreCropUrl(imageIdentifier)
     }
 
     String getImageSquareThumbUrl(String imageIdentifier, String backgroundColor = null) {

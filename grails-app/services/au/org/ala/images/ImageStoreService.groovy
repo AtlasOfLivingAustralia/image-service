@@ -64,11 +64,11 @@ class ImageStoreService {
     @Value('${placeholder.document.large}')
     Resource documentLargeThumbnail
 
-    @Value('${image.store.lookup.cache.thumbnails:10000}')
-    long thumbnailLookupCacheSize = 10000
+    @Value('${image.store.lookup.cache.thumbnailsConfig:maximumSize=10000}')
+    String thumbnailLookupCacheConfig = 'maximumSize=10000'
 
-    @Value('${image.store.lookup.cache.tiles:10000}')
-    long tileLookupCacheSize = 10000
+    @Value('${image.store.lookup.cache.tilesConfig:maximumSize=10000}')
+    String tileLookupCacheConfig = 'maximumSize=10000'
 
     @Value('${tiling.levelThreads:2}')
     int tilingLevelThreads = 2
@@ -79,8 +79,8 @@ class ImageStoreService {
     @Value('${tiling.ioThreads:2}')
     int tilingIoThreads = 2
 
-    Cache<Object, Object> thumbnailCache
-    Cache<Object, Object> tileCache
+    Cache<Pair<String, String>, ImageInfo> thumbnailCache
+    Cache<Pair<String, Point>, ImageInfo> tileCache
 
     ExecutorService tilingIoPool
     ExecutorService tilingWorkPool
@@ -88,8 +88,8 @@ class ImageStoreService {
     @PostConstruct
     @NotTransactional
     def init() {
-        thumbnailCache = Caffeine.newBuilder().maximumSize(thumbnailLookupCacheSize).build()
-        tileCache = Caffeine.newBuilder().maximumSize(tileLookupCacheSize).build()
+        thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).build()
+        tileCache = Caffeine.from(tileLookupCacheConfig).build()
         tilingIoPool = tilingIoVirtualThreads ? Executors.newVirtualThreadPerTaskExecutor() : Executors.newFixedThreadPool(tilingIoThreads)
         tilingWorkPool = Executors.newFixedThreadPool(tilingLevelThreads)
     }
@@ -264,6 +264,18 @@ class ImageStoreService {
         getThumbUrlByName(imageIdentifier, 'large')
     }
 
+    String getImageThumbXLargeUrl(String imageIdentifier) {
+        getThumbUrlByName(imageIdentifier, 'xlarge')
+    }
+
+    String getImageThumbCentreCropLargeUrl(String imageIdentifier) {
+        getThumbUrlByName(imageIdentifier, 'centre_crop_large')
+    }
+
+    String getImageThumbCentreCropUrl(String imageIdentifier) {
+        getThumbUrlByName(imageIdentifier, 'centre_crop')
+    }
+
     String getThumbUrlByName(String imageIdentifier, String name) {
         if (name == 'thumbnail') {
             return getImageThumbUrl(imageIdentifier)
@@ -359,6 +371,15 @@ class ImageStoreService {
         if ('thumbnail_large'.equalsIgnoreCase(type) || 'large'.equalsIgnoreCase(type) || type == null) {
             thumbDefs.add(new ThumbDefinition(650, false, null, "thumbnail_large"))
         }
+        if ('thumbnail_xlarge'.equalsIgnoreCase(type) || 'xlarge'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(new ThumbDefinition(1024, false, null, "thumbnail_xlarge"))
+        }
+        if ('thumbnail_centre_crop'.equalsIgnoreCase(type) || 'centre_crop'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(ThumbDefinition.centreCrop(size, "thumbnail_centre_crop"))
+        }
+        if ('thumbnail_centre_crop_large'.equalsIgnoreCase(type) || 'centre_crop_large'.equalsIgnoreCase(type) || type == null) {
+            thumbDefs.add(ThumbDefinition.centreCrop(650, "thumbnail_centre_crop_large"))
+        }
 
         def results = t.generateThumbnailsNoIntermediateEncode(
                 byteSource,
@@ -406,7 +427,7 @@ class ImageStoreService {
                 }
             }
         } else {
-            log.warn("Image tiling failed! ${results}");
+            log.warn("Image tiling for $imageIdentifier with z = $z failed! Results zoomLevels: ${results.zoomLevels}")
         }
         auditService.log(imageIdentifier, "TMS tiles generated", "N/A")
         ct.stop(true)
@@ -509,63 +530,72 @@ class ImageStoreService {
         }
     }
 
-    private ImageInfo ensureThumbnailExists(String imageIdentifier, String dataResourceUid, StorageOperations operations, String type) {
+    private ImageInfo ensureThumbnailExists(String imageIdentifier, String dataResourceUid, StorageOperations operations, String type, boolean refresh = false) {
         type = normaliseThumbnailType(type)
-        return thumbnailCache.get(Pair.of(imageIdentifier, type), { pair ->
-            def imageIdentifierArg = pair.left
-            def typeArg = pair.right
-            try {
-                def info = operations.thumbnailImageInfo(imageIdentifierArg, typeArg)
-                def exists = info.exists
-                if (!exists) {
-                    def results = generateImageThumbnail(imageIdentifierArg, operations, typeArg)
-                    if (results.size() > 0) {
-                        // Create the ImageThumbnail records asynchronously so we don't block any http requests
-                        // waiting on the thumbnail to be generated
-                        ImageThumbnail.async.task {
-                            ImageThumbnail.withTransaction {
-                                // These are deprecated, but we'll update them anyway...
-                                def defThumb = results.find { it.thumbnailName.equalsIgnoreCase("thumbnail") }
-                                if (defThumb) {
-                                    def thumbWidth = defThumb?.width ?: 0
-                                    def thumbHeight = defThumb?.height ?: 0
-                                    Image.executeUpdate("update Image set thumbWidth = :width, thumbHeight = :height where imageIdentifier = :imageIdentifier", [width: thumbWidth, height: thumbHeight, imageIdentifier: imageIdentifierArg])
-                                }
-                                def squareThumb = results.find({ it.thumbnailName.equalsIgnoreCase("thumbnail_square")})
-                                if (squareThumb) {
-                                    def squareThumbSize = squareThumb?.width ?: 0
-                                    Image.executeUpdate("update Image set squareThumbSize = :square where imageIdentifier = :imageIdentifier", [square: squareThumbSize, imageIdentifier: imageIdentifierArg])
-                                }
+        def key = Pair.of(imageIdentifier, type)
+        def loader = this.&ensureThumbnailExistsCacheLoader.curry(dataResourceUid).curry(operations)
 
-                                def image = Image.findByImageIdentifier(imageIdentifierArg)
-                                def imageThumbs = results?.collect { th ->
-                                    def imageThumb = ImageThumbnail.findByImageAndName(image, th.thumbnailName)
-                                    if (imageThumb) {
-                                        imageThumb.height = th.height
-                                        imageThumb.width = th.width
-                                        imageThumb.isSquare = th.square
-                                    } else {
-                                        imageThumb = new ImageThumbnail(image: image, name: th.thumbnailName, height: th.height, width: th.width, isSquare: th.square)
-                                    }
-                                    imageThumb
-                                }
-                                ImageThumbnail.saveAll(imageThumbs)
+        // TODO undefined behaviour if already loading when invalidate is called.
+        if (refresh) {
+            thumbnailCache.invalidate(key)
+        }
+        return thumbnailCache.get(key, loader) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
+    }
+
+    private ImageInfo ensureThumbnailExistsCacheLoader(String dataResourceUid, StorageOperations operations, Pair<String, String> pair) {
+        def imageIdentifierArg = pair.left
+        def typeArg = pair.right
+        try {
+            def info = operations.thumbnailImageInfo(imageIdentifierArg, typeArg)
+            def exists = info.exists
+            if (!exists) {
+                def results = generateImageThumbnail(imageIdentifierArg, operations, typeArg)
+                if (results.size() > 0) {
+                    // Create the ImageThumbnail records asynchronously so we don't block any http requests
+                    // waiting on the thumbnail to be generated
+                    ImageThumbnail.async.task {
+                        ImageThumbnail.withTransaction {
+                            // These are deprecated, but we'll update them anyway...
+                            def defThumb = results.find { it.thumbnailName.equalsIgnoreCase("thumbnail") }
+                            if (defThumb) {
+                                def thumbWidth = defThumb?.width ?: 0
+                                def thumbHeight = defThumb?.height ?: 0
+                                Image.executeUpdate("update Image set thumbWidth = :width, thumbHeight = :height where imageIdentifier = :imageIdentifier", [width: thumbWidth, height: thumbHeight, imageIdentifier: imageIdentifierArg])
                             }
+                            def squareThumb = results.find({ it.thumbnailName.equalsIgnoreCase("thumbnail_square")})
+                            if (squareThumb) {
+                                def squareThumbSize = squareThumb?.width ?: 0
+                                Image.executeUpdate("update Image set squareThumbSize = :square where imageIdentifier = :imageIdentifier", [square: squareThumbSize, imageIdentifier: imageIdentifierArg])
+                            }
+
+                            def image = Image.findByImageIdentifier(imageIdentifierArg)
+                            def imageThumbs = results?.collect { th ->
+                                def imageThumb = ImageThumbnail.findByImageAndName(image, th.thumbnailName)
+                                if (imageThumb) {
+                                    imageThumb.height = th.height
+                                    imageThumb.width = th.width
+                                    imageThumb.isSquare = th.square
+                                } else {
+                                    imageThumb = new ImageThumbnail(image: image, name: th.thumbnailName, height: th.height, width: th.width, isSquare: th.square)
+                                }
+                                imageThumb
+                            }
+                            ImageThumbnail.saveAll(imageThumbs)
                         }
                     }
-                    info = operations.thumbnailImageInfo(imageIdentifier, typeArg)
-
                 }
-                // override these based on behaviour of the thumbnailer
-                info.contentType = typeArg == 'square' ? 'image/png' : 'image/jpeg'
-                info.extension = typeArg == 'square' ? 'png' : 'jpg'
-                info.dataResourceUid = dataResourceUid
-                return info
-            } catch (e) {
-                log.error("Error generating thumbnail for image ${imageIdentifier} of type ${typeArg}", e)
-                return null // don't cache this error
+                info = operations.thumbnailImageInfo(imageIdentifierArg, typeArg)
+
             }
-        }) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
+            // override these based on behaviour of the thumbnailer
+            info.contentType = typeArg == 'square' ? 'image/png' : 'image/jpeg'
+            info.extension = typeArg == 'square' ? 'png' : 'jpg'
+            info.dataResourceUid = dataResourceUid
+            return info
+        } catch (e) {
+            log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg}", e)
+            return null // don't cache this error
+        }
     }
 
     @Immutable
@@ -575,33 +605,23 @@ class ImageStoreService {
         int z
     }
 
-    private ImageInfo ensureTileExists(String identifier, String dataResourceUid, int zoomLevels, StorageOperations operations, int x, int y, int z) {
+    private ImageInfo ensureTileExists(String identifier, String dataResourceUid, int zoomLevels, StorageOperations operations, int x, int y, int z, boolean refresh = false) {
         if (zoomLevels > 0 && z > zoomLevels) {
             // requested zoom level is beyond the zoom levels of the image so the tile will never exist
             return new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png')
         }
 
+        def loader = this.&ensureTileExistsCacheLoader.curry(zoomLevels).curry(operations)
+        def originKey = Pair.of(identifier, new Point(0,0,z))
+        def key = Pair.of(identifier, new Point(x, y, z))
+
+        // TODO undefined behaviour if already loading when invalidate is called.
+        if (refresh) {
+            tileCache.invalidateAll([originKey, key])
+        }
         // First check the origin tile for the zoom level, if it doesn't exist then we can generate
         // the whole set of tiles for the level
-        def originInfo = tileCache.get(Pair.of(identifier, new Point(0,0,z)), { imageIdentifierAndZLevel ->
-            def imageIdentifier = imageIdentifierAndZLevel.left
-            def zLevel = imageIdentifierAndZLevel.right.z
-            try {
-                // get the origin tile for the given zoom level
-                def info = operations.tileImageInfo(imageIdentifier, 0, 0, z)
-                def exists = info.exists
-                if (!exists && (zoomLevels < 1 || z <= zoomLevels)) {
-                    def results = generateTMSTiles(identifier, operations, zoomLevels, z)
-                    if (results.success) {
-                        info = operations.tileImageInfo(imageIdentifier, 0, 0, z)
-                    }
-                }
-                return info
-            } catch (e) {
-                log.error("Error generating tiles for image ${imageIdentifier} with zoom level ${z}", e)
-                return null // don't cache this error
-            }
-        }) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
+        def originInfo = tileCache.get(originKey, loader) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
 
         // then if the origin was requested, return the origin info
         // or if the origin doesn't exist then any tile for the given zoom level won't exist either
@@ -611,19 +631,37 @@ class ImageStoreService {
             return originInfo
         } else {
             // otherwise now we get the info for the tile that was actually requested and cache it
-            def tileInfo = tileCache.get(Pair.of(identifier, new Point(x, y, z)), { imageIdentifierAndPoint ->
-                def imageIdentifier = imageIdentifierAndPoint.left
-                def point = imageIdentifierAndPoint.right
-                try {
-                    def info = operations.tileImageInfo(imageIdentifier, point.x, point.y, point.z)
-                    return info
-                } catch (e) {
-                    log.error("Error getting tile info for image ${imageIdentifier} with co-ordinates x:${point.x}, y:${point.y}, z:${point.z}", e)
-                    return null // don't cache this error
-                }
-            }) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
+            def tileInfo = tileCache.get(key, loader) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
             tileInfo.dataResourceUid = dataResourceUid
             return tileInfo
+        }
+    }
+
+    private ImageInfo ensureTileExistsCacheLoader(int zoomLevels, StorageOperations operations, Pair<String, Point> imageIdentifierAndZLevel) {
+        def imageIdentifier = imageIdentifierAndZLevel.left
+        def x = imageIdentifierAndZLevel.right.x
+        def y = imageIdentifierAndZLevel.right.y
+        def zLevel = imageIdentifierAndZLevel.right.z
+        try {
+            // get the origin tile for the given zoom level
+            def info = operations.tileImageInfo(imageIdentifier, x, y, zLevel)
+            def exists = info.exists
+            // currently we only generate tiles when the leve's origin is requested
+            // because each level is generated in one go.
+            if (x == 0 && y == 0 && !exists && (zoomLevels < 1 || zLevel <= zoomLevels)) {
+                def results = generateTMSTiles(imageIdentifier, operations, zoomLevels, zLevel)
+                if (results.success) {
+                    info = operations.tileImageInfo(imageIdentifier, 0, 0, zLevel)
+                }
+            }
+            return info
+        } catch (e) {
+            if (x == 0 && y == 0) {
+                log.error("Error generating tiles for image ${imageIdentifier} with zoom level ${zLevel}", e)
+            } else {
+                log.error("Error getting tile info for image ${imageIdentifier} with co-ordinates x:${x}, y:${y}, z:${zLevel}", e)
+            }
+            return null // don't cache this error
         }
     }
 
@@ -644,7 +682,7 @@ class ImageStoreService {
     }
 
     @NotTransactional
-    ImageInfo thumbnailImageInfo(String imageIdentifier, String type) {
+    ImageInfo thumbnailImageInfo(String imageIdentifier, String type, boolean refresh = false) {
         Image image
         StorageOperations operations = null
         String dataResourceUid = null
@@ -657,7 +695,7 @@ class ImageStoreService {
         }
         if (image) {
             if (image.mimeType.startsWith('image/')) {
-                def info = ensureThumbnailExists(imageIdentifier, dataResourceUid, operations, type)
+                def info = ensureThumbnailExists(imageIdentifier, dataResourceUid, operations, type, refresh)
                 if (info) {
                     return info
                 }
@@ -695,7 +733,7 @@ class ImageStoreService {
     }
 
     @NotTransactional
-    ImageInfo tileImageInfo(String imageIdentifier, int x, int y, int z) {
+    ImageInfo tileImageInfo(String imageIdentifier, int x, int y, int z, boolean refresh = false) {
 
         Image image
         StorageOperations operations = null
@@ -709,7 +747,7 @@ class ImageStoreService {
         }
         if (image) {
             if (image.mimeType.startsWith('image/')) {
-                def info = ensureTileExists(imageIdentifier, dataResourceUid, image.zoomLevels, operations, x, y, z)
+                def info = ensureTileExists(imageIdentifier, dataResourceUid, image.zoomLevels, operations, x, y, z, refresh)
                 return info
             }
         }

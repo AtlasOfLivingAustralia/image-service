@@ -58,12 +58,12 @@ class UrlMappings {
         "/image/$id/thumbnail"(controller: "image", action: "proxyImageThumbnail")
         "/image/$id/$type"(controller: "image", action: "proxyImageThumbnailType") {
                 constraints {
-                        type(inList: ['large','square','square_white','square_black','square_darkGrey','square_darkGray'])
+                        type(inList: ['xlarge', 'large','square','square_white','square_black','square_darkGrey','square_darkGray', 'centre_crop', 'centre_crop_large'])
                 }
         }
         "/image/$id/thumbnail_$type"(controller: "image", action: "proxyImageThumbnailType") {
                 constraints {
-                        type(inList: ['large','square','square_white','square_black','square_darkGrey','square_darkGray'])
+                        type(inList: ['xlarge', 'large','square','square_white','square_black','square_darkGrey','square_darkGray', 'centre_crop', 'centre_crop_large'])
                 }
         }
         "/image/$id/tms/$z/$x/${y}.png"(controller: "image", action: "proxyImageTile")
