@@ -201,7 +201,7 @@ dependencies {
 //    testImplementation "com.opentable.components:otj-pg-embedded:1.0.1" // required transitive dependency from the plugin.
     testImplementation 'cloud.localstack:localstack-utils:0.2.23'
     testImplementation "com.amazonaws:aws-java-sdk:$amazonAwsSdkVersion" // full AWS SDK included in test scope for localstack config
-    testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:1.8.0'
+    testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:2.3.0'
 
 }
 
