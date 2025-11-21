@@ -220,7 +220,7 @@ tasks.withType(Test) {
     systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
     systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
     testLogging {
-        showStandardStreams = true
+        showStandardStreams = Boolean.getBoolean('testLogging')
         exceptionFormat = 'full'
     }
     doFirst {
