@@ -302,7 +302,7 @@ springBoot {
 //}
 
 test {
-    testLogging.showStandardStreams = true
+    testLogging.showStandardStreams = Boolean.getBoolean('testLogging')
 }
 
 //assets {
