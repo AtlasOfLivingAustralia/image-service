@@ -134,7 +134,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.proxyImageThumbnail()
 
         then:
-        1 * controller.imageStoreService.thumbnailImageInfo(image.imageIdentifier, '') >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: bytes.length, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: bytes == fileContent ? 'image/jpeg' : 'image/png' , extension: bytes == fileContent ? 'jpg' : 'png', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
+        1 * controller.imageStoreService.thumbnailImageInfo(image.imageIdentifier, '', _) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: bytes.length, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: bytes == fileContent ? 'image/jpeg' : 'image/png' , extension: bytes == fileContent ? 'jpg' : 'png', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
         1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
@@ -172,7 +172,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.proxyImageThumbnailType()
 
         then:
-        1 * controller.imageStoreService.thumbnailImageInfo(image.imageIdentifier, type) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: bytes.length, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: bytes == fileContent ? type == 'square' ? 'image/png' : 'image/jpeg' : 'image/png' , extension: bytes == fileContent ? type == 'square' ? 'png' : 'jpg' : 'png', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
+        1 * controller.imageStoreService.thumbnailImageInfo(image.imageIdentifier, type, _) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: bytes.length, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: bytes == fileContent ? type == 'square' ? 'image/png' : 'image/jpeg' : 'image/png' , extension: bytes == fileContent ? type == 'square' ? 'png' : 'jpg' : 'png', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
         1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
@@ -214,7 +214,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.proxyImageTile()
 
         then:
-        1 * controller.imageStoreService.tileImageInfo(image.imageIdentifier, x, y, z) >> { new ImageInfo(exists: fileMimeType.startsWith('image/'), imageIdentifier: image.imageIdentifier, length: bytes.length, etag: sha1ContentHash, lastModified: dateUploaded, contentType: 'image/jpeg', extension: 'jpg', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
+        1 * controller.imageStoreService.tileImageInfo(image.imageIdentifier, x, y, z, _) >> { new ImageInfo(exists: fileMimeType.startsWith('image/'), imageIdentifier: image.imageIdentifier, length: bytes.length, etag: sha1ContentHash, lastModified: dateUploaded, contentType: 'image/jpeg', extension: 'jpg', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
         0 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
