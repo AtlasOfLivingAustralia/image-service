@@ -79,14 +79,14 @@ jobs:
       uses: mikepenz/action-junit-report@v5
       if: failure()
       with:
-        report_paths: '**/build/reports/tests/test/*'
+        report_paths: '**/build/test-results/test/*.xml'
 
     - name: Publish Integration Test Report
       id: integration-test-report
       uses: mikepenz/action-junit-report@v5
       if: failure()
       with:
-        report_paths: '**/build/test-results/integrationTest/*'
+        report_paths: '**/build/test-results/integrationTest/*.xml'
 
       # --- Deployment/Success Phase (Replaces 'after_success:') ---
 
