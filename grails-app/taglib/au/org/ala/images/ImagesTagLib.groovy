@@ -105,7 +105,20 @@ class ImagesTagLib {
 
     def imageThumbUrl = { attrs, body ->
         if (attrs.imageId ) {
-            out << imageService.getImageThumbUrl(attrs.imageId as String)
+            if (attrs.centreCrop) {
+                if (attrs.large) {
+                    out << imageService.getImageCentreCropLargeThumbUrl(attrs.imageId as String)
+                } else {
+                    out << imageService.getImageCentreCropThumbUrl(attrs.imageId as String)
+                }
+            } else if (attrs.large) {
+                out << imageService.getImageThumbLargeUrl(attrs.imageId as String)
+
+            } else if (attrs.square) {
+                out << imageService.getImageSquareThumbUrl(attrs.imageId as String, attrs.backgroundColour as String ?: 'darkGrey')
+            } else {
+                out << imageService.getImageThumbUrl(attrs.imageId as String)
+            }
         }
     }
 

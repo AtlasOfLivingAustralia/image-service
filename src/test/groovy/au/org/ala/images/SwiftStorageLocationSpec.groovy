@@ -13,7 +13,7 @@ class SwiftStorageLocationSpec extends StorageLocationSpec implements DomainUnit
 
     @RegisterExtension
     static DockerComposeExtension docker = DockerComposeExtension.builder()
-            .file("swift-aio.yml")
+            .file("swift-aio-dc2.yml")
             .waitingForService("swift", HealthChecks.toRespond2xxOverHttp(8080) {
                 port -> port.inFormat('http://$HOST:$EXTERNAL_PORT/healthcheck')
             }, Duration.standardMinutes(5L))

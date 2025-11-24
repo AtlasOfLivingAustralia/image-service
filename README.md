@@ -1,4 +1,4 @@
-# image-service   [![Build Status](https://travis-ci.com/AtlasOfLivingAustralia/image-service.svg?branch=master)](https://travis-ci.org/AtlasOfLivingAustralia/image-service)
+# image-service   [![Build Status](https://github.com/AtlasOfLivingAustralia/image-service/actions/workflows/ci.yml/badge.svg)](https://github.com/AtlasOfLivingAustralia/image-service/actions/workflows/ci.yml)
 
 This Grails application provides the webservices and backend for the storage of all images in the Atlas.
 It includes:

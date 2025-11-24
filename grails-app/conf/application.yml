@@ -178,6 +178,26 @@ environments:
               inbox: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-incoming'
           exportDir: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-exports'
           batchUpload: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-uploads'
+    ghactions:
+      grails:
+        config:
+          locations: [ ]
+      flyway:
+        baselineOnMigrate: false
+      dataSource:
+        embeddedPostgres: true
+        pooled: true
+        jmxExport: true
+        embeddedPort: 6543
+        username: postgres
+        password: postgres
+        url: jdbc:postgresql://localhost:6543/postgres?autoReconnect=true&connectTimeout=0&useUnicode=true&characterEncoding=UTF-8
+      imageservice:
+        imagestore:
+          root: '${RUNNER_TEMP}/temp-store'
+          inbox: '${RUNNER_TEMP}/temp-incoming'
+        exportDir: '${RUNNER_TEMP}/temp-exports'
+        batchUpload: '${RUNNER_TEMP}/temp-uploads'
     production:
         hibernate:
             dialect: net.kaleidos.hibernate.PostgresqlExtensionsDialect

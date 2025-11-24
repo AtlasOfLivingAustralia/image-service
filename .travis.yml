@@ -1,4 +1,4 @@
-dist: focal
+dist: noble
 arch: amd64
 language: groovy
 jdk:
@@ -34,12 +34,12 @@ before_install:
   - export PATH=$JAVA_HOME/bin:$PATH
   - java -version
   - sudo rm /usr/local/bin/docker-compose
-  - curl -L https://github.com/docker/compose/releases/download/v2.17.3/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-`uname -s`-`uname -m` > docker-compose
   - chmod +x docker-compose
   - mkdir -p ~/.docker/cli-plugins/
   - cp docker-compose ~/.docker/cli-plugins/docker-compose
-  - sudo cp docker-compose /usr/local/bin
-  - docker-compose -f elastic.yml up -d
+  - sudo cp docker-compose /usr/libexec/docker/cli-plugins
+  - docker compose -f elastic-dc2.yml up -d
   - 'export GRADLE_OPTS="-Dgrails.env=travis"'
 
 install:
@@ -50,7 +50,7 @@ after_success:
   - '[ "${TRAVIS_PULL_REQUEST}" = "false" ] && GRADLE_OPTS="-Dgrails.env=production" travis_retry ./gradlew publish --stacktrace'
 
 after_script:
-  - docker-compose -f elastic.yml kill
+  - docker compose -f elastic-dc2.yml down
 
 after_failure:
   - cat /home/travis/build/AtlasOfLivingAustralia/image-service/build/test-results/integrationTest/*

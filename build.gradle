@@ -131,7 +131,7 @@ dependencies {
     implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
     implementation 'org.apache.tika:tika-core:2.5.0'
     implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
-    implementation 'au.org.ala:image-utils:1.10.0-SNAPSHOT'
+    implementation 'au.org.ala:image-utils:1.10.0'
 
     implementation 'net.lingala.zip4j:zip4j:2.11.3'
     implementation 'com.google.guava:guava:33.2.1-jre'
@@ -202,7 +202,7 @@ dependencies {
 //    testImplementation "com.opentable.components:otj-pg-embedded:1.0.1" // required transitive dependency from the plugin.
     testImplementation 'cloud.localstack:localstack-utils:0.2.23'
     testImplementation "com.amazonaws:aws-java-sdk:$amazonAwsSdkVersion" // full AWS SDK included in test scope for localstack config
-    testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:1.8.0'
+    testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:2.3.0'
 
 }
 
@@ -221,7 +221,7 @@ tasks.withType(Test) {
     systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
     systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
     testLogging {
-        showStandardStreams = true
+        showStandardStreams = Boolean.getBoolean('testLogging')
         exceptionFormat = 'full'
     }
     doFirst {
@@ -303,7 +303,7 @@ springBoot {
 //}
 
 test {
-    testLogging.showStandardStreams = true
+    testLogging.showStandardStreams = Boolean.getBoolean('testLogging')
 }
 
 //assets {

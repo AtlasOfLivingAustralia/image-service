@@ -558,23 +558,35 @@ class ElasticSearchService {
 
         // Add FQ query filters
         def filterQueries = params.findAll { it.key == 'fq' }
+        boolean errorOccurred = false
         if (filterQueries) {
             filterQueries.each {
 
                 if (it.value instanceof String[]) {
                     it.value.each { filter ->
                         if (filter) {
-                            def kv = filter.split(":")
-                            boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
+                            def kv = filter.toString().split(":", 2)
+                            if (kv.length == 2) {
+                                boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
+                            } else {
+                                errorOccured = true
+                            }
                         }
                     }
                 } else {
                     if (it.value) {
-                        def kv = it.value.split(":")
-                        boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
+                        def kv = it.value.toString().split(":", 2)
+                        if (kv.length == 2) {
+                            boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
+                        } else {
+                            errorOccured = true
+                        }
                     }
                 }
             }
+        }
+        if (errorOccurred) {
+            log.debug("Error occurred parsing filter queries - one or more filters were malformed.  fqs: ${filterQueries}")
         }
 
         //add search criteria

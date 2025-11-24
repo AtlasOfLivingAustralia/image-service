@@ -12,3 +12,4 @@ out
 debian/files
 debian/ala-image
 debian/debhelper-build-stamp
+.secrets

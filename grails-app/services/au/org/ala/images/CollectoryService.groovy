@@ -3,6 +3,7 @@ package au.org.ala.images
 import com.github.benmanes.caffeine.cache.Caffeine
 import com.github.benmanes.caffeine.cache.LoadingCache
 import groovy.json.JsonSlurper
+import groovy.json.JsonSlurperClassic
 import org.springframework.beans.factory.annotation.Value
 
 import java.time.Duration
@@ -74,7 +75,7 @@ class CollectoryService {
         }
 
         def results = dataResourceLookupCache.get(dataResourceUid)
-        return results.orElse(EMPTY_MAP)
+        return results?.orElse(EMPTY_MAP) ?: EMPTY_MAP
     }
 
     private Optional<Object> getResourceLevelMetadataInternal(String dataResourceUid) {
@@ -84,7 +85,7 @@ class CollectoryService {
 
         def url = grailsApplication.config.getProperty('collectory.baseURL') + "/ws/dataResource/" + dataResourceUid
         try {
-            def js = new JsonSlurper()
+            def js = new JsonSlurperClassic()
             def json = js.parseText(new URL(url).text)
             if (json) {
                 return Optional.of(json)
@@ -106,14 +107,14 @@ class CollectoryService {
 
             //lookup the resource UID
             def results = nameLookupCache.get(uid)
-            return results.orElse(null)
+            return results?.orElse(null)
     }
 
     Optional<Object> getNameForUIDInternal(String uid){
         //lookup the resource UID
         def url = grailsApplication.config.getProperty('collectory.baseURL') + "/ws/lookup/name/" + uid
         try {
-            def js = new JsonSlurper()
+            def js = new JsonSlurperClassic()
             def json = js.parseText(new URL(url).text)
             return Optional.of(json)
         } catch (FileNotFoundException e) {
