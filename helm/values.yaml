@@ -181,6 +181,8 @@ xmx: "3g"
 xms: "3g"
 elasticsearch:
   host: ""
+  indexName: "images"
+  hosts: []
 
 elasticsearch-images:
   deployment:
@@ -199,4 +201,4 @@ elasticsearch-images:
     storageClass: "auto-ebs-sc"
     accessMode: ReadWriteOnce
     size: 10Gi
-  single_node_es: true
+  single_node_es: false

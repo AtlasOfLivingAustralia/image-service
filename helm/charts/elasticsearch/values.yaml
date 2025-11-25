@@ -28,4 +28,4 @@ persistence:
   accessMode: ReadWriteOnce
   size: 10Gi
 
-single_node_es: true
+single_node_es: false

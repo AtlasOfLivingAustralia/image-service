@@ -115,6 +115,11 @@ phases:
           single_node_es: ${SINGLE_NODE_ES}
         elasticsearch:
           host: "${ELASTICSEARCH_HOST}"
+          indexName: "${INDEX_NAME}"
+          hosts: 
+            - host: "${ELASTICSEARCH_HOST}"
+              scheme: "http"
+              port: ${ELASTIC_PORT}
         app:
           url: https://$DOMAIN_NAME
         db:
