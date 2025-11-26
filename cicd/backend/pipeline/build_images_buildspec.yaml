@@ -47,7 +47,7 @@ phases:
       - chown -R postgresuser:postgresuser /tmp
       - chown -R postgresuser .
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
-      - ./gradlew bootJar
+      - ./gradlew -Dgrails.env=production bootJar
 
   post_build:
     commands:
