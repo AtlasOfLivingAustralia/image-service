@@ -86,6 +86,7 @@ phases:
       - CAS_CLIENT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["cas-client-secret"]')
       - export USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $COGNITO_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
       - export CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $OIDC_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
+      - export ELASTICSEARCH_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$ELASTICSEARCH_SECRET_NAME" --query 'SecretString' --output text | jq -r '.["password"]')
       - echo creating the configmap for the images deployment...
       - |
         source cicd/unset_codebuild_env_vars.sh
@@ -116,6 +117,8 @@ phases:
         elasticsearch:
           host: "${ELASTICSEARCH_HOST}"
           indexName: "${INDEX_NAME}"
+          username: "${ELASTICSEARCH_USERNAME}"
+          password: $ELASTICSEARCH_PASSWORD
           hosts: 
             - host: "${ELASTICSEARCH_HOST}"
               scheme: "http"

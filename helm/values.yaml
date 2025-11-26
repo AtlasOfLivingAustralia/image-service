@@ -183,6 +183,8 @@ elasticsearch:
   host: ""
   indexName: "images"
   hosts: []
+  username: ""
+  password: ""
 
 elasticsearch-images:
   deployment:
