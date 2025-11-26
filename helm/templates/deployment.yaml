@@ -29,7 +29,7 @@ spec:
             - "-Xms{{ .Values.xms }}"
             - "-Xmx{{ .Values.xmx }}"
             - "-jar"
-            - "app.war"
+            - "app.jar"
           env:
             - name: TZ
               value: "Australia/Sydney"
