@@ -114,5 +114,9 @@ class UrlMappings {
 
         "/"(controller:'search', action:'list')
         "500"(view:'/error')
+
+        // IIIF Image API 3.0
+        "/iiif/$identifier/info.json"(controller: "iiif", action: "info")
+        "/iiif/$identifier/$region/$size/$rotation/$quality.$format"(controller: "iiif", action: "renderImage")
 	}
 }
