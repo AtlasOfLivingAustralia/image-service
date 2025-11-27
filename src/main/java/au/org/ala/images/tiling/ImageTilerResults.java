@@ -26,6 +26,10 @@ public class ImageTilerResults {
         return _success;
     }
 
-
-
+    @Override
+    public String toString() {
+        return "ImageTilerResults{_success=" + _success +
+                ", _zoomLevels=" + _zoomLevels +
+                '}';
+    }
 }

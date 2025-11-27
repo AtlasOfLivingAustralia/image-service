@@ -78,11 +78,15 @@ public class MetadataExtractor {
         try (BufferedInputStream bis = inputStream instanceof BufferedInputStream ?
                 (BufferedInputStream) inputStream :
                 new BufferedInputStream(inputStream)) {
+            // Mark the stream before content type detection so we can reset it for the parser
+            // Choose a reasonable upper bound for sniffing; 64KB should cover most detectors
+            bis.mark(64 * 1024);
             String contentType = detectContentTypeInternal(bis, filename);
             if (StringUtils.isNotEmpty(contentType)) {
                 for (AbstractMetadataParser p : _REGISTRY) {
                     Matcher m = p.getContentTypePattern().matcher(contentType);
                     if (m.matches()) {
+                        // Reset to the mark so the parser sees the stream from the beginning
                         bis.reset();
                         p.extractMetadata(bis, map);
                         break;

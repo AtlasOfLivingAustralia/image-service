@@ -61,7 +61,7 @@ public class ImageTilerTest extends TestBase {
         File imageFile = new File(url.toURI());
 
         ImageTilerConfig config = new ImageTilerConfig();
-        ImageTiler tiler = new ImageTiler(config);
+        ImageTiler3 tiler = new ImageTiler3(config);
 
         Path tempDir = Files.createTempDirectory("imagetests");
         try {

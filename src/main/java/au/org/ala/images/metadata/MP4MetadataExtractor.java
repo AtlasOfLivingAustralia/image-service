@@ -32,7 +32,9 @@ public class MP4MetadataExtractor extends AbstractMetadataParser {
 
     @Override
     public void extractMetadata(InputStream unopenedStream, Map<String, String> md) {
-        try(InputStream input = unopenedStream) {
+        // Do not close the provided stream here; the caller owns the lifecycle.
+        InputStream input = unopenedStream;
+        try {
             ContentHandler handler = new DefaultHandler();
             Metadata metadata = new Metadata();
             Parser parser = new MP4Parser();
@@ -45,9 +47,6 @@ public class MP4MetadataExtractor extends AbstractMetadataParser {
             for(String name : metadataNames) {
                 md.put(name, metadata.get(name));
             }
-
-            // Consume the input stream to avoid resource leaks
-            IOUtils.consume(input);
 
         } catch (Exception e) {
             log.error("Exception extracting MP4 metadata", e);
