@@ -569,7 +569,7 @@ class ElasticSearchService {
                             if (kv.length == 2) {
                                 boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
                             } else {
-                                errorOccured = true
+                                errorOccurred = true
                             }
                         }
                     }
@@ -579,7 +579,7 @@ class ElasticSearchService {
                         if (kv.length == 2) {
                             boolQueryBuilder.must(b -> b.term(b2 -> b2.field(kv[0]).value(kv[1])))
                         } else {
-                            errorOccured = true
+                            errorOccurred = true
                         }
                     }
                 }

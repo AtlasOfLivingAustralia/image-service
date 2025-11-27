@@ -22,6 +22,7 @@ import groovy.util.logging.Slf4j
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.FileHeader
 import org.apache.commons.io.FileUtils
+import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.commons.lang3.tuple.Pair
 import org.apache.tika.Tika
 import org.springframework.beans.factory.annotation.Value
@@ -30,6 +31,7 @@ import org.springframework.web.multipart.MultipartFile
 
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
+import javax.imageio.IIOException
 import javax.imageio.ImageIO
 import javax.imageio.ImageReadParam
 import java.awt.Color
@@ -593,7 +595,14 @@ class ImageStoreService {
             info.dataResourceUid = dataResourceUid
             return info
         } catch (e) {
-            log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg}", e)
+            def rootCause = ExceptionUtils.getRootCause(e)
+            if (rootCause instanceof FileNotFoundException) {
+                log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because ${e.message}")
+            } else if (rootCause instanceof IIOException && rootCause.message?.contains('Unsupported marker type 0x13')) {
+                log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because the image appears to be corrupt: ${e.message}")
+            } else {
+                log.error("Error checking thumbnail for image ${imageIdentifierArg} of type ${typeArg}", e)
+            }
             return null // don't cache this error
         }
     }
