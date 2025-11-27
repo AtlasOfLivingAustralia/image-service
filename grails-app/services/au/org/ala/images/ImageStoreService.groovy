@@ -601,7 +601,7 @@ class ImageStoreService {
             } else if (rootCause instanceof IIOException && rootCause.message?.contains('Unsupported marker type 0x13')) {
                 log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because the image appears to be corrupt: ${e.message}")
             } else {
-                log.error("Error checking thumbnail for image ${imageIdentifierArg} of type ${typeArg}", e)
+                log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg}", e)
             }
             return null // don't cache this error
         }
@@ -665,11 +665,19 @@ class ImageStoreService {
             }
             return info
         } catch (e) {
-            if (x == 0 && y == 0) {
-                log.error("Error generating tiles for image ${imageIdentifier} with zoom level ${zLevel}", e)
+            def rootCause = ExceptionUtils.getRootCause(e)
+            if (rootCause instanceof FileNotFoundException) {
+                log.error("Error generating tiles for image ${imageIdentifier} with zoom level ${zLevel} because ${e.message}")
+            } else if (rootCause instanceof IIOException && rootCause.message?.contains('Unsupported marker type 0x13')) {
+                log.error("Error generating tiles for image ${imageIdentifier} with zoom level ${zLevel} because the image appears to be corrupt: ${e.message}")
             } else {
-                log.error("Error getting tile info for image ${imageIdentifier} with co-ordinates x:${x}, y:${y}, z:${zLevel}", e)
+                if (x == 0 && y == 0) {
+                    log.error("Error generating tiles for image ${imageIdentifier} with zoom level ${zLevel}", e)
+                } else {
+                    log.error("Error getting tile info for image ${imageIdentifier} with co-ordinates x:${x}, y:${y}, z:${zLevel}", e)
+                }
             }
+
             return null // don't cache this error
         }
     }
