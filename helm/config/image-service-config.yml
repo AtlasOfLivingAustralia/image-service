@@ -144,5 +144,10 @@ aws:
   region: ap-southeast-2
 
 elasticsearch:
-    hosts:
-      - {host: {{ .Values.elasticsearch.host }}, scheme: "http", port: 9200}
+  indexName: {{ .Values.elasticsearch.indexName }}
+  username: {{ .Values.elasticsearch.username }}
+  password: {{ .Values.elasticsearch.password }}
+  hosts:
+    - host: {{ .Values.elasticsearch.host }}
+      scheme: "http"
+      port: {{ .Values.elasticsearch.port }}

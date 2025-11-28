@@ -181,8 +181,8 @@ xmx: "3g"
 xms: "3g"
 elasticsearch:
   host: ""
+  port: ""
   indexName: "images"
-  hosts: []
   username: ""
   password: ""
 

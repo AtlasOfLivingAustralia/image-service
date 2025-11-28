@@ -119,10 +119,7 @@ phases:
           indexName: "${INDEX_NAME}"
           username: "${ELASTICSEARCH_USERNAME}"
           password: $ELASTICSEARCH_PASSWORD
-          hosts: 
-            - host: "${ELASTICSEARCH_HOST}"
-              scheme: "http"
-              port: ${ELASTIC_PORT}
+          port: ${ELASTIC_PORT}
         app:
           url: https://$DOMAIN_NAME
         db:
