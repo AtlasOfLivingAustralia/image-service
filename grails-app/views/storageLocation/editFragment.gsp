@@ -55,6 +55,19 @@
                 <label>
                     <g:checkBox name="publicRead" value="${s3StorageLocation.publicRead}" /> Public read
                 </label>
+                <p class="help-block">
+                    When checked (and Private ACL is not), uploaded objects will be set to S3 "public read" via canned ACL.
+                    When both are unchecked, no ACL header is sent and bucket defaults apply.
+                </p>
+            </div>
+            <div class="checkbox">
+                <label>
+                    <g:checkBox name="privateAcl" value="${s3StorageLocation.privateAcl}" /> Explicit Private ACL
+                </label>
+                <p class="help-block">
+                    When checked (and Public read is not), uploaded objects will be set to S3 "private" via canned ACL.
+                    When both are unchecked, no ACL header is sent and bucket defaults apply.
+                </p>
             </div>
             <div class="checkbox">
                 <label>

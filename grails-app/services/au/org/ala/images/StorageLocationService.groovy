@@ -2,7 +2,10 @@ package au.org.ala.images
 
 import grails.gorm.transactions.Transactional
 import org.javaswift.joss.client.factory.AuthenticationMethod
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 @Transactional
@@ -10,7 +13,14 @@ class StorageLocationService {
 
     def imageService
 
-    final analyticsExecutor = Executors.newSingleThreadExecutor()
+    @Value('${images.storage.updateAcl.enabled:true}')
+    Boolean updateAclEnabled = true
+
+    @Value('${images.storage.updateAcl.objectThreshold:50000}')
+    int updateAclObjectThreshold = 50000
+
+    @Autowired
+    Executor analyticsExecutor
 
     StorageLocation createStorageLocation(json) {
         StorageLocation storageLocation
@@ -26,7 +36,9 @@ class StorageLocationService {
                     throw new AlreadyExistsException("S3 $json.region $json.bucket $json.prefix already exists")
                 }
                 storageLocation = new S3StorageLocation(region: json.region, bucket: json.bucket, prefix: json.prefix ?: '',
-                        accessKey: json.accessKey, secretKey: json.secretKey, publicRead: [true, 'true', 'on'].contains(json.publicRead),
+                        accessKey: json.accessKey, secretKey: json.secretKey,
+                        publicRead: [true, 'true', 'on'].contains(json.publicRead),
+                        privateAcl: [true, 'true', 'on'].contains(json.privateAcl),
                         redirect: [true, 'true', 'on'].contains(json.redirect))
                 break
             case 'swift':
@@ -86,10 +98,19 @@ class StorageLocationService {
 
     void updateAcl(StorageLocation storageLocation) {
         if (storageLocation instanceof S3StorageLocation) {
-            // TODO this could be very slow and leave a lot of images inaccessible,
-            // might have to disable updating publicRead
-            analyticsExecutor.execute {
-                storageLocation.updateACL()
+            if (updateAclEnabled) {
+                // Default behavior: enable only if the total number of images is under the threshold
+                long totalObjects = Image.countByStorageLocation(storageLocation)
+                if (totalObjects < updateAclObjectThreshold) {
+                    // Proceed with background ACL and cache-control update
+                    analyticsExecutor.execute {
+                        storageLocation.updateACL()
+                    }
+                } else {
+                    log.info("updateAcl skipped for storageLocation id={}, class={}, total objects={} exceeds threshold={}", storageLocation.id, storageLocation.class.name, totalObjects, updateAclObjectThreshold)
+                }
+            } else {
+                log.info("Skipping ACL update for storageLocation id={}, class={}, feature disabled by config", storageLocation.id, storageLocation.class.name)
             }
         }
     }

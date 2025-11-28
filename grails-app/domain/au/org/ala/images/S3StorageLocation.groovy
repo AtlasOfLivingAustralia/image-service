@@ -37,6 +37,10 @@ class S3StorageLocation extends StorageLocation {
     String secretKey
     boolean containerCredentials
     boolean publicRead
+    // When true, explicitly request S3 canned Private ACL on upload/updates.
+    // When false (and publicRead is also false), no ACL header is added and
+    // bucket defaults/policies apply.
+    boolean privateAcl
     boolean redirect
     String cloudfrontDomain
 
@@ -66,6 +70,7 @@ class S3StorageLocation extends StorageLocation {
                 secretKey: secretKey,
                 containerCredentials: containerCredentials,
                 publicRead: publicRead,
+                privateAcl: privateAcl,
                 redirect: redirect,
                 pathStyleAccess: pathStyleAccess,
                 hostname: hostname,

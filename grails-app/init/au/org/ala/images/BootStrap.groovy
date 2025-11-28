@@ -36,6 +36,7 @@ class BootStrap {
                 secretKey: it.secretKey ?: '',
                 containerCredentials: it.containerCredentials ?: false,
                 publicRead: it.publicRead ?: false,
+                privateAcl: it.privateAcl ?: false,
                 redirect: it.redirect ?: false,
                 cloudfrontDomain: it.cloudfrontDomain ?: '',
             ]
