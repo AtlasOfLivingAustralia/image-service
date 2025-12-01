@@ -82,6 +82,15 @@
                                 </div>
                                 <div class="checkbox">
                                     <label>
+                                        <input type="checkbox" id="privateAcl" name="privateAcl"> Explicit Private ACL
+                                    </label>
+                                    <p class="help-block">
+                                        If checked (and Public read is not), uploaded objects get S3 canned "private" ACL.
+                                        If both unchecked, no ACL header is sent and bucket defaults apply.
+                                    </p>
+                                </div>
+                                <div class="checkbox">
+                                    <label>
                                         <input type="checkbox" id="redirect" name="redirect"> Redirect
                                     </label>
                                 </div>

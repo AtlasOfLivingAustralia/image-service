@@ -30,6 +30,7 @@ import com.amazonaws.services.s3.model.PutObjectRequest
 import com.amazonaws.services.s3.model.S3ObjectInputStream
 import com.amazonaws.services.s3.model.S3ObjectSummary
 import com.amazonaws.services.s3.model.Tag
+import com.google.common.annotations.VisibleForTesting
 import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
 import groovy.util.logging.Slf4j
@@ -48,6 +49,10 @@ class S3StorageOperations implements StorageOperations {
     String secretKey
     boolean containerCredentials
     boolean publicRead
+    // When true, explicitly attach the S3 canned Private ACL on upload metadata.
+    // When false (and publicRead is also false), no ACL header will be attached, allowing
+    // the bucket policy or default object ACLs to apply implicitly.
+    boolean privateAcl
     boolean redirect
     String cloudfrontDomain
 
@@ -56,7 +61,8 @@ class S3StorageOperations implements StorageOperations {
 
     private AmazonS3 _s3Client
 
-    private AmazonS3 getS3Client() {
+    @VisibleForTesting
+    protected AmazonS3 getS3Client() {
         if (!_s3Client) {
 
             def provider = containerCredentials ? new DefaultAWSCredentialsProviderChain() : new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey))
@@ -163,18 +169,33 @@ class S3StorageOperations implements StorageOperations {
         walkPrefix(storagePathStrategy().basePath()) { S3ObjectSummary objectSummary ->
             def path = objectSummary.key
             try {
-                s3Client.setObjectAcl(bucket, path, publicRead ? CannedAccessControlList.PublicRead : CannedAccessControlList.Private)
+                // Update ACL only when explicitly requested:
+                // - publicRead => set PublicRead
+                // - privateAcl (and not publicRead) => set Private
+                // - neither => do not modify ACL (respect existing object/bucket defaults)
+                if (publicRead) {
+                    s3Client.setObjectAcl(bucket, path, CannedAccessControlList.PublicRead)
+                } else if (privateAcl) {
+                    s3Client.setObjectAcl(bucket, path, CannedAccessControlList.Private)
+                } // else: no ACL change
 
                 // update cache control metadata
                 def objectMetadata = s3Client.getObjectMetadata(bucket, path)
-                objectMetadata.cacheControl = (publicRead ? 'public,s-maxage=31536000' : 'private') + ',max-age=31536000'
+                if (publicRead) {
+                    objectMetadata.cacheControl = 'public,s-maxage=31536000,max-age=31536000'
+                } else if (privateAcl) {
+                    objectMetadata.cacheControl = 'private,max-age=31536000'
+                } else {
+                    // Remove Cache-Control to allow bucket defaults to apply
+                    objectMetadata.cacheControl = null
+                }
 
                 CopyObjectRequest request = new CopyObjectRequest(bucket, path, bucket, path)
                         .withNewObjectMetadata(objectMetadata)
 
                 s3Client.copyObject(request)
             } catch (AmazonS3Exception e) {
-                log.error('Error updating ACL for {}, public: {}, error: {}', path, publicRead, e.message)
+                log.error('Error updating ACL for {}, public: {}, privateAcl: {}, error: {}', path, publicRead, privateAcl, e.message)
             }
         }
     }
@@ -188,14 +209,18 @@ class S3StorageOperations implements StorageOperations {
         if (length != null) {
             metadata.setContentLength(length)
         }
-        def acl
+        // Attach ACL header only when explicitly requested; otherwise let bucket defaults apply
         if (publicRead) {
-            acl = CannedAccessControlList.PublicRead
-        } else {
-            acl = CannedAccessControlList.Private
+            metadata.setHeader('x-amz-acl', CannedAccessControlList.PublicRead.toString())
+        } else if (privateAcl) {
+            metadata.setHeader('x-amz-acl', CannedAccessControlList.Private.toString())
         }
-        metadata.setHeader('x-amz-acl', acl.toString())
-        metadata.cacheControl = (publicRead ? 'public,s-maxage=31536000' : 'private') + ',max-age=31536000'
+        // Cache-Control: only set when canned ACL explicitly requested; otherwise let bucket defaults apply
+        if (publicRead) {
+            metadata.cacheControl = 'public,s-maxage=31536000,max-age=31536000'
+        } else if (privateAcl) {
+            metadata.cacheControl = 'private,max-age=31536000'
+        }
 //        metadata.setHeader('Expires', 'access + 1 year???')
         return metadata
     }
