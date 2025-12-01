@@ -18,6 +18,7 @@ import java.util.regex.Pattern
 class AdminController {
 
     def imageService
+    def iiifImageService
     def settingService
     def tagService
     def elasticSearchService
@@ -639,6 +640,7 @@ class AdminController {
 
     def clearThumbnailLookupCache() {
         imageStoreService.clearThumbnailLookupCache()
+        iiifImageService.clearLookupCache()
         flash.message = 'Thumbnail lookup cache cleared'
         redirect(action:'tools', message: 'Thumbnail Lookup Cache is cleared')
     }
