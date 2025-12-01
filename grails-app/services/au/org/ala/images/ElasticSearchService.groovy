@@ -39,12 +39,17 @@ import grails.web.servlet.mvc.GrailsParameterMap
 import org.apache.http.HttpHost
 import org.apache.http.message.BasicHeader
 import org.elasticsearch.client.RestClient
+import org.apache.http.conn.ssl.NoopHostnameVerifier
 
 import javax.annotation.PreDestroy
+import java.security.SecureRandom
 import java.util.regex.Pattern
 import javax.annotation.PostConstruct
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 class ElasticSearchService {
 
@@ -78,16 +83,30 @@ class ElasticSearchService {
             new BasicHeader(it.name, it.value)
         }
 
+        SSLContext sslContext = SSLContext.getInstance("TLS")
+        sslContext.init(null, [
+                new X509TrustManager() {
+                    @Override void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                    @Override void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                    @Override java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0] }
+                }
+        ] as TrustManager[], new SecureRandom())
+
         def restClient = RestClient.builder(*hosts)
-                .setHttpClientConfigCallback {
+                .setHttpClientConfigCallback { httpClientBuilder ->
                     if (credentialsProvider) {
-                        it.setDefaultCredentialsProvider(credentialsProvider)
+                        httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider)
                     }
-                    // Hacks for elasticsearch-java client compatibility with older/newer ES versions
-                    it.setDefaultHeaders(defaultHeaders)
-                      .addInterceptorLast((HttpResponseInterceptor) (response, context) -> {
-                          if (!response.containsHeader("X-Elastic-Product")) response.addHeader("X-Elastic-Product", "Elasticsearch")
-                      })
+                    httpClientBuilder
+                        .setSSLContext(sslContext)
+                        .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                        .setDefaultHeaders(defaultHeaders)
+                        .addInterceptorLast((HttpResponseInterceptor) { response, context ->
+                            if (!response.containsHeader("X-Elastic-Product")) {
+                                response.addHeader("X-Elastic-Product", "Elasticsearch")
+                            }
+                        })
+                    return httpClientBuilder
                 }
                 .build()
 
