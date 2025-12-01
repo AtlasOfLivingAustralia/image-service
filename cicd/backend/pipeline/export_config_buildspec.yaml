@@ -120,6 +120,7 @@ phases:
           username: "${ELASTICSEARCH_USERNAME}"
           password: $ELASTICSEARCH_PASSWORD
           port: ${ELASTIC_PORT}
+          scheme: "${ES_SCHEME}"
         app:
           url: https://$DOMAIN_NAME
         db:

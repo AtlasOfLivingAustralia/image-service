@@ -149,5 +149,5 @@ elasticsearch:
   password: {{ .Values.elasticsearch.password }}
   hosts:
     - host: {{ .Values.elasticsearch.host }}
-      scheme: "https"
+      scheme: {{ .Values.elasticsearch.scheme }}
       port: {{ .Values.elasticsearch.port }}

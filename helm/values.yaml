@@ -185,6 +185,7 @@ elasticsearch:
   indexName: "images"
   username: ""
   password: ""
+  scheme: "https"
 
 elasticsearch-images:
   deployment:
