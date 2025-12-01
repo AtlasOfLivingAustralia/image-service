@@ -213,11 +213,15 @@ class Image implements AsyncEntity<Image> {
     }
 
     static Image byOriginalFileOrAlternateFilename(String filename) {
+        // this should be unique for more recent images but may not be for older images
+        // so we just return the latest match
         Image.withCriteria(uniqueResult: true) {
             or {
                 eq 'originalFilename', filename
                 pgArrayContains 'alternateFilename', filename
             }
+            maxResults(1)
+            order("dateUploaded", "desc") // get the most recent one if multiple exist
         }
     }
 }
