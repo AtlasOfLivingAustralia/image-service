@@ -121,7 +121,7 @@ class S3StorageOperations implements StorageOperations {
 
             MetricPublisher metricsPub
             if (publishCloudwatchMetrics) {
-                metricsPub = CloudWatchMetricPublisher.create()
+                metricsPub = CloudWatchMetricPublisher.builder().namespace("image-service/S3").build()
             } else {
                 metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
             }
@@ -167,7 +167,7 @@ class S3StorageOperations implements StorageOperations {
                 // So we'll add retry strategy and metrics here because we can
                 MetricPublisher metricsPub
                 if (publishCloudwatchMetrics) {
-                    metricsPub = CloudWatchMetricPublisher.create()
+                    metricsPub = CloudWatchMetricPublisher.builder().namespace("image-service/S3").build()
                 } else {
                     metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
                 }
