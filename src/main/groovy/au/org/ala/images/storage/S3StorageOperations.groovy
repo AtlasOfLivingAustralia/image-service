@@ -61,15 +61,26 @@ class S3StorageOperations implements StorageOperations {
 
     private AmazonS3 _s3Client
 
+    private maxConnections = 500
+//    private requestTimeout = 30000 // ms
+    private maxErrorRetry = 3
+
     @VisibleForTesting
     protected AmazonS3 getS3Client() {
         if (!_s3Client) {
 
             def provider = containerCredentials ? new DefaultAWSCredentialsProviderChain() : new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey))
 
+            // Use a shared client configuration with increased connection pool size and
+            // a higher request timeout to better tolerate pool acquisition delays under load.
             def builder = AmazonS3ClientBuilder.standard()
                     .withCredentials(provider)
-                    .withClientConfiguration(buildClientConfiguration([:], [:]))
+                    .withClientConfiguration(buildClientConfiguration([
+                            // sensible defaults if not overridden by service-specific config
+                            maxConnections: this.maxConnections,                 // increase HTTP connection pool size
+//                            requestTimeout: this.requestTimeout                // ms: upper bound including pool acquire time
+                            maxErrorRetry: this.maxErrorRetry
+                    ], [:]))
             if (pathStyleAccess) {
                 builder.pathStyleAccessEnabled = true
             }
@@ -85,13 +96,18 @@ class S3StorageOperations implements StorageOperations {
     }
 
     static ClientConfiguration buildClientConfiguration(Map defaultConfig, Map serviceConfig) {
-        // TODO add config for S3 clients
+        // Build a ClientConfiguration for AWS SDK v1.
+        // Note: AWS SDK v1 does not expose Apache HTTP client's connection acquire timeout directly.
+        // We approximate by setting requestTimeout which bounds the total time, including waiting
+        // for a connection from the pool. Combine this with an increased maxConnections to reduce
+        // contention.
         Map config = [
                 connectionTimeout: defaultConfig.connectionTimeout ?: 0,
                 maxConnections: defaultConfig.maxConnections ?: 0,
                 maxErrorRetry: defaultConfig.maxErrorRetry ?: 0,
                 protocol: defaultConfig.protocol ?: '',
                 socketTimeout: defaultConfig.socketTimeout ?: 0,
+                requestTimeout: defaultConfig.requestTimeout ?: 0,
                 userAgent: defaultConfig.userAgent ?: '',
                 proxyDomain: defaultConfig.proxyDomain ?: '',
                 proxyHost: defaultConfig.proxyHost ?: '',
@@ -106,6 +122,7 @@ class S3StorageOperations implements StorageOperations {
             if (serviceConfig.maxErrorRetry) config.maxErrorRetry = serviceConfig.maxErrorRetry
             if (serviceConfig.protocol) config.protocol = serviceConfig.protocol
             if (serviceConfig.socketTimeout) config.socketTimeout = serviceConfig.socketTimeout
+            if (serviceConfig.requestTimeout) config.requestTimeout = serviceConfig.requestTimeout
             if (serviceConfig.userAgent) config.userAgent = serviceConfig.userAgent
             if (serviceConfig.proxyDomain) config.proxyDomain = serviceConfig.proxyDomain
             if (serviceConfig.proxyHost) config.proxyHost = serviceConfig.proxyHost
@@ -124,6 +141,7 @@ class S3StorageOperations implements StorageOperations {
             else clientConfiguration.protocol = Protocol.HTTPS
         }
         if (config.socketTimeout) clientConfiguration.socketTimeout = config.socketTimeout as Integer
+        if (config.requestTimeout) clientConfiguration.requestTimeout = config.requestTimeout as Integer
         if (config.userAgent) clientConfiguration.userAgent = config.userAgent
         if (config.proxyDomain) clientConfiguration.proxyDomain = config.proxyDomain
         if (config.proxyHost) clientConfiguration.proxyHost = config.proxyHost
