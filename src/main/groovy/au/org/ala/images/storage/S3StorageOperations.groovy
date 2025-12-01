@@ -45,6 +45,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectAclRequest
 import software.amazon.awssdk.services.s3.S3Utilities
 import software.amazon.awssdk.services.s3.model.GetUrlRequest
 import software.amazon.awssdk.transfer.s3.S3TransferManager
+import software.amazon.awssdk.core.async.BlockingOutputStreamAsyncRequestBody
+import software.amazon.awssdk.transfer.s3.model.UploadRequest
 
 import java.time.Duration
 import java.util.function.Consumer
@@ -90,6 +92,7 @@ class S3StorageOperations implements StorageOperations {
 
     private static final Cache<String, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from("maximumSize=10,expireAfterAccess=24h").removalListener {
         String key, S3AsyncClient client, RemovalCause cause ->
+            s3TransferManagerCache.invalidate(key) // also remove any associated transfer manager
             client?.close()
     }.build()
 
@@ -482,11 +485,17 @@ class S3StorageOperations implements StorageOperations {
 
     private storeInternal(InputStream stream, String absolutePath, String contentType, String contentDisposition, Long length, Map<String, String> tags) {
         try {
-            stream.withStream { InputStream it ->
+            stream.withStream { InputStream input ->
+                def transferManager = getS3TransferManager()
+                def blockingBody = BlockingOutputStreamAsyncRequestBody.builder().build()
+
                 PutObjectRequest.Builder b = PutObjectRequest.builder()
-                b.bucket(bucket).key(absolutePath)
+                        .bucket(bucket)
+                        .key(absolutePath)
+
                 if (contentType) b.contentType(contentType)
                 if (contentDisposition) b.contentDisposition(contentDisposition)
+
                 // Cache-Control headers based on ACL flags (preserved behavior)
                 if (publicRead) {
                     b.cacheControl('public,s-maxage=31536000,max-age=31536000')
@@ -501,13 +510,23 @@ class S3StorageOperations implements StorageOperations {
                     }
                     if (tagSet) b.tagging(Tagging.builder().tagSet(tagSet).build())
                 }
-                PutObjectRequest putObjectRequest = b.build() as PutObjectRequest
-                def rb = (length != null && length > 0) ? RequestBody.fromInputStream(it, length) : RequestBody.fromInputStream(it, it.available())
-                def result = s3Client.putObject(putObjectRequest, rb)
-                log.debug("Uploaded {} to S3 {}:{} with result etag {}", absolutePath, region, bucket, result.eTag())
+
+                def uploadReq = UploadRequest.builder()
+                        .putObjectRequest(b.build())
+                        .requestBody(blockingBody)
+                        .build()
+
+                def uploadFuture = transferManager.upload(uploadReq).completionFuture()
+
+                blockingBody.outputStream().withStream { os ->
+                    input.transferTo(os)
+                }
+
+                def result = uploadFuture.join()
+                log.debug("Uploaded {} to S3 {}:{} with result etag {}", absolutePath, region, bucket, result.response().eTag())
             }
-        } catch (S3Exception exception) {
-            log.warn 'An S3 (v2) exception was caught while storing input stream', exception
+        } catch (Exception exception) {
+            log.warn 'An exception was caught while storing input stream', exception
             throw new RuntimeException(exception)
         }
     }
