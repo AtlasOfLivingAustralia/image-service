@@ -172,12 +172,13 @@ class IiifImageService {
             def result = operations.thumbnailByteSinkFactory(identifier).getByteSinkForNames('thumbnail_'+type).openBufferedStream().withStream { out ->
                 iif.process(byteSource, region, size, rotation, quality, format, out)
             }
-            // TODO Save an ImageThumbnail record for this generated thumbnail?
-            Image.async.withNewTransaction {
-                def image = Image.findByImageIdentifier(identifier)
-                new ImageThumbnail(image: image, name: type, width: result.width, height: result.height,
-                        isSquare: region.type == IiifImageProcessor.Region.Type.SQUARE).save(failOnError: true)
-            }
+            // Don't save an ImageThumbnail record for this generated thumbnail.  The thumbnail table needs to be addressable
+            // through the main Image Controller.
+//            Image.async.withNewTransaction {
+//                def image = Image.findByImageIdentifier(identifier)
+//                new ImageThumbnail(image: image, name: type, width: result.width, height: result.height,
+//                        isSquare: region.type == IiifImageProcessor.Region.Type.SQUARE).save(failOnError: true)
+//            }
             imageInfo = operations.thumbnailImageInfo(identifier, type)
         }
 
