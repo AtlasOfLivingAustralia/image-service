@@ -19,6 +19,7 @@ import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
 import software.amazon.awssdk.http.apache.ApacheHttpClient
 import software.amazon.awssdk.metrics.LoggingMetricPublisher
 import software.amazon.awssdk.metrics.MetricPublisher
+import software.amazon.awssdk.metrics.publishers.cloudwatch.CloudWatchMetricPublisher
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.retries.DefaultRetryStrategy
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -83,6 +84,7 @@ class S3StorageOperations implements StorageOperations {
     private static final int maxConnections = Integer.getInteger('au.org.ala.images.s3.max.connections', 500)
     private static final int maxErrorRetry = Integer.getInteger('au.org.ala.images.s3.max.retry', 3)
     private static final boolean useCrtAsyncClient = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.async.crt', 'true'))
+    private static final boolean publishCloudwatchMetrics = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics', 'false'))
 
     // TODO configure cache parameters via config
     private static final Cache<String, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,expireAfterAccess=24h").removalListener {
@@ -117,8 +119,12 @@ class S3StorageOperations implements StorageOperations {
         return s3ClientCache.get(cacheKey) {
             def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
 
-            // TODO Add config for enabling CloudWatchMetricPublisher if needed
-            MetricPublisher metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
+            MetricPublisher metricsPub
+            if (publishCloudwatchMetrics) {
+                metricsPub = CloudWatchMetricPublisher.create()
+            } else {
+                metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
+            }
 
             // Configure HTTP Client with max connections
             def httpClientBuilder = ApacheHttpClient.builder()
@@ -159,8 +165,12 @@ class S3StorageOperations implements StorageOperations {
             // if path style access is needed, we can't use the crtBuilder so add the full feature set up
             if (!useCrtAsyncClient) {
                 // So we'll add retry strategy and metrics here because we can
-                // TODO Add support for CloudWatchMetricPublisher
-                MetricPublisher metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
+                MetricPublisher metricsPub
+                if (publishCloudwatchMetrics) {
+                    metricsPub = CloudWatchMetricPublisher.create()
+                } else {
+                    metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
+                }
 
                 // Configure Retry Policy
                 def overrideConfig = ClientOverrideConfiguration.builder()
