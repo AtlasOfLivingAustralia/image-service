@@ -7,29 +7,47 @@ import au.org.ala.images.Range
 import au.org.ala.images.S3ByteSinkFactory
 import au.org.ala.images.StoragePathStrategy
 import au.org.ala.images.util.ByteSinkFactory
-import com.amazonaws.AmazonClientException
-import com.amazonaws.ClientConfiguration
-import com.amazonaws.HttpMethod
-import com.amazonaws.Protocol
-import com.amazonaws.SdkClientException
-import com.amazonaws.auth.AWSStaticCredentialsProvider
-import com.amazonaws.auth.BasicAWSCredentials
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
-import com.amazonaws.client.builder.AwsClientBuilder
-import com.amazonaws.services.s3.AmazonS3
-import com.amazonaws.services.s3.AmazonS3ClientBuilder
-import com.amazonaws.services.s3.model.AmazonS3Exception
-import com.amazonaws.services.s3.model.CannedAccessControlList
-import com.amazonaws.services.s3.model.CopyObjectRequest
-import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest
-import com.amazonaws.services.s3.model.GetObjectRequest
-import com.amazonaws.services.s3.model.ObjectListing
-import com.amazonaws.services.s3.model.ObjectMetadata
-import com.amazonaws.services.s3.model.ObjectTagging
-import com.amazonaws.services.s3.model.PutObjectRequest
-import com.amazonaws.services.s3.model.S3ObjectInputStream
-import com.amazonaws.services.s3.model.S3ObjectSummary
-import com.amazonaws.services.s3.model.Tag
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
+import com.github.benmanes.caffeine.cache.RemovalCause
+import org.slf4j.event.Level
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
+import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
+import software.amazon.awssdk.http.apache.ApacheHttpClient
+import software.amazon.awssdk.metrics.LoggingMetricPublisher
+import software.amazon.awssdk.metrics.MetricPublisher
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.retries.DefaultRetryStrategy
+import software.amazon.awssdk.services.s3.S3AsyncClient
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.S3Configuration
+import software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.Tag
+import software.amazon.awssdk.services.s3.model.Tagging
+import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
+import software.amazon.awssdk.services.s3.model.GetObjectRequest as V2GetObjectRequest
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest
+import software.amazon.awssdk.services.s3.model.HeadBucketRequest
+import software.amazon.awssdk.services.s3.model.S3Exception
+import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
+import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest as V2CopyObjectRequest
+import software.amazon.awssdk.services.s3.model.MetadataDirective
+import software.amazon.awssdk.services.s3.model.ObjectCannedACL
+import software.amazon.awssdk.services.s3.model.PutObjectAclRequest
+import software.amazon.awssdk.services.s3.S3Utilities
+import software.amazon.awssdk.services.s3.model.GetUrlRequest
+import software.amazon.awssdk.transfer.s3.S3TransferManager
+
+import java.time.Duration
+import java.util.function.Consumer
 import com.google.common.annotations.VisibleForTesting
 import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
@@ -59,97 +77,149 @@ class S3StorageOperations implements StorageOperations {
     boolean pathStyleAccess
     String hostname = ''
 
-    private AmazonS3 _s3Client
+    // TODO configure connection parameters via config
+    private static final int maxConnections = Integer.getInteger('au.org.ala.images.s3.max.connections', 500)
+    private static final int maxErrorRetry = Integer.getInteger('au.org.ala.images.s3.max.retry', 3)
+    private static final boolean useCrtAsyncClient = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.async.crt', 'true'))
 
-    private maxConnections = 500
-//    private requestTimeout = 30000 // ms
-    private maxErrorRetry = 3
+    // TODO configure cache parameters via config
+    private static final Cache<String, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,expireAfterAccess=24h").removalListener {
+        String key, S3Client client, RemovalCause cause ->
+        client?.close()
+    }.build()
 
-    @VisibleForTesting
-    protected AmazonS3 getS3Client() {
-        if (!_s3Client) {
+    private static final Cache<String, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from("maximumSize=10,expireAfterAccess=24h").removalListener {
+        String key, S3AsyncClient client, RemovalCause cause ->
+            client?.close()
+    }.build()
 
-            def provider = containerCredentials ? new DefaultAWSCredentialsProviderChain() : new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey))
+    private static final Cache<String, S3TransferManager> s3TransferManagerCache = Caffeine<String, S3TransferManager>.from("maximumSize=10,expireAfterAccess=24h").removalListener {
+        String key, S3TransferManager manager, RemovalCause cause ->
+            manager?.close()
+    }.build()
 
-            // Use a shared client configuration with increased connection pool size and
-            // a higher request timeout to better tolerate pool acquisition delays under load.
-            def builder = AmazonS3ClientBuilder.standard()
-                    .withCredentials(provider)
-                    .withClientConfiguration(buildClientConfiguration([
-                            // sensible defaults if not overridden by service-specific config
-                            maxConnections: this.maxConnections,                 // increase HTTP connection pool size
-//                            requestTimeout: this.requestTimeout                // ms: upper bound including pool acquire time
-                            maxErrorRetry: this.maxErrorRetry
-                    ], [:]))
-            if (pathStyleAccess) {
-                builder.pathStyleAccessEnabled = true
-            }
-            if (hostname) {
-                builder.endpointConfiguration = new AwsClientBuilder.EndpointConfiguration(hostname, region)
-            } else {
-                builder.region = region
-            }
-
-            _s3Client = builder.build()
-        }
-        _s3Client
+    static final void clearS3ClientCache() {
+        s3TransferManagerCache.invalidateAll()
+        s3AsyncClientCache.invalidateAll()
+        s3ClientCache.invalidateAll()
     }
 
-    static ClientConfiguration buildClientConfiguration(Map defaultConfig, Map serviceConfig) {
-        // Build a ClientConfiguration for AWS SDK v1.
-        // Note: AWS SDK v1 does not expose Apache HTTP client's connection acquire timeout directly.
-        // We approximate by setting requestTimeout which bounds the total time, including waiting
-        // for a connection from the pool. Combine this with an increased maxConnections to reduce
-        // contention.
-        Map config = [
-                connectionTimeout: defaultConfig.connectionTimeout ?: 0,
-                maxConnections: defaultConfig.maxConnections ?: 0,
-                maxErrorRetry: defaultConfig.maxErrorRetry ?: 0,
-                protocol: defaultConfig.protocol ?: '',
-                socketTimeout: defaultConfig.socketTimeout ?: 0,
-                requestTimeout: defaultConfig.requestTimeout ?: 0,
-                userAgent: defaultConfig.userAgent ?: '',
-                proxyDomain: defaultConfig.proxyDomain ?: '',
-                proxyHost: defaultConfig.proxyHost ?: '',
-                proxyPassword: defaultConfig.proxyPassword ?: '',
-                proxyPort: defaultConfig.proxyPort ?: 0,
-                proxyUsername: defaultConfig.proxyUsername ?: '',
-                proxyWorkstation: defaultConfig.proxyWorkstation ?: ''
-        ]
-        if (serviceConfig) {
-            if (serviceConfig.connectionTimeout) config.connectionTimeout = serviceConfig.connectionTimeout
-            if (serviceConfig.maxConnections) config.maxConnections = serviceConfig.maxConnections
-            if (serviceConfig.maxErrorRetry) config.maxErrorRetry = serviceConfig.maxErrorRetry
-            if (serviceConfig.protocol) config.protocol = serviceConfig.protocol
-            if (serviceConfig.socketTimeout) config.socketTimeout = serviceConfig.socketTimeout
-            if (serviceConfig.requestTimeout) config.requestTimeout = serviceConfig.requestTimeout
-            if (serviceConfig.userAgent) config.userAgent = serviceConfig.userAgent
-            if (serviceConfig.proxyDomain) config.proxyDomain = serviceConfig.proxyDomain
-            if (serviceConfig.proxyHost) config.proxyHost = serviceConfig.proxyHost
-            if (serviceConfig.proxyPassword) config.proxyPassword = serviceConfig.proxyPassword
-            if (serviceConfig.proxyPort) config.proxyPort = serviceConfig.proxyPort
-            if (serviceConfig.proxyUsername) config.proxyUsername = serviceConfig.proxyUsername
-            if (serviceConfig.proxyWorkstation) config.proxyWorkstation = serviceConfig.proxyWorkstation
-        }
+    private String getCacheKey() {
+        return "${region}:${accessKey}:${bucket}:${hostname}:${pathStyleAccess}"
+    }
 
-        ClientConfiguration clientConfiguration = new ClientConfiguration()
-        if (config.connectionTimeout) clientConfiguration.connectionTimeout = config.connectionTimeout as Integer
-        if (config.maxConnections) clientConfiguration.maxConnections = config.maxConnections as Integer
-        if (config.maxErrorRetry) clientConfiguration.maxErrorRetry = config.maxErrorRetry as Integer
-        if (config.protocol) {
-            if (config.protocol.toString().toUpperCase() == 'HTTP') clientConfiguration.protocol = Protocol.HTTP
-            else clientConfiguration.protocol = Protocol.HTTPS
+    @VisibleForTesting
+    protected S3Client getS3Client() {
+        final cacheKey = getCacheKey()
+        return s3ClientCache.get(cacheKey) {
+            def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+
+            // TODO Add config for enabling CloudWatchMetricPublisher if needed
+            MetricPublisher metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
+
+            // Configure HTTP Client with max connections
+            def httpClientBuilder = ApacheHttpClient.builder()
+                    .maxConnections(maxConnections)
+
+            // Configure Retry Policy
+            def overrideConfig = ClientOverrideConfiguration.builder()
+                    .retryStrategy(DefaultRetryStrategy.standardStrategyBuilder().maxAttempts(maxErrorRetry).build())
+                    .addMetricPublisher(metricsPub)
+                    .build()
+
+            def builder = S3Client.builder()
+                    .defaultsMode(DefaultsMode.AUTO)
+                    .credentialsProvider(credProvider)
+                    .httpClientBuilder(httpClientBuilder)
+                    .overrideConfiguration(overrideConfig)
+
+            if (region) {
+                builder = builder.region(Region.of(region))
+            }
+            if (hostname) {
+                builder = builder.endpointOverride(URI.create(hostname))
+            }
+            if (pathStyleAccess) {
+                builder = builder.serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
+            }
+            builder.build()
         }
-        if (config.socketTimeout) clientConfiguration.socketTimeout = config.socketTimeout as Integer
-        if (config.requestTimeout) clientConfiguration.requestTimeout = config.requestTimeout as Integer
-        if (config.userAgent) clientConfiguration.userAgent = config.userAgent
-        if (config.proxyDomain) clientConfiguration.proxyDomain = config.proxyDomain
-        if (config.proxyHost) clientConfiguration.proxyHost = config.proxyHost
-        if (config.proxyPassword) clientConfiguration.proxyPassword = config.proxyPassword
-        if (config.proxyPort) clientConfiguration.proxyPort = config.proxyPort as Integer
-        if (config.proxyUsername) clientConfiguration.proxyUsername = config.proxyUsername
-        if (config.proxyWorkstation) clientConfiguration.proxyWorkstation = config.proxyWorkstation
-        clientConfiguration
+    }
+
+    @VisibleForTesting
+    protected S3AsyncClient getS3AsyncClient() {
+        final cacheKey = getCacheKey()
+        return s3AsyncClientCache.get(cacheKey) {
+            def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+
+            def client
+            // if path style access is needed, we can't use the crtBuilder so add the full feature set up
+            if (!useCrtAsyncClient) {
+                // So we'll add retry strategy and metrics here because we can
+                // TODO Add support for CloudWatchMetricPublisher
+                MetricPublisher metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
+
+                // Configure Retry Policy
+                def overrideConfig = ClientOverrideConfiguration.builder()
+                        .retryStrategy(DefaultRetryStrategy.standardStrategyBuilder().maxAttempts(maxErrorRetry).build())
+                        .addMetricPublisher(metricsPub)
+                        .build()
+                def builder = S3AsyncClient.builder()
+                        .credentialsProvider(credProvider)
+                    .overrideConfiguration(overrideConfig)
+
+                if (region) {
+                    builder = builder.region(Region.of(region))
+                }
+                if (hostname) {
+                    builder = builder.endpointOverride(URI.create(hostname))
+                }
+                if (pathStyleAccess) {
+                    builder = builder.serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
+                }
+                client = builder.build()
+            } else {
+                def builder = S3AsyncClient.crtBuilder()
+                        .credentialsProvider(credProvider)
+                        .retryConfiguration(S3CrtRetryConfiguration.builder().numRetries(maxErrorRetry).build())
+
+                if (region) {
+                    builder = builder.region(Region.of(region))
+                }
+                if (hostname) {
+                    builder = builder.endpointOverride(URI.create(hostname))
+                }
+                if (pathStyleAccess) {
+                    builder = builder.forcePathStyle(pathStyleAccess)
+                }
+                client = builder.build()
+            }
+            return client
+        }
+    }
+
+    @VisibleForTesting
+    protected S3TransferManager getS3TransferManager() {
+        final cacheKey = getCacheKey()
+        return s3TransferManagerCache.get(cacheKey) {
+            def s3AsyncClient = getS3AsyncClient()
+            return S3TransferManager.builder()
+                    .s3Client(s3AsyncClient)
+                    .build()
+        }
+    }
+
+    @VisibleForTesting
+    protected S3Presigner getS3Presigner() {
+            def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+            def builder = S3Presigner.builder().credentialsProvider(credProvider)
+            if (region) {
+                builder = builder.region(Region.of(region))
+            }
+            if (hostname) {
+                builder = builder.endpointOverride(URI.create(hostname))
+            }
+            return builder.build()
     }
 
     @Override
@@ -159,101 +229,79 @@ class S3StorageOperations implements StorageOperations {
 
     @Override
     URI redirectLocation(String path) {
-//        def permission = s3Client.getObjectAcl(bucket, path).grantsAsList.find { grant ->
-//            grant.grantee == GroupGrantee.AllUsers && [Permission.Read, Permission.Write, Permission.FullControl].contains(grant.permission)
-//        }
         if (cloudfrontDomain) {
             // If a CloudFront domain is set, use that for redirects
             new URI("https://${cloudfrontDomain}/${path}")
         } else if (publicRead) {
-            s3Client.getUrl(bucket, path).toURI()
+            S3Utilities utils = s3Client.utilities()
+            def url = utils.getUrl(GetUrlRequest.builder().bucket(bucket).key(path).build())
+            url.toURI()
         } else {
-            // Set the presigned URL to expire after one hour.
-            Date expiration = new Date()
-            long expTimeMillis = expiration.getTime()
-            expTimeMillis += 1000 * 60 * 60;
-            expiration.setTime(expTimeMillis)
-
-            // Generate the presigned URL.
-            GeneratePresignedUrlRequest generatePresignedUrlRequest =
-                    new GeneratePresignedUrlRequest(bucket, path)
-                            .withMethod(HttpMethod.GET)
-                            .withExpiration(expiration)
-            s3Client.generatePresignedUrl(generatePresignedUrlRequest).toURI()
+            // Presign with AWS SDK v2 for 1 hour
+            def presignReq = GetObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofHours(1))
+                    .getObjectRequest { b -> b.bucket(bucket).key(path) }
+                    .build()
+            def presigned = s3Presigner.withCloseable {
+                it.presignGetObject(presignReq)
+            }
+            presigned.url().toURI()
         }
     }
 
     def updateACL() {
-        walkPrefix(storagePathStrategy().basePath()) { S3ObjectSummary objectSummary ->
-            def path = objectSummary.key
+        walkPrefix(storagePathStrategy().basePath()) { Map objSummary ->
+            final String path = (objSummary['key'] as String)
             try {
-                // Update ACL only when explicitly requested:
-                // - publicRead => set PublicRead
-                // - privateAcl (and not publicRead) => set Private
-                // - neither => do not modify ACL (respect existing object/bucket defaults)
+                // Update ACL if requested
                 if (publicRead) {
-                    s3Client.setObjectAcl(bucket, path, CannedAccessControlList.PublicRead)
+                    final String bkt = this.bucket
+                    final String pth = path
+                    s3Client.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(pth).acl(ObjectCannedACL.PUBLIC_READ) } as Consumer<PutObjectAclRequest.Builder>)
                 } else if (privateAcl) {
-                    s3Client.setObjectAcl(bucket, path, CannedAccessControlList.Private)
-                } // else: no ACL change
-
-                // update cache control metadata
-                def objectMetadata = s3Client.getObjectMetadata(bucket, path)
-                if (publicRead) {
-                    objectMetadata.cacheControl = 'public,s-maxage=31536000,max-age=31536000'
-                } else if (privateAcl) {
-                    objectMetadata.cacheControl = 'private,max-age=31536000'
-                } else {
-                    // Remove Cache-Control to allow bucket defaults to apply
-                    objectMetadata.cacheControl = null
+                    final String bkt = this.bucket
+                    final String pth = path
+                    s3Client.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(pth).acl(ObjectCannedACL.PRIVATE) } as Consumer<PutObjectAclRequest.Builder>)
                 }
 
-                CopyObjectRequest request = new CopyObjectRequest(bucket, path, bucket, path)
-                        .withNewObjectMetadata(objectMetadata)
+                // Update Cache-Control by copying object to itself with REPLACE
+                def head = s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bucket).key(path) } as Consumer<HeadObjectRequest.Builder>)
+                def cacheControl = null
+                if (publicRead) cacheControl = 'public,s-maxage=31536000,max-age=31536000'
+                else if (privateAcl) cacheControl = 'private,max-age=31536000'
 
-                s3Client.copyObject(request)
-            } catch (AmazonS3Exception e) {
+                final String bkt2 = this.bucket
+                final String pth2 = path
+                s3Client.copyObject({ V2CopyObjectRequest.Builder b ->
+                    b.copySource("${bkt2}/${pth2}")
+                     .destinationBucket(bkt2)
+                     .destinationKey(pth2)
+                     .metadataDirective(MetadataDirective.REPLACE)
+                     .contentType(head.contentType())
+                     .cacheControl(cacheControl)
+                } as Consumer<V2CopyObjectRequest.Builder>)
+            } catch (S3Exception e) {
                 log.error('Error updating ACL for {}, public: {}, privateAcl: {}, error: {}', path, publicRead, privateAcl, e.message)
             }
         }
     }
 
-    private ObjectMetadata generateMetadata(String contentType, String contentDisposition = null, Long length = null) {
-        ObjectMetadata metadata = new ObjectMetadata()
-        metadata.setContentType(contentType)
-        if (contentDisposition) {
-            metadata.setContentDisposition(contentDisposition)
-        }
-        if (length != null) {
-            metadata.setContentLength(length)
-        }
-        // Attach ACL header only when explicitly requested; otherwise let bucket defaults apply
-        if (publicRead) {
-            metadata.setHeader('x-amz-acl', CannedAccessControlList.PublicRead.toString())
-        } else if (privateAcl) {
-            metadata.setHeader('x-amz-acl', CannedAccessControlList.Private.toString())
-        }
-        // Cache-Control: only set when canned ACL explicitly requested; otherwise let bucket defaults apply
-        if (publicRead) {
-            metadata.cacheControl = 'public,s-maxage=31536000,max-age=31536000'
-        } else if (privateAcl) {
-            metadata.cacheControl = 'private,max-age=31536000'
-        }
-//        metadata.setHeader('Expires', 'access + 1 year???')
-        return metadata
-    }
+    // Removed v1 ObjectMetadata helper; headers are set directly via v2 PutObjectRequest
 
     @Override
     boolean verifySettings() {
         try {
-            boolean result = s3Client.doesBucketExistV2(bucket)
-            if (result) {
-                String key = storagePathStrategy().basePath() + '/' + UUID.randomUUID().toString()
-                def putResult = s3Client.putObject(new PutObjectRequest(bucket, key, new ByteArrayInputStream(new byte[1]), generateMetadata('application/octet-stream', null, 1)))
-                s3Client.deleteObject(bucket, key)
-            }
-            return result
-        } catch (SdkClientException e) {
+            // Check bucket existence via headBucket
+            final String bkt = this.bucket
+            s3Client.headBucket({ HeadBucketRequest.Builder b -> b.bucket(bkt) } as Consumer<HeadBucketRequest.Builder>)
+            // Put a tiny object then delete
+            final String key = storagePathStrategy().basePath() + '/' + UUID.randomUUID().toString()
+            final String ct = 'application/octet-stream'
+            s3Client.putObject({ PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(ct) } as Consumer<PutObjectRequest.Builder>,
+                    RequestBody.fromBytes(new byte[1]))
+            s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
+            return true
+        } catch (S3Exception e) {
             log.error("Exception while verifying S3 bucket {}", this, e)
             return false
         }
@@ -271,11 +319,12 @@ class S3StorageOperations implements StorageOperations {
             def imagePath = createOriginalPathFromUUID(uuid)
             def bytes
             try {
-                def s3object = s3Client.getObject(new GetObjectRequest(bucket, imagePath))
-                def inputStream = s3object.objectContent
-                bytes = inputStream.withStream { it.bytes }
-            } catch (AmazonS3Exception e) {
-                if (e.statusCode == 404) {
+                final String bkt = this.bucket
+                final String imgKey = imagePath
+                def resp = s3Client.getObject({ V2GetObjectRequest.Builder b -> b.bucket(bkt).key(imgKey) } as Consumer<V2GetObjectRequest.Builder>)
+                bytes = resp.withStream { it.bytes }
+            } catch (S3Exception e) {
+                if (e.statusCode() == 404) {
                     throw new FileNotFoundException("S3 path $imagePath")
                 } else {
                     throw e
@@ -288,15 +337,17 @@ class S3StorageOperations implements StorageOperations {
 
     @Override
     InputStream inputStream(String path, Range range) throws FileNotFoundException {
-        def request = new GetObjectRequest(bucket, path)
-        if (range != null && !range.empty) {
-            request.setRange(range.start(), range.end())
-        }
         try {
-            def s3Object = s3Client.getObject(request)
-            return new AbortingS3ObjectInputStream(s3Object.objectContent)
-        } catch (AmazonS3Exception e) {
-            if (e.statusCode == 404) {
+            def consumer = { V2GetObjectRequest.Builder b ->
+                b.bucket(bucket).key(path)
+                if (range != null && !range.empty) {
+                    b.range("bytes=${range.start()}-${range.end()}")
+                }
+            } as Consumer<V2GetObjectRequest.Builder>
+            def s3Object = s3Client.getObject(consumer)
+            return s3Object
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
                 throw new FileNotFoundException("S3 path $path")
             } else {
                 throw e
@@ -304,58 +355,61 @@ class S3StorageOperations implements StorageOperations {
         }
     }
 
-    /**
-     * Wrap an S3ObjectInputStream to abort the S3Object when the stream is closed.
-     *
-     * The S3ObjectInputStream will complain at the WARN level when a stream is
-     * closed that hasn't been fully read. As we will occasionally open a stream
-     * just to read the header data for an image but want to deal in generic
-     * InputStreams that don't support the AWS SDK specific abort() operation,
-     * this class will always abort the stream on close to avoid the warning.
-     *
-     * TODO Find a way of requesting only the required image header byte range
-     */
-    @Slf4j
-    static private class AbortingS3ObjectInputStream extends FilterInputStream {
-
-        private S3ObjectInputStream inputStream
-
-        AbortingS3ObjectInputStream(S3ObjectInputStream inputStream) {
-            super(inputStream)
-            this.inputStream = inputStream
-        }
-
-        @Override
-        void close() throws IOException {
-            def available = inputStream.delegateStream.available()
-            if (available > 0) {
-                log.debug('Closing S3ObjectInputStream with {} bytes available', available)
-                inputStream.abort()
-            }
-            super.close()
-        }
-    }
+    // v1 AbortingS3ObjectInputStream removed; v2 getObject returns a standard InputStream that can be closed directly.
 
     @Override
     boolean stored(String uuid) {
-        return s3Client.doesObjectExist(bucket, createOriginalPathFromUUID(uuid))
+        def key = createOriginalPathFromUUID(uuid)
+        try {
+            final String bkt = this.bucket
+            final String kk = key
+            s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(kk) } as Consumer<HeadObjectRequest.Builder>)
+            return true
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) return false
+            throw e
+        }
     }
 
     @Override
     boolean thumbnailExists(String uuid, String type) {
-        return s3Client.doesObjectExist(bucket, createThumbLargePathFromUUID(uuid, type))
+        def key = createThumbLargePathFromUUID(uuid, type)
+        try {
+            final String bkt = this.bucket
+            final String kk = key
+            s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(kk) } as Consumer<HeadObjectRequest.Builder>)
+            return true
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) return false
+            throw e
+        }
     }
 
     @Override
     boolean tileExists(String uuid, int x, int y, int z) {
-        return s3Client.doesObjectExist(bucket, createTilesPathFromUUID(uuid, x, y, z))
+        def key = createTilesPathFromUUID(uuid, x, y, z)
+        try {
+            final String bkt = this.bucket
+            final String kk = key
+            s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(kk) } as Consumer<HeadObjectRequest.Builder>)
+            return true
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) return false
+            throw e
+        }
     }
 
     @Override
     void storeTileZipInputStream(String uuid, String zipInputFileName, String contentType, long length = 0, ZipInputStream zipInputStream) {
         def path = FilenameUtils.normalize(createTilesPathFromUUID(uuid) + '/' + zipInputFileName)
         zipInputStream.withStream { stream ->
-            s3Client.putObject(bucket, path, stream, generateMetadata(contentType, null, length))
+            final String bkt = this.bucket
+            final String pth = path
+            final String ct = contentType
+            s3Client.putObject(
+                    { PutObjectRequest.Builder b -> b.bucket(bkt).key(pth).contentType(ct) } as Consumer<PutObjectRequest.Builder>,
+                    RequestBody.fromInputStream(stream, length)
+            )
         }
     }
 
@@ -365,51 +419,40 @@ class S3StorageOperations implements StorageOperations {
 
     @Override
     boolean deleteStored(String uuid) {
-
-        walkPrefix(storagePathStrategy().createPathFromUUID(uuid, '')) { S3ObjectSummary s3ObjectSummary ->
-            s3Client.deleteObject(bucket, s3ObjectSummary.key)
+        final String bkt = this.bucket
+        walkPrefix(storagePathStrategy().createPathFromUUID(uuid, '')) { Map obj ->
+            final String key = obj['key'] as String
+            s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
         }
-
         AuditService.submitLog(uuid, "Image deleted from store", "N/A")
-
         return true
     }
 
     private long getConsumedSpaceInternal(String prefix) {
-        ObjectListing objectListing = null
         long size = 0
         List<String> extraPrefixes = []
-        def more = true
-        while (more) {
-
-            objectListing = (objectListing == null) ? s3Client.listObjects(bucket, prefix) : s3Client.listNextBatchOfObjects(objectListing)
-
-            size += (Long) (objectListing.objectSummaries.sum { S3ObjectSummary o -> o.size } ?: 0L)
-
-            extraPrefixes += objectListing.commonPrefixes
-
-            more = objectListing.isTruncated()
+        final String bkt = this.bucket
+        ListObjectsV2Iterable pages = s3Client.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter('/') } as Consumer<ListObjectsV2Request.Builder>)
+        pages.each { page ->
+            size += (Long) (page.contents().collect { it.size() }.sum() ?: 0L)
+            extraPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
         }
-
         return size + (Long)((extraPrefixes.sum { getConsumedSpaceInternal(it) }) ?: 0L)
     }
 
     private <T> List<T> walkPrefix(String prefix, Closure<T> f) {
-        ObjectListing objectListing = null
         List<T> results = []
         List<String> extraPrefixes = []
-        def more = true
-        while (more) {
-            objectListing = (objectListing == null) ? s3Client.listObjects(bucket, prefix) : s3Client.listNextBatchOfObjects(objectListing)
-
-            results += objectListing.objectSummaries.each(f)
-
-            extraPrefixes += objectListing.commonPrefixes
-
-            more = objectListing.isTruncated()
+        final String bkt = this.bucket
+        ListObjectsV2Iterable pages = s3Client.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter('/') } as Consumer<ListObjectsV2Request.Builder>)
+        pages.each { page ->
+            page.contents().each { obj ->
+                Map summary = [key: obj.key(), size: obj.size()]
+                results += f.call(summary)
+            }
+            extraPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
         }
-
-        results.addAll((List<T>)extraPrefixes.collectMany { String extraPrefix -> walkPrefix(extraPrefix, f) })
+        results.addAll((List<T>) extraPrefixes.collectMany { String extraPrefix -> walkPrefix(extraPrefix, f) })
         return results
     }
 
@@ -428,7 +471,7 @@ class S3StorageOperations implements StorageOperations {
     }
 
     ByteSinkFactory byteSinkFactory(String uuid, Map<String, String> tags, String... prefixes) {
-        return new S3ByteSinkFactory(s3Client, storagePathStrategy(), bucket, uuid, tags, prefixes)
+        return new S3ByteSinkFactory(s3AsyncClient, s3TransferManager, storagePathStrategy(), bucket, uuid, tags, prefixes)
     }
 
     @Override
@@ -438,22 +481,33 @@ class S3StorageOperations implements StorageOperations {
     }
 
     private storeInternal(InputStream stream, String absolutePath, String contentType, String contentDisposition, Long length, Map<String, String> tags) {
-        def client = s3Client
         try {
-            def result = stream.withStream {
-                PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, absolutePath, it, generateMetadata(contentType, contentDisposition, length))
-                if (tags) {
-                    def tagSet = tags.collect { new Tag(it.key, it.value) }
-                    putObjectRequest.setTagging(new ObjectTagging(tagSet))
+            stream.withStream { InputStream it ->
+                PutObjectRequest.Builder b = PutObjectRequest.builder()
+                b.bucket(bucket).key(absolutePath)
+                if (contentType) b.contentType(contentType)
+                if (contentDisposition) b.contentDisposition(contentDisposition)
+                // Cache-Control headers based on ACL flags (preserved behavior)
+                if (publicRead) {
+                    b.cacheControl('public,s-maxage=31536000,max-age=31536000')
+                    b.acl(ObjectCannedACL.PUBLIC_READ)
+                } else if (privateAcl) {
+                    b.cacheControl('private,max-age=31536000')
+                    b.acl(ObjectCannedACL.PRIVATE)
                 }
-                client.putObject(putObjectRequest)
+                if (tags) {
+                    def tagSet = tags.collect { k, v ->
+                        Tag.builder().key(k).value(v).build()
+                    }
+                    if (tagSet) b.tagging(Tagging.builder().tagSet(tagSet).build())
+                }
+                PutObjectRequest putObjectRequest = b.build() as PutObjectRequest
+                def rb = (length != null && length > 0) ? RequestBody.fromInputStream(it, length) : RequestBody.fromInputStream(it, it.available())
+                def result = s3Client.putObject(putObjectRequest, rb)
+                log.debug("Uploaded {} to S3 {}:{} with result etag {}", absolutePath, region, bucket, result.eTag())
             }
-            log.debug("Uploaded {} to S3 {}:{}} with result etag {}}", absolutePath, region, bucket, result.ETag)
-        } catch (AmazonS3Exception exception) {
-            log.warn 'An amazon S3 exception was caught while storing input stream', exception
-            throw new RuntimeException(exception)
-        } catch (AmazonClientException exception) {
-            log.warn 'An amazon client exception was caught while storing input stream', exception
+        } catch (S3Exception exception) {
+            log.warn 'An S3 (v2) exception was caught while storing input stream', exception
             throw new RuntimeException(exception)
         }
     }
@@ -461,19 +515,24 @@ class S3StorageOperations implements StorageOperations {
     @Override
     void migrateTo(String uuid, String contentType, StorageOperations destination) {
         def basePath = createBasePathFromUUID(uuid)
-        walkPrefix(basePath) { S3ObjectSummary s3ObjectSummary ->
-            def s3Object = s3Client.getObject(bucket, s3ObjectSummary.key)
-            destination.storeAnywhere(uuid, s3Object.objectContent, s3ObjectSummary.key - basePath, s3Object.objectMetadata.contentType, s3Object.objectMetadata.contentDisposition, s3ObjectSummary.size)
+        final String bkt = this.bucket
+        walkPrefix(basePath) { Map obj ->
+            final String k = obj['key'] as String
+            def head = s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<HeadObjectRequest.Builder>)
+            def objectStream = s3Client.getObject({ V2GetObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<V2GetObjectRequest.Builder>)
+            destination.storeAnywhere(uuid, objectStream, k - basePath, head.contentType(), head.contentDisposition(), (obj['size'] as long))
         }
     }
 
     @Override
     long storedLength(String path) throws FileNotFoundException {
         try {
-            def metadata = s3Client.getObjectMetadata(bucket, path)
-            return metadata.contentLength
-        } catch (AmazonS3Exception e) {
-            if (e.statusCode == 404) {
+            final String bkt = this.bucket
+            final String pth = path
+            def head = s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(pth) } as Consumer<HeadObjectRequest.Builder>)
+            return head.contentLength()
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
                 throw new FileNotFoundException("S3 path $path")
             } else {
                 throw e
@@ -501,20 +560,23 @@ class S3StorageOperations implements StorageOperations {
 
     private ImageInfo imageInfoInternal(String path) {
         try {
-            def metadata = s3Client.getObjectMetadata(bucket, path)
-            def contentLength = metadata.contentLength
+            final String bkt = this.bucket
+            final String pth = path
+            def head = s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(pth) } as Consumer<HeadObjectRequest.Builder>)
+            def contentLength = head.contentLength()
+            Date lastMod = head.lastModified() != null ? Date.from(head.lastModified()) : null
             return new ImageInfo(
                     exists: true,
                     length: contentLength,
-                    etag: metadata.ETag,
-                    lastModified: metadata.lastModified,
-                    contentType: metadata.contentType,
+                    etag: head.eTag(),
+                    lastModified: lastMod,
+                    contentType: head.contentType(),
                     extension: FilenameUtils.getExtension(path),
                     redirectUri: supportsRedirect ? redirectLocation(path) : null,
                     inputStreamSupplier: { Range range -> inputStream(path, range ?: Range.emptyRange(contentLength)) }
             )
-        } catch (AmazonS3Exception e) {
-            if (e.statusCode == 404) {
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
                 return new ImageInfo(exists: false)
             } else {
                 throw e
@@ -524,8 +586,10 @@ class S3StorageOperations implements StorageOperations {
 
     void clearTilesForImage(String uuid) {
         def basePath = createTilesPathFromUUID(uuid)
-        walkPrefix(basePath) { S3ObjectSummary s3ObjectSummary ->
-            s3Client.deleteObject(bucket, s3ObjectSummary.key)
+        final String bkt = this.bucket
+        walkPrefix(basePath) { Map summary ->
+            final String key = summary['key'] as String
+            s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
         }
     }
 

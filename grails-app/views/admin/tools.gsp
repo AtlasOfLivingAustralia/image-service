@@ -88,6 +88,14 @@
         </tr>
         <tr>
             <td>
+                <button id="btnClearS3Cache" class="btn btn-default">Clear S3 Client cache</button>
+            </td>
+            <td>
+                Clear any cached S3 clients and close all connections associated with them
+            </td>
+        </tr>
+        <tr>
+            <td>
                 <button id="btnClearHibernateCache" class="btn btn-default">Clear hibernate query cache</button>
             </td>
             <td>
@@ -190,6 +198,11 @@
         $("#btnClearHibernateCache").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'clearHibernateCache')}";
+        });
+
+        $("#btnClearS3Cache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearS3Cache')}";
         });
 
         $("#btnClearThumbnailLookupCache").on('click', function(e) {
