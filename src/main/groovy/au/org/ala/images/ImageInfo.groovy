@@ -14,4 +14,20 @@ class ImageInfo {
     // takes an optional single Range parameter
     Closure<InputStream> inputStreamSupplier
     boolean shouldExist // whether the requested image should actually exist (ie the image record exists but the bytes don't)
+
+    static ImageInfo notFound() {
+        return new ImageInfo(
+                exists: false,
+                shouldExist: false,
+                imageIdentifier: null,
+                dataResourceUid: null,
+                length: 0,
+                etag: null,
+                lastModified: null,
+                contentType: null,
+                extension: null,
+                redirectUri: null,
+                inputStreamSupplier: null
+        )
+    }
 }

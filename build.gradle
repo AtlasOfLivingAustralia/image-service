@@ -131,7 +131,7 @@ dependencies {
     implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
     implementation 'org.apache.tika:tika-core:2.5.0'
     implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
-    implementation 'au.org.ala:image-utils:1.10.0'
+    implementation 'au.org.ala:image-utils:1.11.0-SNAPSHOT'
 
     implementation 'net.lingala.zip4j:zip4j:2.11.3'
     implementation 'com.google.guava:guava:33.2.1-jre'
