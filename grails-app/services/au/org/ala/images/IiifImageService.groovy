@@ -31,6 +31,10 @@ class IiifImageService {
         iiifCache = Caffeine.from(iiifCacheConfig).build()
     }
 
+    void clearLookupCache() {
+        iiifCache.invalidateAll()
+    }
+
     /**
      * Value type used as the cache key for IIIF render requests. Replaces Map-based keys
      * to provide stable equals/hashCode, lower allocation overhead and better type safety.

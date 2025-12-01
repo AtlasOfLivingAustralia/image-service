@@ -65,6 +65,12 @@ class IiifController {
     @Path("/iiif/{identifier}/info.json")
     @Produces("application/json")
     def info() {
+        if (!isIiifEnabled()) {
+            // Feature flag: return 404 for all IIIF paths when disabled
+            response.status = 404
+            render(text: 'Not found', contentType: 'text/plain')
+            return
+        }
         String identifier = params.identifier
         if (!identifier) {
             response.status = 400
@@ -146,6 +152,12 @@ class IiifController {
     @Path("/iiif/{identifier}/{region}/{size}/{rotation}/{quality}.{format}")
     @Produces(["image/jpeg", "image/png", "image/webp"])
     def renderImage() {
+        if (!isIiifEnabled()) {
+            // Feature flag: return 404 for all IIIF paths when disabled
+            response.status = 404
+            render(text: 'Not found', contentType: 'text/plain')
+            return
+        }
         String identifier = params.identifier
         String region = params.region
         String size = params.size
@@ -201,6 +213,10 @@ class IiifController {
     }
 
     // Helpers
+
+    private boolean isIiifEnabled() {
+        return grailsApplication.config.getProperty('iiif.enabled', Boolean, true)
+    }
 
     private List<Integer> computeScaleFactors(Image image) {
         List<Integer> sf = []
