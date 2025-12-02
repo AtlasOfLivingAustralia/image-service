@@ -56,6 +56,7 @@ import software.amazon.awssdk.transfer.s3.model.UploadRequest
 import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
 import java.util.function.Consumer
 import com.google.common.annotations.VisibleForTesting
@@ -90,19 +91,30 @@ class S3StorageOperations implements StorageOperations {
     // TODO configure connection parameters via config
     private static final int maxConnections = Integer.getInteger('au.org.ala.images.s3.max.connections', 500)
     private static final int maxErrorRetry = Integer.getInteger('au.org.ala.images.s3.max.retry', 3)
-    private static final int apiCallAttemptTimeout = Integer.getInteger('au.org.ala.images.s3.attempt.timeout', 2)
-    private static final int apiCallTimeout = Integer.getInteger('au.org.ala.images.s3.call.timeout', 10)
-    private static final int inflightTimeout = Integer.getInteger('au.org.ala.images.s3.inflight.timeout', 30)
+    private static final int apiCallAttemptTimeout = Integer.getInteger('au.org.ala.images.s3.attempt.timeout', 60)
+    private static final int apiCallTimeout = Integer.getInteger('au.org.ala.images.s3.call.timeout', 300)
+    private static final int inflightTimeout = Integer.getInteger('au.org.ala.images.s3.inflight.timeout', apiCallTimeout + 10)
     private static final boolean useCrtAsyncClient = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.async.crt', 'true'))
+    private static final int apacheConnectionTimeout = Integer.getInteger('au.org.ala.images.s3.sync.connection.timeout', 2)
     private static final int crtConnectionTimeout = Integer.getInteger('au.org.ala.images.s3.async.crt.connection.timeout', 2)
     private static final boolean publishCloudwatchMetrics = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics', 'false'))
 
-    private static ScheduledExecutorService evictionScheduler = Executors.newSingleThreadScheduledExecutor()
+    private static ScheduledExecutorService evictionScheduler = Executors.newSingleThreadScheduledExecutor({ Runnable r ->
+        new Thread(r, "s3-eviction-scheduler").tap {
+            daemon = true
+        }
+    } as ThreadFactory)
 
     // TODO configure cache parameters via config
     private static final LoadingCache<CacheKey, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
         CacheKey key, S3Client client, RemovalCause cause ->
-            evictionScheduler.schedule( { client?.close() }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
+            evictionScheduler.schedule( {
+                try {
+                    client?.close()
+                } catch (Exception e) {
+                    log.warn("Failed to close evicted S3Client", e)
+                }
+            }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
     }.build { CacheKey key ->
         log.info("S3Client evicted from cache: ${key.bucket}")
         return s3ClientCacheLoader(key)
@@ -111,7 +123,13 @@ class S3StorageOperations implements StorageOperations {
     private static final LoadingCache<CacheKey, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
         CacheKey key, S3AsyncClient client, RemovalCause cause ->
             s3TransferManagerCache.invalidate(key) // also remove any associated transfer manager
-            evictionScheduler.schedule( { client?.close() }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
+            evictionScheduler.schedule( {
+                try {
+                    client?.close()
+                } catch (Exception e) {
+                    log.warn("Failed to close evicted S3AsyncClient", e)
+                }
+            }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
     }.build { CacheKey key ->
         log.info("S3AsyncClient evicted from cache: ${key.bucket}")
         return s3AsyncClientCacheLoader(key)
@@ -119,7 +137,13 @@ class S3StorageOperations implements StorageOperations {
 
     private static final LoadingCache<CacheKey, S3TransferManager> s3TransferManagerCache = Caffeine<String, S3TransferManager>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
         CacheKey key, S3TransferManager manager, RemovalCause cause ->
-            evictionScheduler.schedule( { manager?.close() }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
+            evictionScheduler.schedule( {
+                try {
+                    manager?.close()
+                } catch (Exception e) {
+                    log.warn("Failed to close evicted S3TransferManager", e)
+                }
+            }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
     }.build { CacheKey key ->
         log.info("S3TransferManager evicted from cache: ${key.bucket}")
         return s3TransferManagerCacheLoader(key)
@@ -175,12 +199,13 @@ class S3StorageOperations implements StorageOperations {
         if (publishCloudwatchMetrics) {
             metricsPub = CloudWatchMetricPublisher.builder().namespace("image-service/S3").build()
         } else {
-            metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
+            metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PLAIN)
         }
 
         // Configure HTTP Client with max connections
         def httpClientBuilder = ApacheHttpClient.builder()
                 .maxConnections(maxConnections)
+                .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
 
         // Configure Retry Policy
         def overrideConfig = ClientOverrideConfiguration.builder()
