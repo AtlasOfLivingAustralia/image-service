@@ -56,7 +56,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
 
                 // guess content type from names - default to image/jpeg
                 def contentType
-                def lastName = names.last().toLowerCase()
+                def lastName = names.length > 0 ? names.last().toLowerCase() : ''
                 if (lastName.endsWith('.png') || lastName.endsWith('_png')) {
                     contentType = "image/png"
                 } else if (lastName.endsWith('.gif') || lastName.endsWith('_gif')) {
