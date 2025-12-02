@@ -9,7 +9,10 @@ import au.org.ala.images.StoragePathStrategy
 import au.org.ala.images.util.ByteSinkFactory
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
+import com.github.benmanes.caffeine.cache.LoadingCache
 import com.github.benmanes.caffeine.cache.RemovalCause
+import groovy.transform.ToString
+import groovy.transform.TupleConstructor
 import org.slf4j.event.Level
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
@@ -17,6 +20,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
 import software.amazon.awssdk.http.apache.ApacheHttpClient
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.metrics.LoggingMetricPublisher
 import software.amazon.awssdk.metrics.MetricPublisher
 import software.amazon.awssdk.metrics.publishers.cloudwatch.CloudWatchMetricPublisher
@@ -25,6 +29,8 @@ import software.amazon.awssdk.retries.DefaultRetryStrategy
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.S3Configuration
+import software.amazon.awssdk.services.s3.crt.S3CrtConnectionHealthConfiguration
+import software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration
 import software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.Tag
@@ -83,30 +89,56 @@ class S3StorageOperations implements StorageOperations {
     // TODO configure connection parameters via config
     private static final int maxConnections = Integer.getInteger('au.org.ala.images.s3.max.connections', 500)
     private static final int maxErrorRetry = Integer.getInteger('au.org.ala.images.s3.max.retry', 3)
+    private static final int apiCallAttemptTimeout = Integer.getInteger('au.org.ala.images.s3.attempt.timeout', 2)
+    private static final int apiCallTimeout = Integer.getInteger('au.org.ala.images.s3.call.timeout', 10)
     private static final boolean useCrtAsyncClient = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.async.crt', 'true'))
+    private static final int crtConnectionTimeout = Integer.getInteger('au.org.ala.images.s3.async.crt.connection.timeout', 2)
     private static final boolean publishCloudwatchMetrics = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics', 'false'))
 
     // TODO configure cache parameters via config
-    private static final Cache<String, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,expireAfterAccess=24h").removalListener {
-        String key, S3Client client, RemovalCause cause ->
+    private static final LoadingCache<CacheKey, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
+        CacheKey key, S3Client client, RemovalCause cause ->
         client?.close()
-    }.build()
+    }.build { CacheKey key ->
+        return s3ClientCacheLoader(key)
+    }
 
-    private static final Cache<String, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from("maximumSize=10,expireAfterAccess=24h").removalListener {
-        String key, S3AsyncClient client, RemovalCause cause ->
+    private static final LoadingCache<CacheKey, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
+        CacheKey key, S3AsyncClient client, RemovalCause cause ->
             s3TransferManagerCache.invalidate(key) // also remove any associated transfer manager
             client?.close()
-    }.build()
+    }.build { CacheKey key ->
+        return s3AsyncClientCacheLoader(key)
+    }
 
-    private static final Cache<String, S3TransferManager> s3TransferManagerCache = Caffeine<String, S3TransferManager>.from("maximumSize=10,expireAfterAccess=24h").removalListener {
-        String key, S3TransferManager manager, RemovalCause cause ->
+    private static final LoadingCache<CacheKey, S3TransferManager> s3TransferManagerCache = Caffeine<String, S3TransferManager>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
+        CacheKey key, S3TransferManager manager, RemovalCause cause ->
             manager?.close()
-    }.build()
+    }.build { CacheKey key ->
+        return s3TransferManagerCacheLoader(key)
+    }
 
     static final void clearS3ClientCache() {
         s3TransferManagerCache.invalidateAll()
         s3AsyncClientCache.invalidateAll()
         s3ClientCache.invalidateAll()
+    }
+
+    @TupleConstructor
+    @EqualsAndHashCode
+    @ToString
+    private static final class CacheKey {
+        String region
+        boolean containerCredentials
+        String accessKey
+        String secretKey
+        String bucket
+        String hostname
+        boolean pathStyleAccess
+    }
+
+    private CacheKey getCacheKeyObject() {
+        return new CacheKey(region, containerCredentials, accessKey, secretKey, bucket, hostname, pathStyleAccess)
     }
 
     private String getCacheKey() {
@@ -115,10 +147,80 @@ class S3StorageOperations implements StorageOperations {
 
     @VisibleForTesting
     protected S3Client getS3Client() {
-        final cacheKey = getCacheKey()
-        return s3ClientCache.get(cacheKey) {
-            def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+        final cacheKey = getCacheKeyObject()
+        return s3ClientCache.get(cacheKey)
+    }
 
+    private static S3Client s3ClientCacheLoader(CacheKey key) {
+        def containerCredentials = key.containerCredentials
+        def accessKey = key.accessKey
+        def secretKey = key.secretKey
+        def region = key.region
+        def bucket = key.bucket
+        def hostname = key.hostname
+        def pathStyleAccess = key.pathStyleAccess
+
+        def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+
+        MetricPublisher metricsPub
+        if (publishCloudwatchMetrics) {
+            metricsPub = CloudWatchMetricPublisher.builder().namespace("image-service/S3").build()
+        } else {
+            metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
+        }
+
+        // Configure HTTP Client with max connections
+        def httpClientBuilder = ApacheHttpClient.builder()
+                .maxConnections(maxConnections)
+
+        // Configure Retry Policy
+        def overrideConfig = ClientOverrideConfiguration.builder()
+                .retryStrategy(DefaultRetryStrategy.standardStrategyBuilder().maxAttempts(maxErrorRetry).build())
+                .addMetricPublisher(metricsPub)
+                .apiCallAttemptTimeout(Duration.ofSeconds(apiCallAttemptTimeout))
+                .apiCallTimeout(Duration.ofSeconds(apiCallTimeout))
+                .build()
+
+        def builder = S3Client.builder()
+                .defaultsMode(DefaultsMode.AUTO)
+                .credentialsProvider(credProvider)
+                .httpClientBuilder(httpClientBuilder)
+                .overrideConfiguration(overrideConfig)
+
+        if (region) {
+            builder = builder.region(Region.of(region))
+        }
+        if (hostname) {
+            builder = builder.endpointOverride(URI.create(hostname))
+        }
+        if (pathStyleAccess) {
+            builder = builder.serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
+        }
+        return builder.build()
+    }
+
+    @VisibleForTesting
+    protected S3AsyncClient getS3AsyncClient() {
+        final cacheKey = getCacheKeyObject()
+        return s3AsyncClientCache.get(cacheKey)
+    }
+
+    private static S3AsyncClient s3AsyncClientCacheLoader(CacheKey key) {
+        def containerCredentials = key.containerCredentials
+        def accessKey = key.accessKey
+        def secretKey = key.secretKey
+        def region = key.region
+        def bucket = key.bucket
+        def hostname = key.hostname
+        def pathStyleAccess = key.pathStyleAccess
+
+        def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+
+        def client
+
+        if (!useCrtAsyncClient) {
+            log.info("Using standard S3AsyncClient builder for S3 access")
+            // Metrics only available for the standard async client, the crt client does not support metrics publishing
             MetricPublisher metricsPub
             if (publishCloudwatchMetrics) {
                 metricsPub = CloudWatchMetricPublisher.builder().namespace("image-service/S3").build()
@@ -126,21 +228,17 @@ class S3StorageOperations implements StorageOperations {
                 metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
             }
 
-            // Configure HTTP Client with max connections
-            def httpClientBuilder = ApacheHttpClient.builder()
-                    .maxConnections(maxConnections)
-
             // Configure Retry Policy
             def overrideConfig = ClientOverrideConfiguration.builder()
                     .retryStrategy(DefaultRetryStrategy.standardStrategyBuilder().maxAttempts(maxErrorRetry).build())
                     .addMetricPublisher(metricsPub)
+                    .apiCallAttemptTimeout(Duration.ofSeconds(apiCallAttemptTimeout))
+                    .apiCallTimeout(Duration.ofSeconds(apiCallTimeout))
                     .build()
-
-            def builder = S3Client.builder()
-                    .defaultsMode(DefaultsMode.AUTO)
+            def builder = S3AsyncClient.builder()
                     .credentialsProvider(credProvider)
-                    .httpClientBuilder(httpClientBuilder)
                     .overrideConfiguration(overrideConfig)
+                    .httpClientBuilder(NettyNioAsyncHttpClient.builder().maxConcurrency(maxConnections))
 
             if (region) {
                 builder = builder.region(Region.of(region))
@@ -151,75 +249,47 @@ class S3StorageOperations implements StorageOperations {
             if (pathStyleAccess) {
                 builder = builder.serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
             }
-            builder.build()
-        }
-    }
+            client = builder.build()
+        } else {
+            log.info("Using CRT S3AsyncClient builder for S3 access")
 
-    @VisibleForTesting
-    protected S3AsyncClient getS3AsyncClient() {
-        final cacheKey = getCacheKey()
-        return s3AsyncClientCache.get(cacheKey) {
-            def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+            def builder = S3AsyncClient.crtBuilder()
+                    .httpConfiguration(
+                            S3CrtHttpConfiguration.builder()
+                                    .connectionTimeout(Duration.ofSeconds(crtConnectionTimeout))
+                                    .build()
+                    )
+                    .credentialsProvider(credProvider)
+                    .retryConfiguration(S3CrtRetryConfiguration.builder().numRetries(maxErrorRetry).build())
+//                        .maxConcurrency(maxConnections)
 
-            def client
-            // if path style access is needed, we can't use the crtBuilder so add the full feature set up
-            if (!useCrtAsyncClient) {
-                // So we'll add retry strategy and metrics here because we can
-                MetricPublisher metricsPub
-                if (publishCloudwatchMetrics) {
-                    metricsPub = CloudWatchMetricPublisher.builder().namespace("image-service/S3").build()
-                } else {
-                    metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
-                }
-
-                // Configure Retry Policy
-                def overrideConfig = ClientOverrideConfiguration.builder()
-                        .retryStrategy(DefaultRetryStrategy.standardStrategyBuilder().maxAttempts(maxErrorRetry).build())
-                        .addMetricPublisher(metricsPub)
-                        .build()
-                def builder = S3AsyncClient.builder()
-                        .credentialsProvider(credProvider)
-                    .overrideConfiguration(overrideConfig)
-
-                if (region) {
-                    builder = builder.region(Region.of(region))
-                }
-                if (hostname) {
-                    builder = builder.endpointOverride(URI.create(hostname))
-                }
-                if (pathStyleAccess) {
-                    builder = builder.serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
-                }
-                client = builder.build()
-            } else {
-                def builder = S3AsyncClient.crtBuilder()
-                        .credentialsProvider(credProvider)
-                        .retryConfiguration(S3CrtRetryConfiguration.builder().numRetries(maxErrorRetry).build())
-
-                if (region) {
-                    builder = builder.region(Region.of(region))
-                }
-                if (hostname) {
-                    builder = builder.endpointOverride(URI.create(hostname))
-                }
-                if (pathStyleAccess) {
-                    builder = builder.forcePathStyle(pathStyleAccess)
-                }
-                client = builder.build()
+            if (region) {
+                builder = builder.region(Region.of(region))
             }
-            return client
+            if (hostname) {
+                builder = builder.endpointOverride(URI.create(hostname))
+            }
+            if (pathStyleAccess) {
+                builder = builder.forcePathStyle(pathStyleAccess)
+            }
+            client = builder.build()
         }
+        return client
     }
 
     @VisibleForTesting
     protected S3TransferManager getS3TransferManager() {
-        final cacheKey = getCacheKey()
-        return s3TransferManagerCache.get(cacheKey) {
-            def s3AsyncClient = getS3AsyncClient()
-            return S3TransferManager.builder()
-                    .s3Client(s3AsyncClient)
-                    .build()
-        }
+        final cacheKey = getCacheKeyObject()
+        // Ensure the underlying AsyncClient is kept alive in the cache whenever the TransferManager is requested
+//        getS3AsyncClient(cacheKey)
+        return s3TransferManagerCache.get(cacheKey)
+    }
+
+    private static S3TransferManager s3TransferManagerCacheLoader(CacheKey key) {
+        def s3AsyncClient = s3AsyncClientCache.get(key)
+        return S3TransferManager.builder()
+                .s3Client(s3AsyncClient)
+                .build()
     }
 
     @VisibleForTesting

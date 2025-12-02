@@ -123,6 +123,7 @@ dependencies {
     implementation platform("software.amazon.awssdk:bom:$awsSdk2Version")
     implementation "software.amazon.awssdk:apache-client"
     implementation "software.amazon.awssdk:cloudwatch-metric-publisher"
+    implementation("software.amazon.awssdk:netty-nio-client")
     implementation "software.amazon.awssdk:s3"
     implementation "software.amazon.awssdk:s3-transfer-manager"
     implementation "software.amazon.awssdk:sts"
