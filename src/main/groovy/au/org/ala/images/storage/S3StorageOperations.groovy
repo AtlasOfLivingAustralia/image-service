@@ -30,6 +30,7 @@ import software.amazon.awssdk.retries.DefaultRetryStrategy
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.S3Configuration
+import software.amazon.awssdk.services.s3.crt.S3CrtConnectionHealthConfiguration
 import software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration
 import software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration
 import software.amazon.awssdk.services.s3.model.GetObjectResponse
@@ -98,6 +99,8 @@ class S3StorageOperations implements StorageOperations {
     private static final int apacheConnectionTimeout = Holders.getConfig().getProperty('s3.timeouts.connection.', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.connection', 2))
     private static final int inflightTimeout = Holders.getConfig().getProperty('s3.timeouts.eviction', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.eviction', apiCallTimeout + 10))
     private static final boolean useCrtAsyncClient = Holders.getConfig().getProperty('s3.crt.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.crt.enabled', 'true')))
+    private static final int crtThroughputSeconds = Holders.getConfig().getProperty('s3.crt.throughput.seconds', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.seconds', 30))
+    private static final int crtThroughputBps = Holders.getConfig().getProperty('s3.crt.throughput.bps', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.bps', 2))
     private static final int crtConnectionTimeout = Holders.getConfig().getProperty('s3.crt.connection.timeout', Integer, Integer.getInteger('au.org.ala.images.s3.crt.connection.timeout', 2))
     private static final boolean publishCloudwatchMetrics = Holders.getConfig().getProperty('s3.cloudwatch.metrics.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.enabled', 'false')))
     private static final String cloudWatchNamespace = Holders.getConfig().getProperty('s3.cloudwatch.metrics.namespace', String, System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.namespace', 'au.org.ala.image-service/S3'))
@@ -108,27 +111,25 @@ class S3StorageOperations implements StorageOperations {
         }
     } as ThreadFactory)
 
-    private static final MetricPublisher sharedMetricPublisher = {
-        MetricPublisher publisher
-        if (publishCloudwatchMetrics) {
-            log.info("Using CloudWatchMetricPublisher for S3 SDK metrics, namespace: ${cloudWatchNamespace}")
-            publisher = CloudWatchMetricPublisher.builder().namespace(cloudWatchNamespace).build()
-        } else {
-            log.info("Using LoggingMetricPublisher for S3 SDK metrics")
-            publisher = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PLAIN)
-        }
-
-        // Register a shutdown hook to close the publisher and flush metrics when the JVM exits
-        Runtime.getRuntime().addShutdownHook(new Thread({
-            try {
-                publisher.close()
-            } catch (Exception e) {
-                System.err.println("Failed to close sharedMetricPublisher: " + e.message)
+    private static final MetricPublisher sharedMetricPublisher
+    static {
+            if (publishCloudwatchMetrics) {
+                log.info("Using CloudWatchMetricPublisher for S3 SDK metrics, namespace: ${cloudWatchNamespace}")
+                sharedMetricPublisher = CloudWatchMetricPublisher.builder().namespace(cloudWatchNamespace).build()
+            } else {
+                log.info("Using LoggingMetricPublisher for S3 SDK metrics")
+                sharedMetricPublisher = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PLAIN)
             }
-        }, "s3-metrics-publisher-shutdown-hook"))
 
-        return publisher
-    }()
+            // Register a shutdown hook to close the publisher and flush metrics when the JVM exits
+            Runtime.getRuntime().addShutdownHook(new Thread({
+                try {
+                    sharedMetricPublisher.close()
+                } catch (Exception e) {
+                    System.err.println("Failed to close sharedMetricPublisher: " + e.message)
+                }
+            }, "s3-metrics-publisher-shutdown-hook"))
+    }
 
     // TODO configure cache parameters via config
     private static final LoadingCache<CacheKey, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
@@ -282,10 +283,14 @@ class S3StorageOperations implements StorageOperations {
                     .apiCallAttemptTimeout(Duration.ofSeconds(apiCallAttemptTimeout))
                     .apiCallTimeout(Duration.ofSeconds(apiCallTimeout))
                     .build()
+
             def builder = S3AsyncClient.builder()
                     .credentialsProvider(credProvider)
                     .overrideConfiguration(overrideConfig)
-                    .httpClientBuilder(NettyNioAsyncHttpClient.builder().maxConcurrency(maxConnections))
+                    .httpClientBuilder(NettyNioAsyncHttpClient.builder()
+                            .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
+                            .maxConcurrency(maxConnections)
+                    )
 
             if (region) {
                 builder = builder.region(Region.of(region))
@@ -304,6 +309,11 @@ class S3StorageOperations implements StorageOperations {
                     .httpConfiguration(
                             S3CrtHttpConfiguration.builder()
                                     .connectionTimeout(Duration.ofSeconds(crtConnectionTimeout))
+                                    .connectionHealthConfiguration(S3CrtConnectionHealthConfiguration.builder()
+                                            .minimumThroughputTimeout(Duration.ofSeconds(crtThroughputSeconds))
+                                            .minimumThroughputInBps(crtThroughputBps)
+                                            .build()
+                                    )
                                     .build()
                     )
                     .credentialsProvider(credProvider)

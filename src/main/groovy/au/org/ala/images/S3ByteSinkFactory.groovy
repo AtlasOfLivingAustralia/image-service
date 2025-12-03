@@ -2,6 +2,7 @@ package au.org.ala.images
 
 import au.org.ala.images.util.ByteSinkFactory
 import com.google.common.io.ByteSink
+import groovy.util.logging.Slf4j
 import software.amazon.awssdk.core.async.BlockingOutputStreamAsyncRequestBody
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.transfer.s3.S3TransferManager
@@ -12,6 +13,7 @@ import software.amazon.awssdk.services.s3.model.Tagging
 
 import java.nio.file.Files
 
+@Slf4j
 class S3ByteSinkFactory implements ByteSinkFactory {
 
     static boolean streaming = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.upload.streaming', 'true'))
