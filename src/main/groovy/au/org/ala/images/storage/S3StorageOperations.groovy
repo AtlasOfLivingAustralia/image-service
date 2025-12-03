@@ -10,6 +10,7 @@ import au.org.ala.images.util.ByteSinkFactory
 import com.github.benmanes.caffeine.cache.Caffeine
 import com.github.benmanes.caffeine.cache.LoadingCache
 import com.github.benmanes.caffeine.cache.RemovalCause
+import grails.util.Holders
 import groovy.transform.ToString
 import groovy.transform.TupleConstructor
 import org.slf4j.event.Level
@@ -17,6 +18,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode
+import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
 import software.amazon.awssdk.http.apache.ApacheHttpClient
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
@@ -30,6 +32,7 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.S3Configuration
 import software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration
 import software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration
+import software.amazon.awssdk.services.s3.model.GetObjectResponse
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.Tag
 import software.amazon.awssdk.services.s3.model.Tagging
@@ -88,22 +91,44 @@ class S3StorageOperations implements StorageOperations {
     boolean pathStyleAccess
     String hostname = ''
 
-    // TODO configure connection parameters via config
-    private static final int maxConnections = Integer.getInteger('au.org.ala.images.s3.max.connections', 500)
-    private static final int maxErrorRetry = Integer.getInteger('au.org.ala.images.s3.max.retry', 3)
-    private static final int apiCallAttemptTimeout = Integer.getInteger('au.org.ala.images.s3.attempt.timeout', 60)
-    private static final int apiCallTimeout = Integer.getInteger('au.org.ala.images.s3.call.timeout', 300)
-    private static final int inflightTimeout = Integer.getInteger('au.org.ala.images.s3.inflight.timeout', apiCallTimeout + 10)
-    private static final boolean useCrtAsyncClient = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.async.crt', 'true'))
-    private static final int apacheConnectionTimeout = Integer.getInteger('au.org.ala.images.s3.sync.connection.timeout', 2)
-    private static final int crtConnectionTimeout = Integer.getInteger('au.org.ala.images.s3.async.crt.connection.timeout', 2)
-    private static final boolean publishCloudwatchMetrics = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics', 'false'))
+    private static final int maxConnections = Holders.getConfig().getProperty('s3.max.connections', Integer, Integer.getInteger('au.org.ala.images.s3.max.connections', 500))
+    private static final int maxErrorRetry = Holders.getConfig().getProperty('s3.max.retry', Integer, Integer.getInteger('au.org.ala.images.s3.max.retry', 3))
+    private static final int apiCallAttemptTimeout = Holders.getConfig().getProperty('s3.timeouts.attempt', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.attempt', 60))
+    private static final int apiCallTimeout = Holders.getConfig().getProperty('s3.timeouts.call', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.call', 300))
+    private static final int apacheConnectionTimeout = Holders.getConfig().getProperty('s3.timeouts.connection.', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.connection', 2))
+    private static final int inflightTimeout = Holders.getConfig().getProperty('s3.timeouts.eviction', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.eviction', apiCallTimeout + 10))
+    private static final boolean useCrtAsyncClient = Holders.getConfig().getProperty('s3.crt.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.crt.enabled', 'true')))
+    private static final int crtConnectionTimeout = Holders.getConfig().getProperty('s3.crt.connection.timeout', Integer, Integer.getInteger('au.org.ala.images.s3.crt.connection.timeout', 2))
+    private static final boolean publishCloudwatchMetrics = Holders.getConfig().getProperty('s3.cloudwatch.metrics.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.enabled', 'false')))
+    private static final String cloudWatchNamespace = Holders.getConfig().getProperty('s3.cloudwatch.metrics.namespace', String, System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.namespace', 'au.org.ala.image-service/S3'))
 
     private static ScheduledExecutorService evictionScheduler = Executors.newSingleThreadScheduledExecutor({ Runnable r ->
         new Thread(r, "s3-eviction-scheduler").tap {
             daemon = true
         }
     } as ThreadFactory)
+
+    private static final MetricPublisher sharedMetricPublisher = {
+        MetricPublisher publisher
+        if (publishCloudwatchMetrics) {
+            log.info("Using CloudWatchMetricPublisher for S3 SDK metrics, namespace: ${cloudWatchNamespace}")
+            publisher = CloudWatchMetricPublisher.builder().namespace(cloudWatchNamespace).build()
+        } else {
+            log.info("Using LoggingMetricPublisher for S3 SDK metrics")
+            publisher = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PLAIN)
+        }
+
+        // Register a shutdown hook to close the publisher and flush metrics when the JVM exits
+        Runtime.getRuntime().addShutdownHook(new Thread({
+            try {
+                publisher.close()
+            } catch (Exception e) {
+                System.err.println("Failed to close sharedMetricPublisher: " + e.message)
+            }
+        }, "s3-metrics-publisher-shutdown-hook"))
+
+        return publisher
+    }()
 
     // TODO configure cache parameters via config
     private static final LoadingCache<CacheKey, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
@@ -114,7 +139,7 @@ class S3StorageOperations implements StorageOperations {
                 } catch (Exception e) {
                     log.warn("Failed to close evicted S3Client", e)
                 }
-            }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
+            }, inflightTimeout, TimeUnit.SECONDS)
     }.build { CacheKey key ->
         log.info("S3Client evicted from cache: ${key.bucket}")
         return s3ClientCacheLoader(key)
@@ -129,7 +154,7 @@ class S3StorageOperations implements StorageOperations {
                 } catch (Exception e) {
                     log.warn("Failed to close evicted S3AsyncClient", e)
                 }
-            }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
+            }, inflightTimeout, TimeUnit.SECONDS)
     }.build { CacheKey key ->
         log.info("S3AsyncClient evicted from cache: ${key.bucket}")
         return s3AsyncClientCacheLoader(key)
@@ -143,7 +168,7 @@ class S3StorageOperations implements StorageOperations {
                 } catch (Exception e) {
                     log.warn("Failed to close evicted S3TransferManager", e)
                 }
-            }, inflightTimeout, TimeUnit.SECONDS) // 30s should be enough for any in-flight requests to complete
+            }, inflightTimeout, TimeUnit.SECONDS)
     }.build { CacheKey key ->
         log.info("S3TransferManager evicted from cache: ${key.bucket}")
         return s3TransferManagerCacheLoader(key)
@@ -195,13 +220,6 @@ class S3StorageOperations implements StorageOperations {
 
         def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
 
-        MetricPublisher metricsPub
-        if (publishCloudwatchMetrics) {
-            metricsPub = CloudWatchMetricPublisher.builder().namespace("image-service/S3").build()
-        } else {
-            metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PLAIN)
-        }
-
         // Configure HTTP Client with max connections
         def httpClientBuilder = ApacheHttpClient.builder()
                 .maxConnections(maxConnections)
@@ -210,7 +228,7 @@ class S3StorageOperations implements StorageOperations {
         // Configure Retry Policy
         def overrideConfig = ClientOverrideConfiguration.builder()
                 .retryStrategy(DefaultRetryStrategy.standardStrategyBuilder().maxAttempts(maxErrorRetry).build())
-                .addMetricPublisher(metricsPub)
+                .addMetricPublisher(sharedMetricPublisher)
                 .apiCallAttemptTimeout(Duration.ofSeconds(apiCallAttemptTimeout))
                 .apiCallTimeout(Duration.ofSeconds(apiCallTimeout))
                 .build()
@@ -256,18 +274,11 @@ class S3StorageOperations implements StorageOperations {
 
         if (!useCrtAsyncClient) {
             log.info("Using standard S3AsyncClient builder for S3 access")
-            // Metrics only available for the standard async client, the crt client does not support metrics publishing
-            MetricPublisher metricsPub
-            if (publishCloudwatchMetrics) {
-                metricsPub = CloudWatchMetricPublisher.builder().namespace("image-service/S3").build()
-            } else {
-                metricsPub = LoggingMetricPublisher.create(Level.INFO, LoggingMetricPublisher.Format.PRETTY)
-            }
 
             // Configure Retry Policy
             def overrideConfig = ClientOverrideConfiguration.builder()
                     .retryStrategy(DefaultRetryStrategy.standardStrategyBuilder().maxAttempts(maxErrorRetry).build())
-                    .addMetricPublisher(metricsPub)
+                    .addMetricPublisher(sharedMetricPublisher)
                     .apiCallAttemptTimeout(Duration.ofSeconds(apiCallAttemptTimeout))
                     .apiCallTimeout(Duration.ofSeconds(apiCallTimeout))
                     .build()
@@ -457,7 +468,7 @@ class S3StorageOperations implements StorageOperations {
     }
 
     @Override
-    InputStream inputStream(String path, Range range) throws FileNotFoundException {
+    ResponseInputStream<GetObjectResponse> inputStream(String path, Range range) throws FileNotFoundException {
         try {
             def consumer = { V2GetObjectRequest.Builder b ->
                 b.bucket(bucket).key(path)
