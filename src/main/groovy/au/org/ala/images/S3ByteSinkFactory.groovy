@@ -54,22 +54,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
             @Override
             OutputStream openStream() throws IOException {
 
-                // guess content type from names - default to image/jpeg
-                def contentType
-                def lastName = names.length > 0 ? names.last().toLowerCase() : ''
-                if (lastName.endsWith('.png') || lastName.endsWith('_png')) {
-                    contentType = "image/png"
-                } else if (lastName.endsWith('.gif') || lastName.endsWith('_gif')) {
-                    contentType = "image/gif"
-                } else if (lastName.endsWith('.tiff') || lastName.endsWith('_tiff') || lastName.endsWith('.tif') || lastName.endsWith('_tif')) {
-                    contentType = "image/tiff"
-                } else if (lastName.endsWith('.webp') || lastName.endsWith('_webp')) {
-                    contentType = "image/webp"
-                } else if (lastName.endsWith('.jpeg') || lastName.endsWith('_jpeg') || lastName.endsWith('.jpg') || lastName.endsWith('_jpg')) {
-                    contentType = "image/jpeg"
-                } else {
-                    contentType = "application/octet-stream"
-                }
+                String contentType = guessContentType(names.length > 0 ? names.last() : '')
 
                 if (streaming && s3TransferManager) {
                     def reqBuilder = PutObjectRequest.builder()
@@ -129,28 +114,28 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                             }
                         }
                     }
-
-//                    // Buffer to a temp file and upload on close
-//                    def tempPath = Files.createTempFile("thumbnail-$uuid-${names.join('-')}", ".jpg")
-//                    def file = tempPath.toFile()
-//                    file.deleteOnExit()
-//                    return new FilterOutputStream(new BufferedOutputStream(Files.newOutputStream(tempPath))) {
-//                        @Override
-//                        void close() throws IOException {
-//                            super.close()
-//                            // once the file output is closed we can send it to S3 and then delete the temp file
-//                            def reqBuilder = PutObjectRequest.builder()
-//                                    .bucket(bucket)
-//                                    .key(path)
-//                            if (tags) {
-//                                def tagSet = tags.collect { Tag.builder().key(it.key).value(it.value).build() }
-//                                reqBuilder = reqBuilder.tagging(Tagging.builder().tagSet(tagSet).build())
-//                            }
-//                            s3Client.putObject(reqBuilder.build(), RequestBody.fromFile(file.toPath()))
-//                            Files.deleteIfExists(tempPath)
-//                        }
-//                    }
                 }
+            }
+
+            private String guessContentType(String name) {
+                // guess content type from names - default to image/jpeg
+                String contentType
+                String lastName = name.toLowerCase()
+                if (lastName.endsWith('.png') || lastName.endsWith('_png')) {
+                    contentType = "image/png"
+                } else if (lastName.endsWith('.gif') || lastName.endsWith('_gif')) {
+                    contentType = "image/gif"
+                } else if (lastName.endsWith('.tiff') || lastName.endsWith('_tiff') || lastName.endsWith('.tif') || lastName.endsWith('_tif')) {
+                    contentType = "image/tiff"
+                } else if (lastName.endsWith('.webp') || lastName.endsWith('_webp')) {
+                    contentType = "image/webp"
+                } else if (lastName.endsWith('.jpeg') || lastName.endsWith('_jpeg') || lastName.endsWith('.jpg') || lastName.endsWith('_jpg')) {
+                    contentType = "image/jpeg"
+                } else {
+                    contentType = "application/octet-stream"
+                }
+                log.debug("Guessed content type [$contentType] for name [$name]")
+                return contentType
             }
         }
     }
