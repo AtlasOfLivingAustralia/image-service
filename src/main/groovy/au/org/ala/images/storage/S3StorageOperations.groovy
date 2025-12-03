@@ -96,8 +96,11 @@ class S3StorageOperations implements StorageOperations {
     private static final int maxErrorRetry = Holders.getConfig().getProperty('s3.max.retry', Integer, Integer.getInteger('au.org.ala.images.s3.max.retry', 3))
     private static final int apiCallAttemptTimeout = Holders.getConfig().getProperty('s3.timeouts.attempt', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.attempt', 60))
     private static final int apiCallTimeout = Holders.getConfig().getProperty('s3.timeouts.call', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.call', 300))
-    private static final int apacheConnectionTimeout = Holders.getConfig().getProperty('s3.timeouts.connection.', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.connection', 2))
+    private static final int apacheConnectionTimeout = Holders.getConfig().getProperty('s3.timeouts.connection', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.connection', 2))
+    private static final int apacheSocketTimeout = Holders.getConfig().getProperty('s3.timeouts.socket', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.socket', 50))
+    private static final int apacheIdleTimeout = Holders.getConfig().getProperty('s3.timeouts.idle', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.idle', 5))
     private static final int inflightTimeout = Holders.getConfig().getProperty('s3.timeouts.eviction', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.eviction', apiCallTimeout + 10))
+    private static final boolean apacheTcpKeepAlive = Holders.getConfig().getProperty('s3.sync.keepalive', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.keepalive', 'true')))
     private static final boolean useCrtAsyncClient = Holders.getConfig().getProperty('s3.crt.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.crt.enabled', 'true')))
     private static final int crtThroughputSeconds = Holders.getConfig().getProperty('s3.crt.throughput.seconds', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.seconds', 30))
     private static final int crtThroughputBps = Holders.getConfig().getProperty('s3.crt.throughput.bps', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.bps', 2))
@@ -225,6 +228,9 @@ class S3StorageOperations implements StorageOperations {
         def httpClientBuilder = ApacheHttpClient.builder()
                 .maxConnections(maxConnections)
                 .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
+                .socketTimeout(Duration.ofSeconds(apacheSocketTimeout))
+                .tcpKeepAlive(apacheTcpKeepAlive)
+                .connectionMaxIdleTime(Duration.ofSeconds(apacheIdleTimeout))
 
         // Configure Retry Policy
         def overrideConfig = ClientOverrideConfiguration.builder()
