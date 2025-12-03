@@ -91,6 +91,7 @@ public class ImageReaderUtils {
 
     public static ImageReader findCompatibleImageReader(ByteSource byteSource, ImageReaderSelectionStrategy selectionStrategy, boolean useFileCache) {
 
+        ImageInputStream iis = null;
         try {
 //            FastByteArrayInputStream fbis = new FastByteArrayInputStream(imageBytes);
             ImageReader result = getImageReaderFromSelectionStrategy(byteSource, selectionStrategy);
@@ -98,8 +99,9 @@ public class ImageReaderUtils {
             try {
                 if (result != null) {
 //                    if (true){
-                        result.setInput(rotate(byteSource, useFileCache));
-                        return result;
+                    iis = rotate(byteSource, useFileCache);
+                    result.setInput(iis);
+                    return result;
 //                    } else {
 //                        FastByteArrayInputStream fbis2 = new FastByteArrayInputStream(imageBytes);
 //                        ImageInputStream iis2 =  ImageIO.createImageInputStream(fbis2);
@@ -108,6 +110,13 @@ public class ImageReaderUtils {
 //                    }
                 }
             } catch (Exception ioex) {
+                if (iis != null) {
+                    try {
+                        iis.close();
+                    } catch (IOException e) {
+                        logger.warn("Error closing ImageInputStream after failure to read image", e);
+                    }
+                }
                 throw new RuntimeException(ioex);
             }
 
