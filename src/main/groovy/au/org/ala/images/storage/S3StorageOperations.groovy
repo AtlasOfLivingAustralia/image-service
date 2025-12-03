@@ -18,7 +18,6 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode
-import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
 import software.amazon.awssdk.http.apache.ApacheHttpClient
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
@@ -33,29 +32,19 @@ import software.amazon.awssdk.services.s3.S3Configuration
 import software.amazon.awssdk.services.s3.crt.S3CrtConnectionHealthConfiguration
 import software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration
 import software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration
-import software.amazon.awssdk.services.s3.model.GetObjectResponse
-import software.amazon.awssdk.services.s3.model.PutObjectRequest
-import software.amazon.awssdk.services.s3.model.Tag
-import software.amazon.awssdk.services.s3.model.Tagging
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest as V2GetObjectRequest
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest
-import software.amazon.awssdk.services.s3.model.HeadBucketRequest
-import software.amazon.awssdk.services.s3.model.S3Exception
 import software.amazon.awssdk.core.sync.RequestBody
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest as V2CopyObjectRequest
-import software.amazon.awssdk.services.s3.model.MetadataDirective
-import software.amazon.awssdk.services.s3.model.ObjectCannedACL
-import software.amazon.awssdk.services.s3.model.PutObjectAclRequest
 import software.amazon.awssdk.services.s3.S3Utilities
-import software.amazon.awssdk.services.s3.model.GetUrlRequest
 import software.amazon.awssdk.transfer.s3.S3TransferManager
 import software.amazon.awssdk.core.async.BlockingOutputStreamAsyncRequestBody
 import software.amazon.awssdk.transfer.s3.model.UploadRequest
+import software.amazon.awssdk.core.async.AsyncRequestBody
+import software.amazon.awssdk.core.async.AsyncResponseTransformer
+import software.amazon.awssdk.services.s3.model.*
 
 import java.time.Duration
 import java.util.concurrent.Executors
@@ -63,6 +52,8 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
 import java.util.function.Consumer
+import java.util.concurrent.CountDownLatch
+
 import com.google.common.annotations.VisibleForTesting
 import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
@@ -97,18 +88,19 @@ class S3StorageOperations implements StorageOperations {
     private static final int apiCallAttemptTimeout = Holders.getConfig().getProperty('s3.timeouts.attempt', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.attempt', 60))
     private static final int apiCallTimeout = Holders.getConfig().getProperty('s3.timeouts.call', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.call', 300))
     private static final int apacheConnectionTimeout = Holders.getConfig().getProperty('s3.timeouts.connection', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.connection', 2))
-    private static final int apacheSocketTimeout = Holders.getConfig().getProperty('s3.timeouts.socket', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.socket', 50))
+    private static final int socketTimeout = Holders.getConfig().getProperty('s3.timeouts.socket', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.socket', 50))
     private static final int apacheIdleTimeout = Holders.getConfig().getProperty('s3.timeouts.idle', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.idle', 5))
-    private static final int apacheAcquisitionTimeout = Holders.getConfig().getProperty('s3.timeouts.acquisition', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.acquisition', 10))
+    private static final int acquisitionTimeout = Holders.getConfig().getProperty('s3.timeouts.acquisition', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.acquisition', 10))
     private static final int inflightTimeout = Holders.getConfig().getProperty('s3.timeouts.eviction', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.eviction', apiCallTimeout + 10))
-    private static final boolean apacheTcpKeepAlive = Holders.getConfig().getProperty('s3.sync.keepalive', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.keepalive', 'true')))
-    private static final boolean apacheTcpReaperEnabled = Holders.getConfig().getProperty('s3.sync.idlereaper', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.idlereaper', 'true')))
+    private static final boolean tcpKeepAlive = Holders.getConfig().getProperty('s3.sync.keepalive', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.keepalive', 'true')))
+    private static final boolean idleReaperEnabled = Holders.getConfig().getProperty('s3.sync.idlereaper', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.idlereaper', 'true')))
     private static final boolean useCrtAsyncClient = Holders.getConfig().getProperty('s3.crt.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.crt.enabled', 'true')))
     private static final int crtThroughputSeconds = Holders.getConfig().getProperty('s3.crt.throughput.seconds', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.seconds', 30))
     private static final int crtThroughputBps = Holders.getConfig().getProperty('s3.crt.throughput.bps', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.bps', 2))
     private static final int crtConnectionTimeout = Holders.getConfig().getProperty('s3.crt.connection.timeout', Integer, Integer.getInteger('au.org.ala.images.s3.crt.connection.timeout', 2))
     private static final boolean publishCloudwatchMetrics = Holders.getConfig().getProperty('s3.cloudwatch.metrics.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.enabled', 'false')))
     private static final String cloudWatchNamespace = Holders.getConfig().getProperty('s3.cloudwatch.metrics.namespace', String, System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.namespace', 'au.org.ala.image-service/S3'))
+    private static final boolean forceAsyncCalls = Holders.getConfig().getProperty('s3.force.async', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.force.async', 'false')))
 
     private static ScheduledExecutorService evictionScheduler = Executors.newSingleThreadScheduledExecutor({ Runnable r ->
         new Thread(r, "s3-eviction-scheduler").tap {
@@ -139,6 +131,7 @@ class S3StorageOperations implements StorageOperations {
     // TODO configure cache parameters via config
     private static final LoadingCache<CacheKey, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
         CacheKey key, S3Client client, RemovalCause cause ->
+            log.info("S3Client evicted from cache: ${key.bucket}")
             evictionScheduler.schedule( {
                 try {
                     client?.close()
@@ -147,12 +140,12 @@ class S3StorageOperations implements StorageOperations {
                 }
             }, inflightTimeout, TimeUnit.SECONDS)
     }.build { CacheKey key ->
-        log.info("S3Client evicted from cache: ${key.bucket}")
         return s3ClientCacheLoader(key)
     }
 
     private static final LoadingCache<CacheKey, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
         CacheKey key, S3AsyncClient client, RemovalCause cause ->
+            log.info("S3AsyncClient evicted from cache: ${key.bucket}")
             s3TransferManagerCache.invalidate(key) // also remove any associated transfer manager
             evictionScheduler.schedule( {
                 try {
@@ -162,12 +155,12 @@ class S3StorageOperations implements StorageOperations {
                 }
             }, inflightTimeout, TimeUnit.SECONDS)
     }.build { CacheKey key ->
-        log.info("S3AsyncClient evicted from cache: ${key.bucket}")
         return s3AsyncClientCacheLoader(key)
     }
 
     private static final LoadingCache<CacheKey, S3TransferManager> s3TransferManagerCache = Caffeine<String, S3TransferManager>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
         CacheKey key, S3TransferManager manager, RemovalCause cause ->
+            log.info("S3TransferManager evicted from cache: ${key.bucket}")
             evictionScheduler.schedule( {
                 try {
                     manager?.close()
@@ -176,7 +169,6 @@ class S3StorageOperations implements StorageOperations {
                 }
             }, inflightTimeout, TimeUnit.SECONDS)
     }.build { CacheKey key ->
-        log.info("S3TransferManager evicted from cache: ${key.bucket}")
         return s3TransferManagerCacheLoader(key)
     }
 
@@ -203,10 +195,6 @@ class S3StorageOperations implements StorageOperations {
         return new CacheKey(region, containerCredentials, accessKey, secretKey, bucket, hostname, pathStyleAccess)
     }
 
-    private String getCacheKey() {
-        return "${region}:${accessKey}:${bucket}:${hostname}:${pathStyleAccess}"
-    }
-
     @VisibleForTesting
     protected S3Client getS3Client() {
         final cacheKey = getCacheKeyObject()
@@ -230,11 +218,11 @@ class S3StorageOperations implements StorageOperations {
         def httpClientBuilder = ApacheHttpClient.builder()
                 .maxConnections(maxConnections)
                 .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
-                .socketTimeout(Duration.ofSeconds(apacheSocketTimeout))
-                .tcpKeepAlive(apacheTcpKeepAlive)
+                .socketTimeout(Duration.ofSeconds(socketTimeout))
+                .tcpKeepAlive(tcpKeepAlive)
                 .connectionMaxIdleTime(Duration.ofSeconds(apacheIdleTimeout))
-                .connectionAcquisitionTimeout(Duration.ofSeconds(apacheAcquisitionTimeout))
-                .useIdleConnectionReaper(apacheTcpReaperEnabled)
+                .connectionAcquisitionTimeout(Duration.ofSeconds(acquisitionTimeout))
+                .useIdleConnectionReaper(idleReaperEnabled)
 
         // Configure Retry Policy
         def overrideConfig = ClientOverrideConfiguration.builder()
@@ -299,7 +287,12 @@ class S3StorageOperations implements StorageOperations {
                     .overrideConfiguration(overrideConfig)
                     .httpClientBuilder(NettyNioAsyncHttpClient.builder()
                             .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
+                            .connectionAcquisitionTimeout(Duration.ofSeconds(acquisitionTimeout))
+                            .readTimeout(Duration.ofSeconds(socketTimeout))
+                            .writeTimeout(Duration.ofSeconds(socketTimeout))
                             .maxConcurrency(maxConnections)
+                            .tcpKeepAlive(tcpKeepAlive)
+                            .useIdleConnectionReaper(idleReaperEnabled)
                     )
 
             if (region) {
@@ -374,6 +367,135 @@ class S3StorageOperations implements StorageOperations {
             return builder.build()
     }
 
+    // --- Helper methods to route via async client when forceAsyncCalls is enabled ---
+
+    private S3Utilities getUtilities() {
+        // Use utilities from the sync client; utilities do not execute network calls
+        return s3Client.utilities()
+    }
+
+    private void putObjectAclAsyncAware(String bkt, String key, ObjectCannedACL acl) {
+        if (forceAsyncCalls) {
+            s3AsyncClient.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(key).acl(acl) } as Consumer<PutObjectAclRequest.Builder>).join()
+        } else {
+            s3Client.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(key).acl(acl) } as Consumer<PutObjectAclRequest.Builder>)
+        }
+    }
+
+    private HeadObjectResponse headObjectAsyncAware(String bkt, String key) {
+        if (forceAsyncCalls) {
+            return s3AsyncClient.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>).join()
+        }
+        return s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>)
+    }
+
+    private void copyObjectAsyncAware(Consumer<V2CopyObjectRequest.Builder> consumer) {
+        if (forceAsyncCalls) {
+            s3AsyncClient.copyObject(consumer).join()
+        } else {
+            s3Client.copyObject(consumer)
+        }
+    }
+
+    private void headBucketAsyncAware(String bkt) {
+        if (forceAsyncCalls) {
+            s3AsyncClient.headBucket({ HeadBucketRequest.Builder b -> b.bucket(bkt) } as Consumer<HeadBucketRequest.Builder>).join()
+        } else {
+            s3Client.headBucket({ HeadBucketRequest.Builder b -> b.bucket(bkt) } as Consumer<HeadBucketRequest.Builder>)
+        }
+    }
+
+    private void deleteObjectAsyncAware(String bkt, String key) {
+        if (forceAsyncCalls) {
+            s3AsyncClient.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>).join()
+        } else {
+            s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
+        }
+    }
+
+    private void putObjectSmallAsyncAware(String bkt, String key, String contentType, byte[] bytes) {
+        def consumer = { PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(contentType) } as Consumer<PutObjectRequest.Builder>
+        if (forceAsyncCalls) {
+            s3AsyncClient.putObject(consumer, AsyncRequestBody.fromBytes(bytes)).join()
+        } else {
+            s3Client.putObject(consumer, RequestBody.fromBytes(bytes))
+        }
+    }
+
+    private void putObjectStreamAsyncAware(String bkt, String key, String contentType, InputStream stream, long length) {
+        def consumer = { PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(contentType) } as Consumer<PutObjectRequest.Builder>
+        if (forceAsyncCalls) {
+            // Use TransferManager with a blocking async request body to stream data
+            def transferManager = getS3TransferManager()
+            def blockingBody = BlockingOutputStreamAsyncRequestBody.builder().build()
+            def uploadReq = UploadRequest.builder()
+                    .putObjectRequest(PutObjectRequest.builder().bucket(bkt).key(key).contentType(contentType).build())
+                    .requestBody(blockingBody)
+                    .build()
+            def future = transferManager.upload(uploadReq).completionFuture()
+            blockingBody.outputStream().withStream { os ->
+                stream.transferTo(os)
+            }
+            future.join()
+        } else {
+            s3Client.putObject(consumer, RequestBody.fromInputStream(stream, length))
+        }
+    }
+
+    private byte[] getObjectBytesAsyncAware(String bkt, String key, Range range) {
+        if (forceAsyncCalls) {
+            def consumer = { V2GetObjectRequest.Builder b ->
+                b.bucket(bkt).key(key)
+                if (range != null && !range.empty) {
+                    b.range("bytes=${range.start()}-${range.end()}")
+                }
+            } as Consumer<V2GetObjectRequest.Builder>
+            def resp = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBytes()).join()
+            return resp.asByteArray()
+        } else {
+            def consumer = { V2GetObjectRequest.Builder b ->
+                b.bucket(bkt).key(key)
+                if (range != null && !range.empty) {
+                    b.range("bytes=${range.start()}-${range.end()}")
+                }
+            } as Consumer<V2GetObjectRequest.Builder>
+            def s3Object = s3Client.getObject(consumer)
+            return s3Object.withStream { it.bytes }
+        }
+    }
+
+    private static class ListResult {
+        List<S3Object> contents = []
+        List<String> commonPrefixes = []
+    }
+
+    private ListResult listObjectsV2AsyncAware(String bkt, String prefix, String delimiter) {
+        if (!forceAsyncCalls) {
+            ListObjectsV2Iterable pages = s3Client.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
+            ListResult lr = new ListResult()
+            pages.each { page ->
+                lr.contents.addAll(page.contents())
+                lr.commonPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
+            }
+            return lr
+        }
+        ListResult result = new ListResult()
+        CountDownLatch latch = new CountDownLatch(1)
+        def publisher = s3AsyncClient.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
+        publisher.subscribe(new org.reactivestreams.Subscriber<ListObjectsV2Response>() {
+            org.reactivestreams.Subscription s
+            @Override void onSubscribe(org.reactivestreams.Subscription s) { this.s = s; s.request(Long.MAX_VALUE) }
+            @Override void onNext(ListObjectsV2Response page) {
+                result.contents.addAll(page.contents())
+                result.commonPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
+            }
+            @Override void onError(Throwable t) { latch.countDown(); }
+            @Override void onComplete() { latch.countDown(); }
+        })
+        latch.await()
+        return result
+    }
+
     @Override
     boolean isSupportsRedirect() {
         redirect
@@ -385,10 +507,10 @@ class S3StorageOperations implements StorageOperations {
             // If a CloudFront domain is set, use that for redirects
             new URI("https://${cloudfrontDomain}/${path}")
         } else if (publicRead) {
-            S3Utilities utils = s3Client.utilities()
+            S3Utilities utils = getUtilities()
             def url = utils.getUrl(GetUrlRequest.builder().bucket(bucket).key(path).build())
             url.toURI()
-        } else {
+        } else if (privateAcl) {
             // Presign with AWS SDK v2 for 1 hour
             def presignReq = GetObjectPresignRequest.builder()
                     .signatureDuration(Duration.ofHours(1))
@@ -398,6 +520,11 @@ class S3StorageOperations implements StorageOperations {
                 it.presignGetObject(presignReq)
             }
             presigned.url().toURI()
+        } else {
+            // TODO read bucket policy to determine appropriate redirect URL?
+            S3Utilities utils = getUtilities()
+            def url = utils.getUrl(GetUrlRequest.builder().bucket(bucket).key(path).build())
+            url.toURI()
         }
     }
 
@@ -409,22 +536,22 @@ class S3StorageOperations implements StorageOperations {
                 if (publicRead) {
                     final String bkt = this.bucket
                     final String pth = path
-                    s3Client.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(pth).acl(ObjectCannedACL.PUBLIC_READ) } as Consumer<PutObjectAclRequest.Builder>)
+                    putObjectAclAsyncAware(bkt, pth, ObjectCannedACL.PUBLIC_READ)
                 } else if (privateAcl) {
                     final String bkt = this.bucket
                     final String pth = path
-                    s3Client.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(pth).acl(ObjectCannedACL.PRIVATE) } as Consumer<PutObjectAclRequest.Builder>)
+                    putObjectAclAsyncAware(bkt, pth, ObjectCannedACL.PRIVATE)
                 }
 
                 // Update Cache-Control by copying object to itself with REPLACE
-                def head = s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bucket).key(path) } as Consumer<HeadObjectRequest.Builder>)
+                def head = headObjectAsyncAware(bucket, path)
                 def cacheControl = null
                 if (publicRead) cacheControl = 'public,s-maxage=31536000,max-age=31536000'
                 else if (privateAcl) cacheControl = 'private,max-age=31536000'
 
                 final String bkt2 = this.bucket
                 final String pth2 = path
-                s3Client.copyObject({ V2CopyObjectRequest.Builder b ->
+                copyObjectAsyncAware({ V2CopyObjectRequest.Builder b ->
                     b.copySource("${bkt2}/${pth2}")
                      .destinationBucket(bkt2)
                      .destinationKey(pth2)
@@ -445,13 +572,12 @@ class S3StorageOperations implements StorageOperations {
         try {
             // Check bucket existence via headBucket
             final String bkt = this.bucket
-            s3Client.headBucket({ HeadBucketRequest.Builder b -> b.bucket(bkt) } as Consumer<HeadBucketRequest.Builder>)
+            headBucketAsyncAware(bkt)
             // Put a tiny object then delete
             final String key = storagePathStrategy().basePath() + '/' + UUID.randomUUID().toString()
             final String ct = 'application/octet-stream'
-            s3Client.putObject({ PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(ct) } as Consumer<PutObjectRequest.Builder>,
-                    RequestBody.fromBytes(new byte[1]))
-            s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
+            putObjectSmallAsyncAware(bkt, key, ct, new byte[1])
+            deleteObjectAsyncAware(bkt, key)
             return true
         } catch (S3Exception e) {
             log.error("Exception while verifying S3 bucket {}", this, e)
@@ -473,8 +599,7 @@ class S3StorageOperations implements StorageOperations {
             try {
                 final String bkt = this.bucket
                 final String imgKey = imagePath
-                def resp = s3Client.getObject({ V2GetObjectRequest.Builder b -> b.bucket(bkt).key(imgKey) } as Consumer<V2GetObjectRequest.Builder>)
-                bytes = resp.withStream { it.bytes }
+                bytes = getObjectBytesAsyncAware(bkt, imgKey, null)
             } catch (S3Exception e) {
                 if (e.statusCode() == 404) {
                     throw new FileNotFoundException("S3 path $imagePath")
@@ -488,16 +613,27 @@ class S3StorageOperations implements StorageOperations {
     }
 
     @Override
-    ResponseInputStream<GetObjectResponse> inputStream(String path, Range range) throws FileNotFoundException {
+    InputStream inputStream(String path, Range range) throws FileNotFoundException {
         try {
-            def consumer = { V2GetObjectRequest.Builder b ->
-                b.bucket(bucket).key(path)
-                if (range != null && !range.empty) {
-                    b.range("bytes=${range.start()}-${range.end()}")
-                }
-            } as Consumer<V2GetObjectRequest.Builder>
-            def s3Object = s3Client.getObject(consumer)
-            return s3Object
+            if (forceAsyncCalls) {
+                def consumer = { V2GetObjectRequest.Builder b ->
+                    b.bucket(bucket).key(path)
+                    if (range != null && !range.empty) {
+                        b.range("bytes=${range.start()}-${range.end()}")
+                    }
+                } as Consumer<V2GetObjectRequest.Builder>
+                return s3AsyncClient
+                        .getObject(consumer, AsyncResponseTransformer.toBlockingInputStream())
+                        .join()
+            } else {
+                def consumer = { V2GetObjectRequest.Builder b ->
+                    b.bucket(bucket).key(path)
+                    if (range != null && !range.empty) {
+                        b.range("bytes=${range.start()}-${range.end()}")
+                    }
+                } as Consumer<V2GetObjectRequest.Builder>
+                return s3Client.getObject(consumer)
+            }
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
                 throw new FileNotFoundException("S3 path $path")
@@ -515,7 +651,7 @@ class S3StorageOperations implements StorageOperations {
         try {
             final String bkt = this.bucket
             final String kk = key
-            s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(kk) } as Consumer<HeadObjectRequest.Builder>)
+            headObjectAsyncAware(bkt, kk)
             return true
         } catch (S3Exception e) {
             if (e.statusCode() == 404) return false
@@ -529,7 +665,7 @@ class S3StorageOperations implements StorageOperations {
         try {
             final String bkt = this.bucket
             final String kk = key
-            s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(kk) } as Consumer<HeadObjectRequest.Builder>)
+            headObjectAsyncAware(bkt, kk)
             return true
         } catch (S3Exception e) {
             if (e.statusCode() == 404) return false
@@ -543,7 +679,7 @@ class S3StorageOperations implements StorageOperations {
         try {
             final String bkt = this.bucket
             final String kk = key
-            s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(kk) } as Consumer<HeadObjectRequest.Builder>)
+            headObjectAsyncAware(bkt, kk)
             return true
         } catch (S3Exception e) {
             if (e.statusCode() == 404) return false
@@ -558,10 +694,7 @@ class S3StorageOperations implements StorageOperations {
             final String bkt = this.bucket
             final String pth = path
             final String ct = contentType
-            s3Client.putObject(
-                    { PutObjectRequest.Builder b -> b.bucket(bkt).key(pth).contentType(ct) } as Consumer<PutObjectRequest.Builder>,
-                    RequestBody.fromInputStream(stream, length)
-            )
+            putObjectStreamAsyncAware(bkt, pth, ct, stream, length)
         }
     }
 
@@ -574,7 +707,7 @@ class S3StorageOperations implements StorageOperations {
         final String bkt = this.bucket
         walkPrefix(storagePathStrategy().createPathFromUUID(uuid, '')) { Map obj ->
             final String key = obj['key'] as String
-            s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
+            deleteObjectAsyncAware(bkt, key)
         }
         AuditService.submitLog(uuid, "Image deleted from store", "N/A")
         return true
@@ -584,11 +717,9 @@ class S3StorageOperations implements StorageOperations {
         long size = 0
         List<String> extraPrefixes = []
         final String bkt = this.bucket
-        ListObjectsV2Iterable pages = s3Client.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter('/') } as Consumer<ListObjectsV2Request.Builder>)
-        pages.each { page ->
-            size += (Long) (page.contents().collect { it.size() }.sum() ?: 0L)
-            extraPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
-        }
+        def lr = listObjectsV2AsyncAware(bkt, prefix, '/')
+        size += (Long) (lr.contents.collect { it.size() }.sum() ?: 0L)
+        extraPrefixes.addAll(lr.commonPrefixes)
         return size + (Long)((extraPrefixes.sum { getConsumedSpaceInternal(it) }) ?: 0L)
     }
 
@@ -596,14 +727,12 @@ class S3StorageOperations implements StorageOperations {
         List<T> results = []
         List<String> extraPrefixes = []
         final String bkt = this.bucket
-        ListObjectsV2Iterable pages = s3Client.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter('/') } as Consumer<ListObjectsV2Request.Builder>)
-        pages.each { page ->
-            page.contents().each { obj ->
-                Map summary = [key: obj.key(), size: obj.size()]
-                results += f.call(summary)
-            }
-            extraPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
+        def lr = listObjectsV2AsyncAware(bkt, prefix, '/')
+        lr.contents.each { obj ->
+            Map summary = [key: obj.key(), size: obj.size()]
+            results += f.call(summary)
         }
+        extraPrefixes.addAll(lr.commonPrefixes)
         results.addAll((List<T>) extraPrefixes.collectMany { String extraPrefix -> walkPrefix(extraPrefix, f) })
         return results
     }
@@ -686,8 +815,14 @@ class S3StorageOperations implements StorageOperations {
         final String bkt = this.bucket
         walkPrefix(basePath) { Map obj ->
             final String k = obj['key'] as String
-            def head = s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<HeadObjectRequest.Builder>)
-            def objectStream = s3Client.getObject({ V2GetObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<V2GetObjectRequest.Builder>)
+            def head = headObjectAsyncAware(bkt, k)
+            InputStream objectStream
+            if (forceAsyncCalls) {
+                def consumer = { V2GetObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<V2GetObjectRequest.Builder>
+                objectStream = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBlockingInputStream()).join()
+            } else {
+                objectStream = s3Client.getObject({ V2GetObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<V2GetObjectRequest.Builder>)
+            }
             destination.storeAnywhere(uuid, objectStream, k - basePath, head.contentType(), head.contentDisposition(), (obj['size'] as long))
         }
     }
@@ -697,7 +832,7 @@ class S3StorageOperations implements StorageOperations {
         try {
             final String bkt = this.bucket
             final String pth = path
-            def head = s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(pth) } as Consumer<HeadObjectRequest.Builder>)
+            def head = headObjectAsyncAware(bkt, pth)
             return head.contentLength()
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
@@ -730,7 +865,7 @@ class S3StorageOperations implements StorageOperations {
         try {
             final String bkt = this.bucket
             final String pth = path
-            def head = s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(pth) } as Consumer<HeadObjectRequest.Builder>)
+            def head = headObjectAsyncAware(bkt, pth)
             def contentLength = head.contentLength()
             Date lastMod = head.lastModified() != null ? Date.from(head.lastModified()) : null
             return new ImageInfo(
@@ -757,7 +892,7 @@ class S3StorageOperations implements StorageOperations {
         final String bkt = this.bucket
         walkPrefix(basePath) { Map summary ->
             final String key = summary['key'] as String
-            s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
+            deleteObjectAsyncAware(bkt, key)
         }
     }
 
