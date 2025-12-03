@@ -99,8 +99,10 @@ class S3StorageOperations implements StorageOperations {
     private static final int apacheConnectionTimeout = Holders.getConfig().getProperty('s3.timeouts.connection', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.connection', 2))
     private static final int apacheSocketTimeout = Holders.getConfig().getProperty('s3.timeouts.socket', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.socket', 50))
     private static final int apacheIdleTimeout = Holders.getConfig().getProperty('s3.timeouts.idle', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.idle', 5))
+    private static final int apacheAcquisitionTimeout = Holders.getConfig().getProperty('s3.timeouts.acquisition', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.acquisition', 10))
     private static final int inflightTimeout = Holders.getConfig().getProperty('s3.timeouts.eviction', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.eviction', apiCallTimeout + 10))
     private static final boolean apacheTcpKeepAlive = Holders.getConfig().getProperty('s3.sync.keepalive', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.keepalive', 'true')))
+    private static final boolean apacheTcpReaperEnabled = Holders.getConfig().getProperty('s3.sync.idlereaper', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.idlereaper', 'true')))
     private static final boolean useCrtAsyncClient = Holders.getConfig().getProperty('s3.crt.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.crt.enabled', 'true')))
     private static final int crtThroughputSeconds = Holders.getConfig().getProperty('s3.crt.throughput.seconds', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.seconds', 30))
     private static final int crtThroughputBps = Holders.getConfig().getProperty('s3.crt.throughput.bps', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.bps', 2))
@@ -231,6 +233,8 @@ class S3StorageOperations implements StorageOperations {
                 .socketTimeout(Duration.ofSeconds(apacheSocketTimeout))
                 .tcpKeepAlive(apacheTcpKeepAlive)
                 .connectionMaxIdleTime(Duration.ofSeconds(apacheIdleTimeout))
+                .connectionAcquisitionTimeout(Duration.ofSeconds(apacheAcquisitionTimeout))
+                .useIdleConnectionReaper(apacheTcpReaperEnabled)
 
         // Configure Retry Policy
         def overrideConfig = ClientOverrideConfiguration.builder()
