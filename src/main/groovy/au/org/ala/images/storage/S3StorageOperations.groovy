@@ -47,6 +47,7 @@ import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.services.s3.model.*
 
 import java.time.Duration
+import java.util.concurrent.CompletionException
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ThreadFactory
@@ -443,22 +444,16 @@ class S3StorageOperations implements StorageOperations {
     }
 
     private byte[] getObjectBytesAsyncAware(String bkt, String key, Range range) {
+        def consumer = { V2GetObjectRequest.Builder b ->
+            b.bucket(bkt).key(key)
+            if (range != null && !range.empty) {
+                b.range("bytes=${range.start()}-${range.end()}")
+            }
+        } as Consumer<V2GetObjectRequest.Builder>
         if (forceAsyncCalls) {
-            def consumer = { V2GetObjectRequest.Builder b ->
-                b.bucket(bkt).key(key)
-                if (range != null && !range.empty) {
-                    b.range("bytes=${range.start()}-${range.end()}")
-                }
-            } as Consumer<V2GetObjectRequest.Builder>
             def resp = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBytes()).join()
             return resp.asByteArray()
         } else {
-            def consumer = { V2GetObjectRequest.Builder b ->
-                b.bucket(bkt).key(key)
-                if (range != null && !range.empty) {
-                    b.range("bytes=${range.start()}-${range.end()}")
-                }
-            } as Consumer<V2GetObjectRequest.Builder>
             def s3Object = s3Client.getObject(consumer)
             return s3Object.withStream { it.bytes }
         }
@@ -559,6 +554,13 @@ class S3StorageOperations implements StorageOperations {
                      .contentType(head.contentType())
                      .cacheControl(cacheControl)
                 } as Consumer<V2CopyObjectRequest.Builder>)
+            } catch (CompletionException e) {
+                def cause = e.cause
+                if (cause instanceof S3Exception) {
+                    log.error('Error updating ACL for {}, public: {}, privateAcl: {}, error: {}', path, publicRead, privateAcl, e.message)
+                } else {
+                    throw e.cause
+                }
             } catch (S3Exception e) {
                 log.error('Error updating ACL for {}, public: {}, privateAcl: {}, error: {}', path, publicRead, privateAcl, e.message)
             }
@@ -579,6 +581,13 @@ class S3StorageOperations implements StorageOperations {
             putObjectSmallAsyncAware(bkt, key, ct, new byte[1])
             deleteObjectAsyncAware(bkt, key)
             return true
+        } catch (CompletionException e) {
+            def cause = e.cause
+            if (cause instanceof S3Exception) {
+                log.error("Exception while verifying S3 bucket {}", this, e)
+                return false
+            }
+            throw e.cause
         } catch (S3Exception e) {
             log.error("Exception while verifying S3 bucket {}", this, e)
             return false
@@ -600,6 +609,16 @@ class S3StorageOperations implements StorageOperations {
                 final String bkt = this.bucket
                 final String imgKey = imagePath
                 bytes = getObjectBytesAsyncAware(bkt, imgKey, null)
+            } catch (CompletionException e) {
+                def cause = e.cause
+                if (cause instanceof NoSuchKeyException) {
+                    throw new FileNotFoundException("S3 path $imagePath")
+                } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
+                    throw new FileNotFoundException("S3 path $imagePath")
+                }
+                throw e.cause
+            } catch (NoSuchKeyException e) {
+                throw new FileNotFoundException("S3 path $imagePath")
             } catch (S3Exception e) {
                 if (e.statusCode() == 404) {
                     throw new FileNotFoundException("S3 path $imagePath")
@@ -615,25 +634,29 @@ class S3StorageOperations implements StorageOperations {
     @Override
     InputStream inputStream(String path, Range range) throws FileNotFoundException {
         try {
+            def consumer = { V2GetObjectRequest.Builder b ->
+                b.bucket(bucket).key(path)
+                if (range != null && !range.empty) {
+                    b.range("bytes=${range.start()}-${range.end()}")
+                }
+            } as Consumer<V2GetObjectRequest.Builder>
             if (forceAsyncCalls) {
-                def consumer = { V2GetObjectRequest.Builder b ->
-                    b.bucket(bucket).key(path)
-                    if (range != null && !range.empty) {
-                        b.range("bytes=${range.start()}-${range.end()}")
-                    }
-                } as Consumer<V2GetObjectRequest.Builder>
                 return s3AsyncClient
                         .getObject(consumer, AsyncResponseTransformer.toBlockingInputStream())
                         .join()
             } else {
-                def consumer = { V2GetObjectRequest.Builder b ->
-                    b.bucket(bucket).key(path)
-                    if (range != null && !range.empty) {
-                        b.range("bytes=${range.start()}-${range.end()}")
-                    }
-                } as Consumer<V2GetObjectRequest.Builder>
                 return s3Client.getObject(consumer)
             }
+        } catch (CompletionException e) {
+            def cause = e.cause
+            if (cause instanceof NoSuchKeyException) {
+                throw new FileNotFoundException("S3 path $path")
+            } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
+                throw new FileNotFoundException("S3 path $path")
+            }
+            throw e.cause
+        } catch (NoSuchKeyException e) {
+            throw new FileNotFoundException("S3 path $path")
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
                 throw new FileNotFoundException("S3 path $path")
@@ -653,6 +676,16 @@ class S3StorageOperations implements StorageOperations {
             final String kk = key
             headObjectAsyncAware(bkt, kk)
             return true
+        } catch (CompletionException e) {
+            def cause = e.cause
+            if (cause instanceof NoSuchKeyException) {
+                return false
+            } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
+                return false
+            }
+            throw e.cause
+        } catch (NoSuchKeyException e) {
+            return false
         } catch (S3Exception e) {
             if (e.statusCode() == 404) return false
             throw e
@@ -667,6 +700,16 @@ class S3StorageOperations implements StorageOperations {
             final String kk = key
             headObjectAsyncAware(bkt, kk)
             return true
+        } catch (CompletionException e) {
+            def cause = e.cause
+            if (cause instanceof NoSuchKeyException) {
+                return false
+            } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
+                return false
+            }
+            throw e.cause
+        } catch (NoSuchKeyException e) {
+            return false
         } catch (S3Exception e) {
             if (e.statusCode() == 404) return false
             throw e
@@ -681,6 +724,16 @@ class S3StorageOperations implements StorageOperations {
             final String kk = key
             headObjectAsyncAware(bkt, kk)
             return true
+        } catch (CompletionException e) {
+            def cause = e.cause
+            if (cause instanceof NoSuchKeyException) {
+                return false
+            } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
+                return false
+            }
+            throw e.cause
+        } catch (NoSuchKeyException e) {
+            return false
         } catch (S3Exception e) {
             if (e.statusCode() == 404) return false
             throw e
@@ -834,6 +887,16 @@ class S3StorageOperations implements StorageOperations {
             final String pth = path
             def head = headObjectAsyncAware(bkt, pth)
             return head.contentLength()
+        } catch (CompletionException e) {
+            def cause = e.cause
+            if (cause instanceof NoSuchKeyException) {
+                throw new FileNotFoundException("S3 path $path")
+            } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
+                throw new FileNotFoundException("S3 path $path")
+            }
+            throw e.cause
+        } catch (NoSuchKeyException e) {
+            throw new FileNotFoundException("S3 path $path")
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
                 throw new FileNotFoundException("S3 path $path")
@@ -878,7 +941,17 @@ class S3StorageOperations implements StorageOperations {
                     redirectUri: supportsRedirect ? redirectLocation(path) : null,
                     inputStreamSupplier: { Range range -> inputStream(path, range ?: Range.emptyRange(contentLength)) }
             )
-        } catch (S3Exception e) {
+        } catch (CompletionException e) {
+            def cause = e.cause
+            if (cause instanceof NoSuchKeyException) {
+                return new ImageInfo(exists: false)
+            } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
+                return new ImageInfo(exists: false)
+            }
+            throw e.cause
+        } catch (NoSuchKeyException e) {
+            return new ImageInfo(exists: false)
+        }catch (S3Exception e) {
             if (e.statusCode() == 404) {
                 return new ImageInfo(exists: false)
             } else {
