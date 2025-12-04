@@ -18,6 +18,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode
+import software.amazon.awssdk.core.async.BlockingInputStreamAsyncRequestBody
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
 import software.amazon.awssdk.http.apache.ApacheHttpClient
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
@@ -805,7 +806,7 @@ class S3StorageOperations implements StorageOperations {
     }
 
     ByteSinkFactory byteSinkFactory(String uuid, Map<String, String> tags, String... prefixes) {
-        return new S3ByteSinkFactory(s3AsyncClient, s3TransferManager, storagePathStrategy(), bucket, uuid, tags, prefixes)
+        return new S3ByteSinkFactory(s3AsyncClient, s3TransferManager, apiCallTimeout, storagePathStrategy(), bucket, uuid, tags, prefixes)
     }
 
     @Override
@@ -818,7 +819,6 @@ class S3StorageOperations implements StorageOperations {
         try {
             stream.withStream { InputStream input ->
                 def transferManager = getS3TransferManager()
-                def blockingBody = BlockingOutputStreamAsyncRequestBody.builder().build()
 
                 PutObjectRequest.Builder b = PutObjectRequest.builder()
                         .bucket(bucket)
@@ -842,6 +842,15 @@ class S3StorageOperations implements StorageOperations {
                     if (tagSet) b.tagging(Tagging.builder().tagSet(tagSet).build())
                 }
 
+                if (length != null && length < 0) {
+                    log.info("storeInternal: length for $absolutePath was negative, resetting to null")
+                    length = null
+                }
+                AsyncRequestBody blockingBody = BlockingInputStreamAsyncRequestBody.builder()
+                        .contentType(contentType)
+                        .contentLength(length) // TODO remove this because it is optional and throws if wrong?
+                        .build()
+
                 def uploadReq = UploadRequest.builder()
                         .putObjectRequest(b.build())
                         .requestBody(blockingBody)
@@ -849,9 +858,7 @@ class S3StorageOperations implements StorageOperations {
 
                 def uploadFuture = transferManager.upload(uploadReq).completionFuture()
 
-                blockingBody.outputStream().withStream { os ->
-                    input.transferTo(os)
-                }
+                blockingBody.writeInputStream(input)
 
                 def result = uploadFuture.join()
                 log.debug("Uploaded {} to S3 {}:{} with result etag {}", absolutePath, region, bucket, result.response().eTag())

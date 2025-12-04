@@ -12,6 +12,7 @@ import software.amazon.awssdk.services.s3.model.Tag
 import software.amazon.awssdk.services.s3.model.Tagging
 
 import java.nio.file.Files
+import java.time.Duration
 
 @Slf4j
 class S3ByteSinkFactory implements ByteSinkFactory {
@@ -20,6 +21,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
 
     private final S3AsyncClient s3Client
     private final S3TransferManager s3TransferManager
+    private final int connectionTimeout
     private final StoragePathStrategy storagePathStrategy
     private final String uuid
     private final String[] prefixes
@@ -27,7 +29,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
     private final Map<String, String> tags
 
 
-    S3ByteSinkFactory(S3AsyncClient s3Client, S3TransferManager s3TransferManager, StoragePathStrategy storagePathStrategy, String bucket, String uuid, Map<String, String> tags, String... prefixes) {
+    S3ByteSinkFactory(S3AsyncClient s3Client, S3TransferManager s3TransferManager, int connectionTimeout, StoragePathStrategy storagePathStrategy, String bucket, String uuid, Map<String, String> tags, String... prefixes) {
         this.bucket = bucket
         this.s3Client = s3Client
         this.storagePathStrategy = storagePathStrategy
@@ -35,13 +37,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
         this.prefixes = prefixes
         this.tags = tags
         this.s3TransferManager = s3TransferManager
-    }
-    S3ByteSinkFactory(S3AsyncClient s3Client, StoragePathStrategy storagePathStrategy, String bucket, String uuid, Map<String, String> tags, String... prefixes) {
-        this(s3Client, null, storagePathStrategy, bucket, uuid, tags, prefixes)
-    }
-
-    S3ByteSinkFactory(S3AsyncClient s3Client, StoragePathStrategy storagePathStrategy, String bucket, String uuid, String... prefixes) {
-        this(s3Client, null, storagePathStrategy, bucket, uuid, [:], prefixes)
+        this.connectionTimeout = connectionTimeout
     }
 
     @Override
@@ -69,7 +65,9 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                     }
 
                     // Use S3TransferManager which supports streaming via BlockingOutputStreamAsyncRequestBody
-                    def blockingBody = BlockingOutputStreamAsyncRequestBody.builder().build()
+                    def blockingBody = BlockingOutputStreamAsyncRequestBody.builder()
+                            .subscribeTimeout(Duration.ofSeconds(connectionTimeout)) // this should wait for any other s3 calls to timeout
+                            .build()
 
                     def uploadReq = UploadRequest.builder()
                             .putObjectRequest(reqBuilder.build())
@@ -132,6 +130,16 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                 } else if (lastName.endsWith('.webp') || lastName.endsWith('_webp')) {
                     contentType = "image/webp"
                 } else if (lastName.endsWith('.jpeg') || lastName.endsWith('_jpeg') || lastName.endsWith('.jpg') || lastName.endsWith('_jpg')) {
+                    contentType = "image/jpeg"
+                } else if (lastName.endsWith('.bmp') || lastName.endsWith('_bmp')) {
+                    contentType = "image/bmp"
+                } else if (lastName.endsWith('.svg') || lastName.endsWith('_svg')) {
+                    contentType = "image/svg+xml"
+                } else if (lastName.endsWith('.pdf') || lastName.endsWith('_pdf')) {
+                    contentType = "application/pdf"
+                } else if (lastName.endsWith('.heic') || lastName.endsWith('_heic')) {
+                    contentType = "image/heic"
+                } else if (lastName.equals('thumbnail') || lastName.startsWith('thumbnail_')) {
                     contentType = "image/jpeg"
                 } else {
                     contentType = "application/octet-stream"

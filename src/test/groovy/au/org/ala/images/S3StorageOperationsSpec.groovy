@@ -62,7 +62,7 @@ class S3StorageOperationsSpec extends Specification implements DataTest {
         def ops = new TestOps(bucket: 'b', publicRead: true, privateAcl: false, mockClient: client, mockTransferManager: tm)
 
         when:
-        ops.store('uuid-1', new ByteArrayInputStream('x'.bytes), 'image/jpeg', null, 123)
+        ops.store('uuid-1', new ByteArrayInputStream('x'.bytes), 'image/jpeg', null, 'x'.bytes.length)
 
         then:
         1 * tm.upload(_ as UploadRequest) >> { UploadRequest req ->
@@ -88,7 +88,7 @@ class S3StorageOperationsSpec extends Specification implements DataTest {
         def ops = new TestOps(bucket: 'b', publicRead: false, privateAcl: true, mockClient: client, mockTransferManager: tm)
 
         when:
-        ops.store('uuid-2', new ByteArrayInputStream('y'.bytes), 'image/png', 'inline', 10)
+        ops.store('uuid-2', new ByteArrayInputStream('y'.bytes), 'image/png', 'inline', 'y'.bytes.length)
 
         then:
         1 * tm.upload(_ as UploadRequest) >> { UploadRequest req ->
