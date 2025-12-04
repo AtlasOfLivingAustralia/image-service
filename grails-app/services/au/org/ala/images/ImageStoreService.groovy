@@ -231,29 +231,22 @@ class ImageStoreService {
 
         if (parentImage) {
             def imageBytes = parentImage.retrieve()
-            def reader = ImageReaderUtils.findCompatibleImageReader(imageBytes);
-            if (reader) {
-                try {
-                    Rectangle stripRect = new Rectangle(x, y, width, height);
-                    ImageReadParam params = reader.getDefaultReadParam();
-                    params.setSourceRegion(stripRect);
-                    params.setSourceSubsampling(1, 1, 0, 0);
-                    // This may fail if there is not enough heap!
-                    BufferedImage subimage = reader.read(0, params);
-                    def bos = new ByteArrayOutputStream()
-                    if (!ImageIO.write(subimage, "PNG", bos)) {
-                        log.debug("Could not create subimage in PNG format. Giving up")
-                        return null
-                    } else {
-                        results.contentType = "image/png"
-                    }
-                    results.bytes = bos.toByteArray()
-                    bos.close()
-                } finally {
-                    reader.dispose()
+            ImageReaderUtils.withImageReader(ByteSource.wrap(imageBytes)) { reader ->
+                Rectangle stripRect = new Rectangle(x, y, width, height);
+                ImageReadParam params = reader.getDefaultReadParam();
+                params.setSourceRegion(stripRect);
+                params.setSourceSubsampling(1, 1, 0, 0);
+                // This may fail if there is not enough heap!
+                BufferedImage subimage = reader.read(0, params);
+                def bos = new ByteArrayOutputStream()
+                if (!ImageIO.write(subimage, "PNG", bos)) {
+                    log.debug("Could not create subimage in PNG format. Giving up")
+                    return null
+                } else {
+                    results.contentType = "image/png"
                 }
-            } else {
-                throw new RuntimeException("No appropriate reader for image type!");
+                results.bytes = bos.toByteArray()
+                bos.close()
             }
         }
 
