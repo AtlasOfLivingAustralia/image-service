@@ -139,6 +139,8 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                     contentType = "application/pdf"
                 } else if (lastName.endsWith('.heic') || lastName.endsWith('_heic')) {
                     contentType = "image/heic"
+                } else if (lastName.equals('thumbnail_square')) {
+                    contentType = "image/png"
                 } else if (lastName.equals('thumbnail') || lastName.startsWith('thumbnail_')) {
                     contentType = "image/jpeg"
                 } else {
