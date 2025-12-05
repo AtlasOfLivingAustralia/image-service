@@ -43,6 +43,7 @@ import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 @Slf4j
@@ -80,6 +81,32 @@ class ImageStoreService {
 
     @Value('${tiling.ioThreads:2}')
     int tilingIoThreads = 2
+
+    @Value('${thumbnail.concurrency.level:-1}')
+    int thumbnailConcurrencyLevel = -1
+
+    @Value('${thumbnail.concurrency.timeout:30}')
+    int thumbnailConcurrencyTimeout = 30
+
+    @Value('${tiling.concurrency.level:2}')
+    int tileConcurrencyLevel = 2
+
+    @Value('${tiling.concurrency.timeout:30}')
+    int tileConcurrencyTimeout = 30
+
+    private Semaphore thumbnailSemaphore
+    private Semaphore tilingSemaphore
+
+    @PostConstruct
+    void initSemaphores() {
+        if (thumbnailConcurrencyLevel > 0) {
+            thumbnailSemaphore = new Semaphore(thumbnailConcurrencyLevel)
+        } else {
+            thumbnailSemaphore = new Semaphore(Runtime.getRuntime().availableProcessors())
+        }
+        tilingSemaphore = new Semaphore(tileConcurrencyLevel)
+    }
+
 
     Cache<Pair<String, String>, ImageInfo> thumbnailCache
     Cache<Pair<String, Point>, ImageInfo> tileCache
@@ -383,11 +410,21 @@ class ImageStoreService {
             thumbDefs.add(ThumbDefinition.centreCrop(650, "thumbnail_centre_crop_large"))
         }
 
-        def results = t.generateThumbnailsNoIntermediateEncode(
-                byteSource,
-                operations.thumbnailByteSinkFactory(imageIdentifier),
-                thumbDefs
-        )
+        List<ThumbnailingResult> results
+        if (thumbnailSemaphore.tryAcquire(thumbnailConcurrencyTimeout, TimeUnit.SECONDS)) {
+            try {
+                results = t.generateThumbnailsNoIntermediateEncode(
+                        byteSource,
+                        operations.thumbnailByteSinkFactory(imageIdentifier),
+                        thumbDefs
+                )
+            } finally {
+                thumbnailSemaphore.release()
+            }
+        } else {
+            throw new GenerateDerivativeTimeout("Could not acquire thumbnail semaphore to thumb image ${imageIdentifier} in ${thumbnailConcurrencyTimeout}s")
+        }
+
 
         auditService.log(imageIdentifier, "Thumbnails created", "N/A")
         ct.stop(true)
@@ -410,11 +447,20 @@ class ImageStoreService {
         def ct = new CodeTimer("Tiling image ${imageIdentifier}, z index: $z")
 
         def results
-        if (z != null) {
-            results = tileImageLevel(imageIdentifier, operations, z)
+        if (tilingSemaphore.tryAcquire(tileConcurrencyTimeout, TimeUnit.SECONDS)) {
+            try {
+                if (z != null) {
+                    results = tileImageLevel(imageIdentifier, operations, z)
+                } else {
+                    results = tileImage(imageIdentifier, operations)
+                }
+            } finally {
+                tilingSemaphore.release()
+            }
         } else {
-            results = tileImage(imageIdentifier, operations)
+            throw new GenerateDerivativeTimeout("Could not acquire tiling semaphore to tile image ${imageIdentifier} in ${tileConcurrencyTimeout}s")
         }
+
         if (results.success) {
             if (zoomLevels != results.zoomLevels) {
                 // only update the zoom levels if they have changed
@@ -774,5 +820,11 @@ class ImageStoreService {
 
     long consumedSpace(Image image) {
         image.consumedSpace()
+    }
+
+    static final class GenerateDerivativeTimeout extends RuntimeException {
+        GenerateDerivativeTimeout(String message) {
+            super(message, null, false, false)
+        }
     }
 }

@@ -701,7 +701,15 @@ class ImageController {
 
     private def getImageModel(Image image){
         def subimages = Subimage.findAllByParentImage(image)*.subimage
-        def sizeOnDisk = imageStoreService.consumedSpace(image)
+        long sizeOnDisk
+        try {
+            // don't run the calculation on total size here, it could be expensive.
+            // if required, the admin view will still have it.
+//            sizeOnDisk = imageStoreService.consumedSpace(image)
+            sizeOnDisk = image.fileSize
+        } catch (e) {
+            sizeOnDisk = -1
+        }
 
         def userId = authService.userId
 

@@ -262,12 +262,12 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         then:
         1 * controller.collectoryService.getResourceLevelMetadata('dr-1234') >> ['resource':'level']
         1 * imageStoreService.getThumbUrlByName(image.imageIdentifier, thumbnail.name) >> 'https://devt.ala.org.au/image-service/store/1/2/3/4/1234-1234-1234-1234/thumbnail_square'
-        1 * imageStoreService.consumedSpace(image) >> 54321
+//        1 * imageStoreService.consumedSpace(image) >> 54321
         view == '/image/details.gsp'
         model.imageInstance == image
         model.subimages == []
         model.parentImage == null
-        model.sizeOnDisk == 54321
+        model.sizeOnDisk == fileContent.length
         model.squareThumbs == ['https://devt.ala.org.au/image-service/store/1/2/3/4/1234-1234-1234-1234/thumbnail_square']
         model.isImage == true
         model.resourceLevel == ['resource':'level']
