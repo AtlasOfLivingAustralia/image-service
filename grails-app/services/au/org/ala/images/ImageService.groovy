@@ -687,9 +687,11 @@ unnest(all_urls) AS unnest_url;
 
                 preExisting = image != null
                 if (image) {
+                    boolean updated = false
                     if (image.dateDeleted) {
                         log.warn("Deleted Image ${image.originalFilename} has been re-uploaded.  Will undelete.")
                         image.dateDeleted = null //reset date deleted if image resubmitted...
+                        updated = true
                     }
                     if (createDuplicates && image.originalFilename != originalFilename) {
                         log.warn("Existing image found at different URL ${image.originalFilename} to ${originalFilename}. Will add duplicate.")
@@ -699,16 +701,20 @@ unnest(all_urls) AS unnest_url;
                         // to re-download this image
                         if (image.alternateFilename == null) {
                             image.alternateFilename = []
+                            updated = true
                         }
                         if (!image.alternateFilename.contains(originalFilename)) {
                             image.alternateFilename += originalFilename
+                            updated = true
                         }
                         isDuplicate = true
                     } else {
                         log.warn("Got a pre-existing image to store {} but it already exists at {}", originalFilename, image.imageIdentifier)
                     }
                     try {
-                        image.save(failOnError: true)
+                        if (updated) {
+                            image.save(failOnError: true)
+                        }
                     } catch (Exception ex) {
                         log.error("Problem updating image {}  -", originalFilename, ex)
                     }

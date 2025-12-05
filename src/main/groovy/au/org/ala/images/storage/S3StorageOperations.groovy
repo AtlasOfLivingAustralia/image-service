@@ -613,16 +613,16 @@ class S3StorageOperations implements StorageOperations {
             } catch (CompletionException e) {
                 def cause = e.cause
                 if (cause instanceof NoSuchKeyException) {
-                    throw new FileNotFoundException("S3 path $imagePath")
+                    throw new FileNotFoundException("S3 path not found $imagePath")
                 } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
-                    throw new FileNotFoundException("S3 path $imagePath")
+                    throw new FileNotFoundException("S3 path not found $imagePath")
                 }
                 throw e.cause
             } catch (NoSuchKeyException e) {
-                throw new FileNotFoundException("S3 path $imagePath")
+                throw new FileNotFoundException("S3 path not found $imagePath")
             } catch (S3Exception e) {
                 if (e.statusCode() == 404) {
-                    throw new FileNotFoundException("S3 path $imagePath")
+                    throw new FileNotFoundException("S3 path not found $imagePath")
                 } else {
                     throw e
                 }
@@ -641,26 +641,35 @@ class S3StorageOperations implements StorageOperations {
                     b.range("bytes=${range.start()}-${range.end()}")
                 }
             } as Consumer<V2GetObjectRequest.Builder>
+
+            InputStream rawStream
             if (forceAsyncCalls) {
-                return s3AsyncClient
+                rawStream = s3AsyncClient
                         .getObject(consumer, AsyncResponseTransformer.toBlockingInputStream())
                         .join()
             } else {
-                return s3Client.getObject(consumer)
+                rawStream = s3Client.getObject(consumer)
+            }
+
+            // Wrap the stream with metrics tracking if meterRegistry is available
+            if (meterRegistry != null) {
+                return new MetricsTrackingInputStream(rawStream, meterRegistry, bucket, region)
+            } else {
+                return rawStream
             }
         } catch (CompletionException e) {
             def cause = e.cause
             if (cause instanceof NoSuchKeyException) {
-                throw new FileNotFoundException("S3 path $path")
+                throw new FileNotFoundException("S3 path not found $path")
             } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
-                throw new FileNotFoundException("S3 path $path")
+                throw new FileNotFoundException("S3 path not found $path")
             }
             throw e.cause
         } catch (NoSuchKeyException e) {
-            throw new FileNotFoundException("S3 path $path")
+            throw new FileNotFoundException("S3 path not found $path")
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
-                throw new FileNotFoundException("S3 path $path")
+                throw new FileNotFoundException("S3 path not found $path")
             } else {
                 throw e
             }
@@ -897,16 +906,16 @@ class S3StorageOperations implements StorageOperations {
         } catch (CompletionException e) {
             def cause = e.cause
             if (cause instanceof NoSuchKeyException) {
-                throw new FileNotFoundException("S3 path $path")
+                throw new FileNotFoundException("S3 path not found $path")
             } else if (cause instanceof S3Exception && (e.cause as S3Exception).statusCode() == 404) {
-                throw new FileNotFoundException("S3 path $path")
+                throw new FileNotFoundException("S3 path not found $path")
             }
             throw e.cause
         } catch (NoSuchKeyException e) {
-            throw new FileNotFoundException("S3 path $path")
+            throw new FileNotFoundException("S3 path not found $path")
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
-                throw new FileNotFoundException("S3 path $path")
+                throw new FileNotFoundException("S3 path not found $path")
             } else {
                 throw e
             }

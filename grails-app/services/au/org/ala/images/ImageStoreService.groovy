@@ -624,6 +624,8 @@ class ImageStoreService {
                             ImageThumbnail.saveAll(imageThumbs)
                         }
                     }
+                } else {
+                    log.warn("Thumbnail generation for image ${imageIdentifierArg} of type ${typeArg} reported success but no thumbnails were returned")
                 }
                 info = operations.thumbnailImageInfo(imageIdentifierArg, typeArg)
 
@@ -636,9 +638,9 @@ class ImageStoreService {
         } catch (e) {
             def rootCause = ExceptionUtils.getRootCause(e)
             if (rootCause instanceof FileNotFoundException) {
-                log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because ${e.message}")
+                log.warn("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because ${e.message}")
             } else if (rootCause instanceof IIOException && rootCause.message?.contains('Unsupported marker type 0x13')) {
-                log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because the image appears to be corrupt: ${e.message}")
+                log.warn("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because the image appears to be corrupt: ${e.message}")
             } else {
                 log.error("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg}", e)
             }
