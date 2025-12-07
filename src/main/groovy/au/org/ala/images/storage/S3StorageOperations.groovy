@@ -93,7 +93,7 @@ class S3StorageOperations implements StorageOperations {
     private static final int socketTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.socket', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.socket', 50))
     private static final int apacheIdleTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.idle', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.idle', 5))
     private static final int acquisitionTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.acquisition', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.acquisition', 10))
-    private static final int inflightTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.eviction', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.eviction', apiCallTimeout + 10))
+    private static final int inflightTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.eviction', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.eviction', 2 * apiCallTimeout))
     private static final boolean tcpKeepAlive = Holders.getConfig().getProperty('aws.s3.sync.keepalive', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.keepalive', 'true')))
     private static final boolean idleReaperEnabled = Holders.getConfig().getProperty('aws.s3.sync.idlereaper', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.idlereaper', 'true')))
     private static final boolean useCrtAsyncClient = Holders.getConfig().getProperty('aws.s3.crt.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.crt.enabled', 'true')))
@@ -103,6 +103,9 @@ class S3StorageOperations implements StorageOperations {
     private static final boolean publishCloudwatchMetrics = Holders.getConfig().getProperty('aws.s3.cloudwatch.metrics.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.enabled', 'false')))
     private static final String cloudWatchNamespace = Holders.getConfig().getProperty('aws.s3.cloudwatch.metrics.namespace', String, System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.namespace', 'au.org.ala.image-service/S3'))
     private static final boolean forceAsyncCalls = Holders.getConfig().getProperty('aws.s3.force.async', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.force.async', 'false')))
+    private static final String syncCacheSpec = Holders.getConfig().getProperty('aws.s3.cache.spec.sync', String, System.getProperty('au.org.ala.images.s3.cache.spec.sync', 'maximumSize=10,expireAfterAccess=1h'))
+    private static final String asyncCacheSpec = Holders.getConfig().getProperty('aws.s3.cache.spec.async', String, System.getProperty('au.org.ala.images.s3.cache.spec.sync', 'maximumSize=10,expireAfterAccess=1h'))
+    private static final String transferManagerCacheSpec = Holders.getConfig().getProperty('aws.s3.cache.spec.xferman', String, System.getProperty('au.org.ala.images.s3.cache.spec.xferman', 'maximumSize=10,expireAfterAccess=1h'))
 
     private static ScheduledExecutorService evictionScheduler = Executors.newSingleThreadScheduledExecutor({ Runnable r ->
         new Thread(r, "s3-eviction-scheduler").tap {
@@ -131,7 +134,7 @@ class S3StorageOperations implements StorageOperations {
     }
 
     // TODO configure cache parameters via config
-    private static final LoadingCache<CacheKey, S3Client> s3ClientCache = Caffeine<String, S3Client>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
+    private static final LoadingCache<CacheKey, S3Client> s3ClientCache = Caffeine<String, S3Client>.from(syncCacheSpec).removalListener {
         CacheKey key, S3Client client, RemovalCause cause ->
             log.info("S3Client evicted from cache: ${key.bucket}")
             evictionScheduler.schedule( {
@@ -145,7 +148,7 @@ class S3StorageOperations implements StorageOperations {
         return s3ClientCacheLoader(key)
     }
 
-    private static final LoadingCache<CacheKey, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
+    private static final LoadingCache<CacheKey, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from(asyncCacheSpec).removalListener {
         CacheKey key, S3AsyncClient client, RemovalCause cause ->
             log.info("S3AsyncClient evicted from cache: ${key.bucket}")
             s3TransferManagerCache.invalidate(key) // also remove any associated transfer manager
@@ -160,7 +163,7 @@ class S3StorageOperations implements StorageOperations {
         return s3AsyncClientCacheLoader(key)
     }
 
-    private static final LoadingCache<CacheKey, S3TransferManager> s3TransferManagerCache = Caffeine<String, S3TransferManager>.from("maximumSize=10,refreshAfterWrite=1h").removalListener {
+    private static final LoadingCache<CacheKey, S3TransferManager> s3TransferManagerCache = Caffeine<String, S3TransferManager>.from(transferManagerCacheSpec).removalListener {
         CacheKey key, S3TransferManager manager, RemovalCause cause ->
             log.info("S3TransferManager evicted from cache: ${key.bucket}")
             evictionScheduler.schedule( {
@@ -651,12 +654,7 @@ class S3StorageOperations implements StorageOperations {
                 rawStream = s3Client.getObject(consumer)
             }
 
-            // Wrap the stream with metrics tracking if meterRegistry is available
-            if (meterRegistry != null) {
-                return new MetricsTrackingInputStream(rawStream, meterRegistry, bucket, region)
-            } else {
-                return rawStream
-            }
+            return rawStream
         } catch (CompletionException e) {
             def cause = e.cause
             if (cause instanceof NoSuchKeyException) {
