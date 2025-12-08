@@ -1,7 +1,6 @@
 package au.org.ala.images.metadata;
 
-import au.org.ala.images.util.FastByteArrayInputStream;
-import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.input.UnsynchronizedByteArrayInputStream;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
@@ -11,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.helpers.DefaultHandler;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -26,8 +26,11 @@ public class MP4MetadataExtractor extends AbstractMetadataParser {
 
     @Override
     public void extractMetadata(byte[] bytes, Map<String, String> metadata) {
-        InputStream input = new FastByteArrayInputStream(bytes);
-        extractMetadata(input, metadata);
+        try (InputStream input = new UnsynchronizedByteArrayInputStream(bytes)) {
+            extractMetadata(input, metadata);
+        } catch (IOException e) {
+            // This should not happen with UnsynchronizedByteArrayInputStream
+        }
     }
 
     @Override

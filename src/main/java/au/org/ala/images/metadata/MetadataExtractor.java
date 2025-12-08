@@ -1,9 +1,9 @@
 package au.org.ala.images.metadata;
 
-import au.org.ala.images.util.FastByteArrayInputStream;
 import com.google.common.io.ByteSource;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.input.UnsynchronizedByteArrayInputStream;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.tika.detect.Detector;
 import org.apache.tika.metadata.Metadata;
@@ -79,8 +79,8 @@ public class MetadataExtractor {
                 (BufferedInputStream) inputStream :
                 new BufferedInputStream(inputStream)) {
             // Mark the stream before content type detection so we can reset it for the parser
-            // Choose a reasonable upper bound for sniffing; 64KB should cover most detectors
-            bis.mark(64 * 1024);
+            // Choose a reasonable upper bound for sniffing; 128KB should cover most detectors
+            bis.mark(128 * 1024);
             String contentType = detectContentTypeInternal(bis, filename);
             if (StringUtils.isNotEmpty(contentType)) {
                 for (AbstractMetadataParser p : _REGISTRY) {
@@ -113,7 +113,7 @@ public class MetadataExtractor {
     }
 
     public String detectContentType(byte[] bytes, String filename) {
-        try (InputStream bais = new FastByteArrayInputStream(bytes);
+        try (InputStream bais = new UnsynchronizedByteArrayInputStream(bytes);
              InputStream bis = new BufferedInputStream(bais)) {
             return detectContentTypeInternal(bis, filename);
         } catch (Exception ex) {

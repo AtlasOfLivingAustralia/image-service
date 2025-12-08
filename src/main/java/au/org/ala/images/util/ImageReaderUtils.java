@@ -11,6 +11,8 @@ import com.google.common.io.ByteSource;
 import org.apache.commons.imaging.Imaging;
 import org.apache.commons.imaging.formats.jpeg.JpegImageMetadata;
 import org.apache.commons.imaging.formats.tiff.constants.TiffTagConstants;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.input.UnsynchronizedByteArrayInputStream;
 import org.apache.commons.lang3.tuple.Pair;
 import org.imgscalr.Scalr;
 import org.slf4j.Logger;
@@ -34,10 +36,13 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 public class ImageReaderUtils {
 
     protected static Logger logger = LoggerFactory.getLogger(ImageReaderUtils.class);
+
+    public final static int METADATA_BUFFER_SIZE = 128 * 1024; // 128KB
 
     public static ImageReader findCompatibleImageReader(byte[] imageBytes) {
         return findCompatibleImageReader(imageBytes, DefaultImageReaderSelectionStrategy.INSTANCE);
@@ -70,16 +75,25 @@ public class ImageReaderUtils {
 
     public static ImageReaderAndOrientation findCompatibleImageReaderAndGetOrientation(ByteSource byteSource, String filename, ImageReaderSelectionStrategy selectionStrategy) {
 
+        ImageInputStream iis = null;
         try {
             ImageReader result = getImageReaderFromSelectionStrategy(byteSource, selectionStrategy);
 
             try {
                 if (result != null) {
                     var dimensions = getImageDimensionsAndOrientation(byteSource, filename, selectionStrategy);
-                    result.setInput(ImageIO.createImageInputStream(byteSource.openBufferedStream()));
+                    iis = ImageIO.createImageInputStream(byteSource.openBufferedStream());
+                    result.setInput(iis);
                     return new ImageReaderAndOrientation(result, dimensions.getLeft(), dimensions.getRight());
                 }
             } catch (Exception ioex) {
+                if (iis != null) {
+                    try {
+                        iis.close();
+                    } catch (IOException e) {
+                        logger.warn("Error closing ImageInputStream after failure to read image", e);
+                    }
+                }
                 throw new RuntimeException(ioex);
             }
 
@@ -126,21 +140,87 @@ public class ImageReaderUtils {
         return null;
     }
 
+    /**
+     * Utility method to work with an ImageReader for a given ByteSource.  A stream is opened from the
+     * ByteSource and an ImageReader created.  The ImageReader is passed to the consumer for processing, and
+     * disposed of afterwards.  The stream is also closed.
+     *
+     * @param byteSource A ByteSource for the image
+     * @param consumer  A consumer that processes the ImageReader
+     */
+    public static void withImageReader(ByteSource byteSource, Consumer<ImageReader> consumer) {
+        withImageReader(byteSource, true, true, consumer);
+    }
+
+    /**
+     * Utility method to work with an ImageReader for a given ByteSource.  A stream is opened from the
+     * ByteSource and an ImageReader created.  The ImageReader is passed to the consumer for processing, and
+     * disposed of afterwards.  The stream is also closed.
+     *
+     * @param byteSource A ByteSource for the image
+     * @param seekForwardOnly Whether the ImageReader is set to seek forward only
+     * @param ignoreMetadata Whether the ImageReader is set to ignore metadata
+     * @param consumer A consumer that processes the ImageReader
+     */
+    public static void withImageReader(ByteSource byteSource, boolean seekForwardOnly, boolean ignoreMetadata, Consumer<ImageReader> consumer) {
+        // Open stream once and create ImageReader
+        try (InputStream is = byteSource.openBufferedStream()) {
+            // Mark the buffered stream with a reasonable limit (128KB is typically enough for EXIF metadata)
+            if (!is.markSupported()) {
+                throw new IOException("Stream does not support mark/reset");
+            }
+            is.mark(METADATA_BUFFER_SIZE);
+
+            ImageInputStream iis = ImageIO.createImageInputStream(is);
+            if (iis == null) {
+                logger.error("Failed to create ImageInputStream");
+                throw new RuntimeException("Failed to create ImageInputStream");
+            }
+
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                logger.error("No image readers for image!");
+                throw new RuntimeException("No image readers for image!");
+            }
+
+            // Use selection strategy to prefer TwelveMonkeys readers
+            ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
+            if (reader == null) {
+                logger.error("No suitable image reader selected!");
+                throw new RuntimeException("No suitable image reader selected!");
+            }
+            reader.setInput(iis, seekForwardOnly, ignoreMetadata);
+
+            try {
+                consumer.accept(reader);
+            } finally {
+                reader.dispose();
+            }
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private static ImageReader getImageReaderFromSelectionStrategy(ByteSource byteSource, ImageReaderSelectionStrategy selectionStrategy) throws IOException {
         Iterator<ImageReader> iter;
-        try (ImageInputStream iis = ImageIO.createImageInputStream(byteSource.openStream())) {
+        try (InputStream is = byteSource.openStream();
+             ImageInputStream iis = ImageIO.createImageInputStream(byteSource.openStream())) {
             iter = ImageIO.getImageReaders(iis);
+            IOUtils.consume(is);
         }
         ArrayList<ImageReader> candidates = new ArrayList<ImageReader>();
         while (iter.hasNext()) {
             ImageReader candidate = iter.next();
             try {
 //                    fbis = new FastByteArrayInputStream(imageBytes);
-                try (ImageInputStream iis = ImageIO.createImageInputStream(byteSource.openStream())) {
+                try (InputStream is = byteSource.openStream();
+                     ImageInputStream iis = ImageIO.createImageInputStream(is)) {
                     iis.mark();
                     candidate.setInput(iis);
                     int height = candidate.getHeight(0);
                     logger.trace("ImageReader: {} height: {}", candidate.getClass().getCanonicalName(), height);
+                    IOUtils.consume(is);
                 }
                 // if we get here, this reader should work
                 candidates.add(candidate);
@@ -169,7 +249,17 @@ public class ImageReaderUtils {
             var dimensions = getDimensionsWithMetadataReader(imageBytes);
 
             if (dimensions == null) {
-                return ImageIO.createImageInputStream(imageBytes.openBufferedStream());
+                InputStream bufferedStream = imageBytes.openBufferedStream();
+                try {
+                    return ImageIO.createImageInputStream(bufferedStream);
+                } catch (IOException e) {
+                    try {
+                        bufferedStream.close();
+                    } catch (IOException closeEx) {
+                        logger.warn("Error closing buffered stream after ImageInputStream creation failure", closeEx);
+                    }
+                    throw e;
+                }
             }
 
             var orientation = dimensions.getLeft();
@@ -205,13 +295,33 @@ public class ImageReaderUtils {
                     baos.flush();
                     byte[] imageInByte = baos.toByteArray();
                     baos.close();
-                    return ImageIO.createImageInputStream(new FastByteArrayInputStream(imageInByte));
+                    return ImageIO.createImageInputStream(new UnsynchronizedByteArrayInputStream(imageInByte));
                 }
             } else {
-                return ImageIO.createImageInputStream(imageBytes.openBufferedStream());
+                InputStream bufferedStream = imageBytes.openBufferedStream();
+                try {
+                    return ImageIO.createImageInputStream(bufferedStream);
+                } catch (IOException e) {
+                    try {
+                        bufferedStream.close();
+                    } catch (IOException closeEx) {
+                        logger.warn("Error closing buffered stream after ImageInputStream creation failure", closeEx);
+                    }
+                    throw e;
+                }
             }
         } catch (Exception e){
-            return ImageIO.createImageInputStream(imageBytes.openBufferedStream());
+            InputStream bufferedStream = imageBytes.openBufferedStream();
+            try {
+                return ImageIO.createImageInputStream(bufferedStream);
+            } catch (IOException ioEx) {
+                try {
+                    bufferedStream.close();
+                } catch (IOException closeEx) {
+                    logger.warn("Error closing buffered stream after ImageInputStream creation failure", closeEx);
+                }
+                throw ioEx;
+            }
         }
     }
 
@@ -260,6 +370,7 @@ public class ImageReaderUtils {
         Metadata metadata;
         try (InputStream bis = byteSource.openBufferedStream()) {
             metadata = ImageMetadataReader.readMetadata(bis);
+            IOUtils.consume(bis);
         } catch (ImageProcessingException | IOException e) {
             logger.error("Error reading image metadata", e);
             return null;
@@ -296,6 +407,7 @@ public class ImageReaderUtils {
     private static Pair<Orientation, Dimension> getDimensionsWithCommonsImaging(ByteSource imageBytes, String filename) {
         try (var stream = imageBytes.openStream()) {
             var metadata = Imaging.getMetadata(stream, filename);
+            Pair<Orientation, Dimension> result;
 
             if (metadata instanceof JpegImageMetadata) {
                 var jpegMetadata = (JpegImageMetadata) metadata;
@@ -320,16 +432,18 @@ public class ImageReaderUtils {
                     orientationEnum = Orientation.fromExifOrientation(orientation.getIntValue());
                 }
 
-                return Pair.of(
+                result = Pair.of(
                     orientationEnum,
                     orientationEnum.isFlipDimensions() ? new Dimension(height, width) : new Dimension(width, height)
                 );
             } else {
                 stream.reset();
                 var size = Imaging.getImageSize(stream, filename);
-                return Pair.of(Orientation.Normal, new Dimension(size.width, size.height));
+                result = Pair.of(Orientation.Normal, new Dimension(size.width, size.height));
             }
 
+            IOUtils.consume(stream);
+            return result;
         } catch (IOException e) {
             return null;
         }
@@ -338,7 +452,8 @@ public class ImageReaderUtils {
     private static Pair<Orientation, Dimension> getDimensionsWithImageIOMetadata(ByteSource imageBytes, ImageReaderSelectionStrategy selectionStrategy) {
         // theoretically this should work for all images, but it doesn't
         // work with the test images for some reason
-        try (ImageInputStream iis = ImageIO.createImageInputStream(imageBytes.openStream())) {
+        try (InputStream is = imageBytes.openStream();
+             ImageInputStream iis = ImageIO.createImageInputStream(is)) {
             Iterator<ImageReader> iter = ImageIO.getImageReaders(iis);
 
             selectionStrategy = selectionStrategy != null ? selectionStrategy : DefaultImageReaderSelectionStrategy.INSTANCE;
@@ -355,6 +470,7 @@ public class ImageReaderUtils {
             logger.trace("Image dimensions: width={}, height={}, orientation={}", width, height, orientation);
 
             reader.dispose();
+            IOUtils.consume(is);
 
             return Pair.of(
                     orientation,
@@ -377,7 +493,7 @@ public class ImageReaderUtils {
      * @see Orientation
      * @see <a href="https://docs.oracle.com/javase/7/docs/api/javax/imageio/metadata/doc-files/standard_metadata.html">Standard (Plug-in Neutral) Metadata Format Specification</a>
      */
-    private static Orientation findImageOrientation(final IIOMetadata metadata) {
+    public static Orientation findImageOrientation(final IIOMetadata metadata) {
         if (metadata != null) {
             IIOMetadataNode root = (IIOMetadataNode) metadata.getAsTree(IIOMetadataFormatImpl.standardMetadataFormatName);
             NodeList imageOrientations = root.getElementsByTagName("ImageOrientation");

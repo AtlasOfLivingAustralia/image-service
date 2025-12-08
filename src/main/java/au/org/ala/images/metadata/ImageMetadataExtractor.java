@@ -1,11 +1,11 @@
 package au.org.ala.images.metadata;
 
-import au.org.ala.images.util.FastByteArrayInputStream;
 import com.drew.imaging.ImageMetadataReader;
 import com.drew.metadata.Directory;
 import com.drew.metadata.Metadata;
 import com.drew.metadata.Tag;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.io.input.UnsynchronizedByteArrayInputStream;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +29,7 @@ public class ImageMetadataExtractor extends AbstractMetadataParser {
 
     @Override
     public void extractMetadata(byte[] bytes, Map<String, String> md) {
-        BufferedInputStream bis = new BufferedInputStream(new FastByteArrayInputStream(bytes));
+        BufferedInputStream bis = new BufferedInputStream(new UnsynchronizedByteArrayInputStream(bytes, 0, bytes.length));
         extractMetadata(bis, md);
     }
 

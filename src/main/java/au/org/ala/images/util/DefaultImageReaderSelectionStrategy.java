@@ -24,7 +24,7 @@ public class DefaultImageReaderSelectionStrategy implements ImageReaderSelection
                 first = reader;
             }
             if (reader.getClass().getCanonicalName().contains("twelvemonkeys")) {
-                preferred = first;
+                preferred = reader;
                 break;
             }
         }

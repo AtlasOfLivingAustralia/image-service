@@ -1,7 +1,7 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
 import au.org.ala.images.util.FileByteSinkFactory;
-import au.org.ala.images.util.ImageReaderUtils;
 import com.google.common.io.ByteSink;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -10,13 +10,16 @@ import org.slf4j.LoggerFactory;
 
 import javax.imageio.*;
 import javax.imageio.spi.IIORegistry;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Iterator;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
@@ -121,7 +124,24 @@ public class ImageTiler {
 
     private void tileImageAtSubSampleLevel(byte[] bytes, int subsample, TilerSink.LevelSink levelSink) throws IOException {
 
-        ImageReader reader = ImageReaderUtils.findCompatibleImageReader(bytes);
+        // Create ImageInputStream directly without helper method
+        ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+        ImageInputStream iis = ImageIO.createImageInputStream(bais);
+        if (iis == null) {
+            throw new IOException("Failed to create ImageInputStream");
+        }
+
+        Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+        if (!readers.hasNext()) {
+            throw new IOException("No compatible ImageReader found");
+        }
+
+        // Use selection strategy to prefer TwelveMonkeys readers
+        ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
+        if (reader == null) {
+            throw new IOException("No suitable ImageReader selected");
+        }
+        reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading metadata
 
         if (reader != null) {
 

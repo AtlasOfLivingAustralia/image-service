@@ -19,7 +19,7 @@ public class ProfileMe {
 
     public static void main(String[] args) throws IOException, InterruptedException {
         List<String> fileNames = List.of("1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg", "6.jpg", "7.jpg", "8.jpg", "9.jpg", "10.jpg", "11.jpg", "12.jpg", "13.jpg", "14.jpg");
-        File parent = new File("/home/bea18c/large-images/");
+        File parent = new File(System.getProperty("user.home"),"large-images/");
         List<File> files = fileNames.stream().map(s -> new File(parent, s)).collect(Collectors.toList());
         System.out.println("press a key...");
         System.in.read();
@@ -42,9 +42,10 @@ public class ProfileMe {
 //            ImageTiler2 tiler = new ImageTiler2(config);
             ImageTiler3 tiler = new ImageTiler3(config);
             try {
+                System.out.printf("Tiling %1$s to %2$s...%n", file.getName(), dest.getAbsolutePath());
                 ImageTilerResults results = tiler.tileImage(file, dest);
-                if (results.getZoomLevels() == 0) {
-                    System.out.printf("Tiling failed after %1$s!%n", sw.elapsed());
+                if (!results.getSuccess()) {
+                    System.out.printf("Tiling %1$s failed after %2$s!%n", file.getName(), sw.elapsed());
                 } else {
                     System.out.printf("Tiling %1$s completed (%2$d zoom levels) in %3$s! %n", file.getName(), results.getZoomLevels(), sw.elapsed());
                 }
@@ -54,8 +55,8 @@ public class ProfileMe {
         }
         workPool.shutdown();
         ioPool.shutdown();
-        workPool.awaitTermination(30, TimeUnit.MINUTES);
-        ioPool.awaitTermination(30, TimeUnit.MINUTES);
+        workPool.awaitTermination(30, TimeUnit.SECONDS);
+        ioPool.awaitTermination(30, TimeUnit.SECONDS);
 
         System.out.println("Complete...");
         System.in.read();

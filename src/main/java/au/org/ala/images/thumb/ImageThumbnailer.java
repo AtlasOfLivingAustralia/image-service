@@ -1,6 +1,7 @@
 package au.org.ala.images.thumb;
 
 import au.org.ala.images.util.ByteSinkFactory;
+import au.org.ala.images.util.ByteSinkFactory;
 import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
 import au.org.ala.images.util.FileByteSinkFactory;
 import au.org.ala.images.util.ImageReaderUtils;
@@ -8,25 +9,23 @@ import au.org.ala.images.util.ImageUtils;
 import com.google.common.io.ByteSink;
 import com.google.common.io.ByteSource;
 import com.twelvemonkeys.image.AffineTransformOp;
-import com.twelvemonkeys.io.FastByteArrayOutputStream;
-import org.apache.commons.imaging.formats.jpeg.exif.ExifRewriter;
-import org.imgscalr.Scalr;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
+import javax.imageio.metadata.IIOMetadata;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
-import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
-import java.awt.image.BufferedImageOp;
-import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -57,13 +56,31 @@ public class ImageThumbnailer {
 
     public List<ThumbnailingResult> generateThumbnails(ByteSource imageBytes, ByteSinkFactory byteSinkFactory, List<ThumbDefinition> thumbDefs, boolean useFileCache) throws IOException {
 
-        ImageReader reader = ImageReaderUtils.findCompatibleImageReader(imageBytes, useFileCache);
         List<ThumbnailingResult> results = new ArrayList<ThumbnailingResult>();
 
-        if (reader != null) {
+        // Open stream once and create ImageReader
+        try (InputStream is = imageBytes.openBufferedStream()) {
+            ImageInputStream iis = ImageIO.createImageInputStream(is);
+            if (iis == null) {
+                log.error("Failed to create ImageInputStream");
+                return results;
+            }
+
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                log.error("No image readers for image!");
+                return results;
+            }
+
+            // Use selection strategy to prefer TwelveMonkeys readers
+            ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
+            if (reader == null) {
+                log.error("No suitable image reader selected!");
+                return results;
+            }
+            reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading metadata
+
             generateThumbnailsInternal(byteSinkFactory, thumbDefs, reader, results, null);
-        } else {
-            log.error("No image readers for image!");
         }
         return results;
     }
@@ -79,17 +96,81 @@ public class ImageThumbnailer {
      */
     public List<ThumbnailingResult> generateThumbnailsNoIntermediateEncode(ByteSource imageBytes, ByteSinkFactory byteSinkFactory, List<ThumbDefinition> thumbDefs) throws IOException {
 
-        var inputs = ImageReaderUtils.findCompatibleImageReaderAndGetOrientation(imageBytes, "");
-        
         List<ThumbnailingResult> results = new ArrayList<ThumbnailingResult>();
 
-        if (inputs != null) {
-            ImageReader reader = inputs.reader;
-            var orientation = inputs.orientation;
-            
+        // Open stream once and create ImageReader
+        try (InputStream is = imageBytes.openBufferedStream()) {
+            // Mark the buffered stream with a reasonable limit (128KB is typically enough for EXIF metadata)
+            if (!is.markSupported()) {
+                throw new IOException("Stream does not support mark/reset");
+            }
+            is.mark(ImageReaderUtils.METADATA_BUFFER_SIZE);
+
+            ImageInputStream iis = ImageIO.createImageInputStream(is);
+            if (iis == null) {
+                log.error("Failed to create ImageInputStream");
+                return results;
+            }
+
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                log.error("No image readers for image!");
+                return results;
+            }
+
+            // Use selection strategy to prefer TwelveMonkeys readers
+            ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
+            if (reader == null) {
+                log.error("No suitable image reader selected!");
+                return results;
+            }
+            reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading orientation metadata
+
+            // Try to get orientation from ImageReader metadata first
+            ImageReaderUtils.Orientation orientation = null;
+            try {
+                IIOMetadata metadata = reader.getImageMetadata(0);
+                orientation = ImageReaderUtils.findImageOrientation(metadata);
+            } catch (Exception e) {
+                log.debug("Could not read orientation from ImageReader metadata", e);
+            }
+
+            // If orientation is Normal or couldn't be determined, try using metadata library
+            if (orientation == null || orientation == ImageReaderUtils.Orientation.Normal) {
+                try {
+                    // Reset stream to beginning
+                    is.reset();
+                    is.mark(ImageReaderUtils.METADATA_BUFFER_SIZE);
+
+                    // Try with metadata-extractor library
+                    com.drew.metadata.Metadata metadata = com.drew.imaging.ImageMetadataReader.readMetadata(is);
+                    var exifDirectories = metadata.getDirectoriesOfType(com.drew.metadata.exif.ExifIFD0Directory.class);
+                    if (!exifDirectories.isEmpty()) {
+                        for (var exif : exifDirectories) {
+                            if (exif.containsTag(com.drew.metadata.exif.ExifIFD0Directory.TAG_ORIENTATION)) {
+                                orientation = ImageReaderUtils.Orientation.fromExifOrientation(exif.getInt(com.drew.metadata.exif.ExifIFD0Directory.TAG_ORIENTATION));
+                                break;
+                            }
+                        }
+                    }
+
+                    // Reset stream again for ImageReader
+                    is.reset();
+
+                    // Recreate ImageInputStream and reader with fresh stream position
+                    iis = ImageIO.createImageInputStream(is);
+                    reader.dispose();
+                    readers = ImageIO.getImageReaders(iis);
+                    reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
+                    if (reader != null) {
+                        reader.setInput(iis, true, false); // Set ignoreMetadata to false
+                    }
+                } catch (Exception e) {
+                    log.debug("Could not read orientation from metadata library", e);
+                }
+            }
+
             generateThumbnailsInternal(byteSinkFactory, thumbDefs, reader, results, orientation);
-        } else {
-            log.error("No image readers for image!");
         }
         return results;
     }

@@ -1,6 +1,6 @@
 package au.org.ala.images.tiling;
 
-import au.org.ala.images.util.FastByteArrayInputStream;
+import org.apache.commons.io.input.UnsynchronizedByteArrayInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,7 +29,7 @@ public class DefaultZoomFactorStrategy implements ZoomFactorStrategy {
         int height = 0;
         int width = 0;
         try {
-            FastByteArrayInputStream bis = new FastByteArrayInputStream(imageBytes, imageBytes.length);
+            var bis = UnsynchronizedByteArrayInputStream.builder().setByteArray(imageBytes).setOffset(0).get();
             ImageInputStream iis = ImageIO.createImageInputStream(bis);
             Iterator<ImageReader> iter = ImageIO.getImageReaders(iis);
 

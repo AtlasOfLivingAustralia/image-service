@@ -1,16 +1,20 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
 import au.org.ala.images.util.FileByteSinkFactory;
-import au.org.ala.images.util.ImageReaderUtils;
 import com.google.common.io.ByteSink;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.input.UnsynchronizedByteArrayInputStream;
+import org.apache.commons.lang3.tuple.Pair;
 import org.imgscalr.Scalr;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
 import javax.imageio.spi.IIORegistry;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.Closeable;
@@ -19,6 +23,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -33,8 +38,10 @@ import java.util.stream.Stream;
 public class ImageTiler3 {
 
     private static final Logger log = LoggerFactory.getLogger(ImageTiler3.class);
+    public static final int SLICE_SIZE = 8192;
 
     private int _tileSize = 256;
+    private int _maxColsPerStrip = SLICE_SIZE / _tileSize ;
     private TileFormat _tileFormat = TileFormat.JPEG;
     private Color _tileBackgroundColor = Color.gray;
     private boolean _exceptionOccurred =  false; // crude mechanism for the worker threads to communicate serious failure
@@ -57,6 +64,7 @@ public class ImageTiler3 {
             ioThreadPool = config.getIoExecutor();
             levelThreadPool = config.getLevelExecutor();
             _tileSize = config.getTileSize();
+            _maxColsPerStrip = SLICE_SIZE / _tileSize;
             _tileFormat = config.getTileFormat();
             _tileBackgroundColor = config.getTileBackgroundColor();
             _zoomFactorStrategy = config.getZoomFactorStrategy();
@@ -105,10 +113,12 @@ public class ImageTiler3 {
 
         List<SaveTileTask> ioStream;
         try (var images = result.imageStream) {
-            ioStream = images.flatMap(image -> {
+            ioStream = images.flatMap(pair -> {
 
                 log.debug("tileImage:getZoomFactors");
 
+                var coords = pair.getLeft();
+                var image = pair.getRight();
                 try {
                     var intStream = IntStream.rangeClosed(minLevel, finalMaxLevel);
                     if (minLevel == 0 && maxLevel == Integer.MAX_VALUE) {
@@ -117,7 +127,7 @@ public class ImageTiler3 {
                         // otherwise we're doing user requested levels, so start only process the requested levels
                     }
                     return intStream
-                            .mapToObj(level -> submitLevelForProcessing(image, pyramid[level], tilerSink.getLevelSink(level)))
+                            .mapToObj(level -> submitLevelForProcessing(image, coords, pyramid[level], tilerSink.getLevelSink(level)))
                             .flatMap(future -> {
                                 try {
                                     return future.join();
@@ -146,10 +156,10 @@ public class ImageTiler3 {
     }
 
     private static final class GetBufferedImageResult {
-        final Stream<BufferedImage> imageStream;
+        final Stream<Pair<Point, BufferedImage>> imageStream;
         final Point imageDimensions;
 
-        public GetBufferedImageResult(Stream<BufferedImage> imageStream, Point imageDimensions) {
+        public GetBufferedImageResult(Stream<Pair<Point, BufferedImage>> imageStream, Point imageDimensions) {
             this.imageStream = imageStream;
             this.imageDimensions = imageDimensions;
         }
@@ -163,8 +173,31 @@ public class ImageTiler3 {
             imageBytes = IOUtils.toByteArray(inputStream);
         }
         log.trace("getBufferedImages:inputStream to imageBytes");
-        var reader = ImageReaderUtils.findCompatibleImageReader(imageBytes);
-        log.trace("getBufferedImages:findCompatibleImageReader");
+
+        // Create ImageInputStream directly without helper method
+        var bais = UnsynchronizedByteArrayInputStream.builder()
+                .setByteArray(imageBytes)
+                .setOffset(0)
+                .get();
+
+        ImageInputStream iis = ImageIO.createImageInputStream(bais);
+        if (iis == null) {
+            throw new IOException("Failed to create ImageInputStream");
+        }
+
+        Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+        if (!readers.hasNext()) {
+            throw new IOException("No compatible ImageReader found");
+        }
+
+        // Use selection strategy to prefer TwelveMonkeys readers
+        ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
+        if (reader == null) {
+            throw new IOException("No suitable ImageReader selected");
+        }
+        reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading metadata
+
+        log.trace("getBufferedImages:created ImageReader");
         BufferedImage image;
         var stream = Stream.<Point>builder();
 
@@ -173,7 +206,7 @@ public class ImageTiler3 {
             int w = reader.getWidth(0);
             int h = reader.getHeight(0);
 
-            var ratio = 8192 / _tileSize;
+            var ratio = SLICE_SIZE / _tileSize;
             var segmentSize = ratio * _tileSize;
             log.trace("getBufferedImages: w: {}, h: {}, _tileSize: {}, ratio: {}, segmentSize: {}", w, h, _tileSize, ratio, segmentSize);
             var xs = (int)Math.ceil((double)w / (double) segmentSize);
@@ -211,7 +244,7 @@ public class ImageTiler3 {
 //                params.setSourceRegion(new Rectangle(p.x, p.y, rectWidth, rectHeight));
 //                params.setSourceSubsampling(subsample, subsample, 0, 0);
                 try {
-                    return reader.read(0, params);
+                    return Pair.of(p, reader.read(0, params));
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -228,50 +261,29 @@ public class ImageTiler3 {
             }), new Point(w, h));
 
 
-
-//            image = reader.read(0);
-
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {
 
         }
-//        imageBytes = null;
-//        return image;
     }
 
-    private static class Result {
-        public final int zoomLevels;
-        public final Stream<CompletableFuture<Void>> ioStream;
-
-        public Result(int zoomLevels, Stream<CompletableFuture<Void>> ioStream) {
-            this.zoomLevels = zoomLevels;
-            this.ioStream = ioStream;
-        }
-    }
-
-    private CompletableFuture<Stream<SaveTileTask>> submitLevelForProcessing(BufferedImage bufferedImage, int subSample, TilerSink.LevelSink levelSink) {
-//        int subSample = pyramid[level];
+    private CompletableFuture<Stream<SaveTileTask>> submitLevelForProcessing(BufferedImage bufferedImage, Point sliceCoords, int subSample, TilerSink.LevelSink levelSink) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                return tileImageAtSubSampleLevel(bufferedImage, subSample, levelSink);
-
+                return tileImageAtSubSampleLevel(bufferedImage, sliceCoords, subSample, levelSink);
             } catch (IOException e) {
                 _exceptionOccurred = true;
                 log.error("Exception occurred during tiling image task", e);
-//                return Collections.emptyList();
                 return Stream.empty();
             }
         }, levelThreadPool);
 
     }
 
-    private Stream<SaveTileTask> tileImageAtSubSampleLevel(BufferedImage bufferedImage, int subsample, TilerSink.LevelSink levelSink) throws IOException {
+    private Stream<SaveTileTask> tileImageAtSubSampleLevel(BufferedImage bufferedImage, Point sliceCoords, int subsample, TilerSink.LevelSink levelSink) throws IOException {
 
         log.trace("tileImageAtSubSampleLevel(subsample = {})", subsample);
-//        ImageReader reader = ImageReaderUtils.findCompatibleImageReader(bytes);
-
-//        if (reader != null) {
 
         int srcHeight = bufferedImage.getHeight();
         int srcWidth = bufferedImage.getWidth();
@@ -283,10 +295,6 @@ public class ImageTiler3 {
 
         log.trace("tileImageAtSubSampleLevel: srcHeight {} srcWidth {} height {} width {} cols {} rows {} image {}", srcHeight, srcWidth, height, width, cols, rows, bufferedImage);
 
-//        int stripWidth = _tileSize * subsample * _maxColsPerStrip;
-//        int numberOfStrips = (int) Math.ceil( ((double) srcWidth) / ((double) stripWidth));
-
-
 //            AffineTransform at = new AffineTransform();
 //            at.scale(2.0, 2.0);
 //            AffineTransformOp scaleOp =
@@ -295,40 +303,12 @@ public class ImageTiler3 {
 
         var resized = Scalr.resize(bufferedImage, width, height);
 
-        List<SaveTileTask> saveTileTasks = splitIntoTiles(resized, levelSink, cols, rows);
+        List<SaveTileTask> saveTileTasks = splitIntoTiles(resized, sliceCoords, levelSink, cols, rows);
 
         return saveTileTasks.stream();
-//        saveTileTasks.forEach(SaveTileTask::run);
-
-//        ImageFilter filter = new SubsamplingFilter(subsample, subsample);
-//        ImageProducer prod;
-//        prod = new FilteredImageSource(bufferedImage.getSource(), filter);
-//        Image subSampledImage = Toolkit.getDefaultToolkit().createImage(prod);
-
-//        for (int stripIndex = 0; stripIndex < numberOfStrips; stripIndex++) {
-//
-//            int srcStripOffset = stripIndex * stripWidth;
-//            if (srcStripOffset > srcWidth) {
-//                continue;
-//            }
-//
-////                Rectangle stripRect = new Rectangle(srcStripOffset, 0, stripWidth, srcHeight);
-////                ImageReadParam params = reader.getDefaultReadParam();
-////                params.setSourceRegion(stripRect);
-////                params.setSourceSubsampling(subsample, subsample, 0, 0);
-////                BufferedImage strip = reader.read(0, params);
-//            var strip = resized.getSubimage(srcStripOffset, 0, stripWidth, srcHeight);
-//
-//
-//            splitIntoTiles(strip, levelSink, cols, rows, ioThreadPool);
-//        }
-//            reader.dispose();
-//        } else {
-//            throw new RuntimeException("No readers found suitable for file");
-//        }
     }
 
-    private List<SaveTileTask> splitIntoTiles(BufferedImage strip, TilerSink.LevelSink levelSink, int cols, int rows) {
+    private List<SaveTileTask> splitIntoTiles(BufferedImage strip, Point sliceCoords, TilerSink.LevelSink levelSink, int cols, int rows) {
         var result = new ArrayList<SaveTileTask>(cols * rows);
         // Now divide the strip up into tiles
         for (int col = 0; col < cols; col++) {
@@ -338,7 +318,7 @@ public class ImageTiler3 {
                 continue;
             }
 
-            TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, 0, 1);
+            TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, sliceCoords.x, this._maxColsPerStrip);
 
             int tw = _tileSize;
             if (tw + (col * _tileSize) > strip.getWidth()) {
@@ -384,7 +364,7 @@ public class ImageTiler3 {
                 // Clean up!
                 g.dispose();
                 // Shunt this off to the io writers.
-                ByteSink tileSink = columnSink.getTileSink(rows - y - 1);
+                ByteSink tileSink = columnSink.getTileSink((sliceCoords.y * _maxColsPerStrip) + rows - y - 1);
                 result.add(new SaveTileTask(tileSink, destTile));
             }
         }

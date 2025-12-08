@@ -1,6 +1,6 @@
 package au.org.ala.images.iiif;
 
-import au.org.ala.images.util.ImageReaderUtils;
+import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
 import com.google.common.io.ByteSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,12 +8,13 @@ import org.slf4j.LoggerFactory;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.color.ColorSpace;
 import java.awt.geom.AffineTransform;
 import java.awt.image.*;
-import java.io.Closeable;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Iterator;
 import java.util.Objects;
@@ -49,70 +50,79 @@ public class IiifImageProcessor {
      * The output stream is not closed by this method.
      */
     public Result process(ByteSource imageBytes, Region region, Size size, Rotation rotation, Quality quality, Format format, OutputStream out) throws IOException {
-        ImageReader reader = ImageReaderUtils.findCompatibleImageReader(imageBytes, false);
-        if (reader == null) {
-            throw new IOException("No compatible ImageReader for source image");
-        }
-
         BufferedImage src;
-        try {
-            ImageReadParam readParam = reader.getDefaultReadParam();
 
-            // Determine source dimensions
-            int srcW = reader.getWidth(0);
-            int srcH = reader.getHeight(0);
-
-            // Compute region rectangle in source coordinates (Region step)
-            Rectangle sourceRegion = computeSourceRegion(srcW, srcH, region);
-            if (sourceRegion != null) {
-                // Guard against invalid sizes
-                if (sourceRegion.width <= 0 || sourceRegion.height <= 0) {
-                    // degenerate region → read 1x1 minimal image via fallback (will be created later)
-                    // In practice, clamp prevented this, but keep safe-guard
-                    sourceRegion = new Rectangle(0, 0, Math.max(1, Math.min(1, srcW)), Math.max(1, Math.min(1, srcH)));
-                }
-                readParam.setSourceRegion(sourceRegion);
-            } else {
-                // FULL region → treat as entire image
-                sourceRegion = new Rectangle(0, 0, srcW, srcH);
+        // Open stream once and create ImageReader
+        try (InputStream is = imageBytes.openBufferedStream()) {
+            ImageInputStream iis = ImageIO.createImageInputStream(is);
+            if (iis == null) {
+                throw new IOException("No ImageInputStream could be created for source image");
             }
 
-            // Compute intended target dimensions from Size (applied to region result)
-            Dimension targetDims = computeTargetSizeFromRegion(sourceRegion.width, sourceRegion.height, size);
-
-            // Choose integer subsampling factors so decoded is >= target (avoid decoding larger than needed)
-            int sx = 1;
-            int sy = 1;
-            if (targetDims != null) {
-                // If the request is an upscale or 'max', keep factors at 1
-                if (targetDims.width > 0) {
-                    int cand = (int) Math.floor(sourceRegion.width / (double) targetDims.width);
-                    if (cand >= 1) sx = cand;
-                }
-                if (targetDims.height > 0) {
-                    int cand = (int) Math.floor(sourceRegion.height / (double) targetDims.height);
-                    if (cand >= 1) sy = cand;
-                }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                throw new IOException("No compatible ImageReader for source image");
             }
-            // Ensure at least 1
-            sx = Math.max(1, sx);
-            sy = Math.max(1, sy);
-            readParam.setSourceSubsampling(sx, sy, 0, 0);
 
-            // Read with subsampling and region applied
-            src = reader.read(0, readParam);
-
-            // We already applied the IIIF Region via setSourceRegion; avoid double-cropping by nulling region
-            region = Region.full();
-        } finally {
-            var input = reader.getInput();
-            if (input instanceof Closeable) {
-                try {
-                    ((Closeable) input).close();
-                } catch (IOException ignore) {
-                }
+            // Use selection strategy to prefer TwelveMonkeys readers
+            ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
+            if (reader == null) {
+                throw new IOException("No suitable ImageReader selected for source image");
             }
-            reader.dispose();
+
+            try {
+                reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading metadata
+                ImageReadParam readParam = reader.getDefaultReadParam();
+
+                // Determine source dimensions
+                int srcW = reader.getWidth(0);
+                int srcH = reader.getHeight(0);
+
+                // Compute region rectangle in source coordinates (Region step)
+                Rectangle sourceRegion = computeSourceRegion(srcW, srcH, region);
+                if (sourceRegion != null) {
+                    // Guard against invalid sizes
+                    if (sourceRegion.width <= 0 || sourceRegion.height <= 0) {
+                        // degenerate region → read 1x1 minimal image via fallback (will be created later)
+                        // In practice, clamp prevented this, but keep safe-guard
+                        sourceRegion = new Rectangle(0, 0, Math.max(1, Math.min(1, srcW)), Math.max(1, Math.min(1, srcH)));
+                    }
+                    readParam.setSourceRegion(sourceRegion);
+                } else {
+                    // FULL region → treat as entire image
+                    sourceRegion = new Rectangle(0, 0, srcW, srcH);
+                }
+
+                // Compute intended target dimensions from Size (applied to region result)
+                Dimension targetDims = computeTargetSizeFromRegion(sourceRegion.width, sourceRegion.height, size);
+
+                // Choose integer subsampling factors so decoded is >= target (avoid decoding larger than needed)
+                int sx = 1;
+                int sy = 1;
+                if (targetDims != null) {
+                    // If the request is an upscale or 'max', keep factors at 1
+                    if (targetDims.width > 0) {
+                        int cand = (int) Math.floor(sourceRegion.width / (double) targetDims.width);
+                        if (cand >= 1) sx = cand;
+                    }
+                    if (targetDims.height > 0) {
+                        int cand = (int) Math.floor(sourceRegion.height / (double) targetDims.height);
+                        if (cand >= 1) sy = cand;
+                    }
+                }
+                // Ensure at least 1
+                sx = Math.max(1, sx);
+                sy = Math.max(1, sy);
+                readParam.setSourceSubsampling(sx, sy, 0, 0);
+
+                // Read with subsampling and region applied
+                src = reader.read(0, readParam);
+
+                // We already applied the IIIF Region via setSourceRegion; avoid double-cropping by nulling region
+                region = Region.full();
+            } finally {
+                reader.dispose();
+            }
         }
 
         try {
