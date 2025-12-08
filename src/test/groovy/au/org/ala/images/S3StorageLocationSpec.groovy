@@ -5,12 +5,11 @@ import cloud.localstack.Localstack
 import cloud.localstack.ServiceName
 import cloud.localstack.docker.LocalstackDockerExtension
 import cloud.localstack.docker.annotation.LocalstackDockerProperties
-import com.amazonaws.ClientConfiguration
-import com.amazonaws.auth.AWSStaticCredentialsProvider
-import com.amazonaws.auth.BasicAWSCredentials
-import com.amazonaws.client.builder.AwsClientBuilder
-import com.amazonaws.services.s3.AmazonS3
-import com.amazonaws.services.s3.AmazonS3ClientBuilder
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.CreateBucketRequest
 import grails.testing.gorm.DomainUnitTest
 import org.junit.jupiter.api.extension.ExtendWith
 
@@ -35,17 +34,16 @@ class S3StorageLocationSpec extends StorageLocationSpec implements DomainUnitTes
 
     def setupSpec() {
 
-        AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard().
-                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
-                withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
-                withClientConfiguration(
-                        new ClientConfiguration()
-                                .withValidateAfterInactivityMillis(200))
-        builder.setPathStyleAccessEnabled(true)
-        AmazonS3 clientS3 = builder.build()
-        clientS3.createBucket('bouquet')
-        clientS3.createBucket('bucket')
-        clientS3.createBucket('other-bucket')
+        S3Client clientS3 = S3Client.builder()
+                .endpointOverride(URI.create(Localstack.INSTANCE.endpointS3))
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY)))
+                .region(Region.of(Constants.DEFAULT_REGION))
+                .forcePathStyle(true)
+                .build()
+
+        clientS3.createBucket(CreateBucketRequest.builder().bucket('bouquet').build())
+        clientS3.createBucket(CreateBucketRequest.builder().bucket('bucket').build())
+        clientS3.createBucket(CreateBucketRequest.builder().bucket('other-bucket').build())
     }
 
     def setup() {

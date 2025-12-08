@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.storage.S3StorageOperations
 import au.org.ala.web.AlaSecured
 import au.org.ala.web.CASRoles
 import com.opencsv.CSVReader
@@ -611,6 +612,12 @@ class AdminController {
             results = elasticSearchService.search(map, params)
         }
         [results: results, query: params.q]
+    }
+
+    def clearS3Cache() {
+        S3StorageOperations.clearS3ClientCache()
+        flash.message = 'S3 cache cleared'
+        redirect(action:'tools', message: 'S3 Cache is cleared')
     }
 
     def clearCollectoryCache(){
