@@ -23,8 +23,8 @@ class IndexImageBackgroundTask extends BackgroundTask {
         def imageInstance
         Image.withTransaction {
             imageInstance = Image.findById(_imageId, [fetch: [recognisedLicense: 'eager']])
-            def licenseName = imageInstance.recognisedLicense.name
-            def acronym = imageInstance.recognisedLicense.acronym
+            def licenseName = imageInstance?.recognisedLicense?.name
+            def acronym = imageInstance?.recognisedLicense?.acronym
             log.trace("Indexing image id: ${_imageId}, license: ${acronym}:${licenseName}")
         }
         if (imageInstance) {
