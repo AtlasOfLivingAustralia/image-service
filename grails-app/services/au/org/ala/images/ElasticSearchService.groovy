@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.metrics.MetricsSupport
 import co.elastic.clients.elasticsearch.ElasticsearchClient
 import co.elastic.clients.elasticsearch._types.ElasticsearchException
 import co.elastic.clients.elasticsearch._types.SearchType
@@ -46,7 +47,7 @@ import javax.annotation.PostConstruct
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-class ElasticSearchService {
+class ElasticSearchService implements MetricsSupport {
 
     GrailsApplication grailsApplication
     def imageStoreService
@@ -130,61 +131,71 @@ class ElasticSearchService {
     }
 
     def indexImage(Image image) {
+        return recordTime('elasticsearch.index.image', 'Time to index image in Elasticsearch') {
+            if (!image){
+                log.error("Supplied image was null")
+                incrementCounter('elasticsearch.index.error', 'Elasticsearch indexing errors', [reason: 'null_image'])
+                return
+            }
 
-        if (!image){
-            log.error("Supplied image was null")
-            return
-        }
+            if (image.dateDeleted){
+                log.debug("Supplied image is deleted")
+                incrementCounter('elasticsearch.index.skipped', 'Elasticsearch indexing skipped', [reason: 'deleted'])
+                return
+            }
 
-        if (image.dateDeleted){
-            log.debug("Supplied image is deleted")
-            return
-        }
+            try {
+                log.debug("Indexing image {}", image.id)
+                def ct = new CodeTimer("Index Image ${image.id}")
+                // only add the fields that are searchable. They are marked with an annotation
+                def fields = Image.class.declaredFields
+                def data = [:]
+                fields.each { field ->
+                    if (field.isAnnotationPresent(SearchableProperty)) {
+                        data[field.name] = image."${field.name}"
+                    }
+                }
 
-        log.debug("Indexing image {}", image.id)
-        def ct = new CodeTimer("Index Image ${image.id}")
-        // only add the fields that are searchable. They are marked with an annotation
-        def fields = Image.class.declaredFields
-        def data = [:]
-        fields.each { field ->
-            if (field.isAnnotationPresent(SearchableProperty)) {
-                data[field.name] = image."${field.name}"
+                if (image.recognisedLicense) {
+                    data.recognisedLicence = image.recognisedLicense.acronym
+                } else {
+                    data.recognisedLicence = UNRECOGNISED_LICENCE
+                }
+
+                indexImageInES(
+                        data.imageIdentifier,
+                        data.contentMD5Hash,
+                        data.contentSHA1Hash,
+                        data.mimeType,
+                        data.originalFilename,
+                        data.extension,
+                        data.dateUploaded,
+                        data.dateTaken,
+                        data.fileSize,
+                        data.height,
+                        data.width,
+                        data.zoomLevels,
+                        data.dataResourceUid,
+                        data.creator ,
+                        data.title,
+                        data.description,
+                        data.rights,
+                        data.rightsHolder,
+                        data.license,
+                        data.thumbHeight,
+                        data.thumbWidth,
+                        data.harvestable,
+                        data.recognisedLicence,
+                        data.occurrenceId
+                )
+                ct.stop(true)
+                incrementCounter('elasticsearch.index.success', 'Successful image indexing operations')
+            } catch (Exception e) {
+                log.error("Error indexing image ${image?.id}: ${e.message}", e)
+                incrementCounter('elasticsearch.index.error', 'Elasticsearch indexing errors', [reason: 'exception', error: e.class.simpleName])
+                throw e
             }
         }
-
-        if (image.recognisedLicense) {
-            data.recognisedLicence = image.recognisedLicense.acronym
-        } else {
-            data.recognisedLicence = UNRECOGNISED_LICENCE
-        }
-
-        indexImageInES(
-                data.imageIdentifier,
-                data.contentMD5Hash,
-                data.contentSHA1Hash,
-                data.mimeType,
-                data.originalFilename,
-                data.extension,
-                data.dateUploaded,
-                data.dateTaken,
-                data.fileSize,
-                data.height,
-                data.width,
-                data.zoomLevels,
-                data.dataResourceUid,
-                data.creator ,
-                data.title,
-                data.description,
-                data.rights,
-                data.rightsHolder,
-                data.license,
-                data.thumbHeight,
-                data.thumbWidth,
-                data.harvestable,
-                data.recognisedLicence,
-                data.occurrenceId
-        )
-        ct.stop(true)
     }
 
     def indexImageInES(

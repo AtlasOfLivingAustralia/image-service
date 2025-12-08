@@ -1,8 +1,10 @@
 package au.org.ala.images
 
+import au.org.ala.images.metrics.MetricsTrackingOutputStream
 import au.org.ala.images.util.ByteSinkFactory
 import com.google.common.io.ByteSink
 import groovy.util.logging.Slf4j
+import io.micrometer.core.instrument.MeterRegistry
 import software.amazon.awssdk.core.async.BlockingOutputStreamAsyncRequestBody
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.transfer.s3.S3TransferManager
@@ -26,11 +28,17 @@ class S3ByteSinkFactory implements ByteSinkFactory {
     private final String uuid
     private final String[] prefixes
     private final String bucket
+    private final String region
+    private final MeterRegistry meterRegistry
     private final Map<String, String> tags
 
 
-    S3ByteSinkFactory(S3AsyncClient s3Client, S3TransferManager s3TransferManager, int connectionTimeout, StoragePathStrategy storagePathStrategy, String bucket, String uuid, Map<String, String> tags, String... prefixes) {
+    S3ByteSinkFactory(S3AsyncClient s3Client, S3TransferManager s3TransferManager, int connectionTimeout, StoragePathStrategy storagePathStrategy,
+                      String bucket, String uuid, Map<String, String> tags, MeterRegistry meterRegistry, String region,
+                      String... prefixes) {
         this.bucket = bucket
+        this.region = region
+        this.meterRegistry = meterRegistry
         this.s3Client = s3Client
         this.storagePathStrategy = storagePathStrategy
         this.uuid = uuid
@@ -52,9 +60,13 @@ class S3ByteSinkFactory implements ByteSinkFactory {
             @Override
             OutputStream openStream() throws IOException {
 
+                OutputStream baseStream
+                String metricsOperationType
+
                 String contentType = guessContentType(names.length > 0 ? names.last() : '')
 
                 if (streaming && s3TransferManager) {
+                    metricsOperationType = "streaming"
                     def reqBuilder = PutObjectRequest.builder()
                             .bucket(bucket)
                             .key(path)
@@ -75,7 +87,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                             .build()
                     def uploadFuture = s3TransferManager.upload(uploadReq).completionFuture()
 
-                    return new FilterOutputStream(blockingBody.outputStream()) {
+                    baseStream = new FilterOutputStream(blockingBody.outputStream()) {
                         @Override
                         void close() throws IOException {
                             super.close()
@@ -89,10 +101,12 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                     }
                 } else {
                     // Buffer to a temp file and upload on close
+                    metricsOperationType = "buffered"
                     def tempPath = Files.createTempFile("thumbnail-$uuid-${names.join('-')}", ".jpg")
                     def file = tempPath.toFile()
                     file.deleteOnExit()
-                    return new FilterOutputStream(new BufferedOutputStream(Files.newOutputStream(tempPath))) {
+                    
+                    baseStream = new FilterOutputStream(new BufferedOutputStream(Files.newOutputStream(tempPath))) {
                         @Override
                         void close() throws IOException {
                             super.close()
@@ -114,6 +128,12 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                             }
                         }
                     }
+                }
+                // Wrap with metrics tracking if available
+                if (meterRegistry != null) {
+                    return new MetricsTrackingOutputStream(baseStream, meterRegistry, bucket, region, metricsOperationType)
+                } else {
+                    return baseStream
                 }
             }
 

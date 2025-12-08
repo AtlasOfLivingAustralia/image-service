@@ -6,13 +6,18 @@ import au.org.ala.images.ImageInfo
 import au.org.ala.images.Range
 import au.org.ala.images.S3ByteSinkFactory
 import au.org.ala.images.StoragePathStrategy
+import au.org.ala.images.metrics.MetricsTrackingInputStream
 import au.org.ala.images.util.ByteSinkFactory
 import com.github.benmanes.caffeine.cache.Caffeine
 import com.github.benmanes.caffeine.cache.LoadingCache
 import com.github.benmanes.caffeine.cache.RemovalCause
 import grails.util.Holders
+import groovy.transform.NamedVariant
 import groovy.transform.ToString
 import groovy.transform.TupleConstructor
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
 import org.slf4j.event.Level
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
@@ -84,6 +89,17 @@ class S3StorageOperations implements StorageOperations {
 
     boolean pathStyleAccess
     String hostname = ''
+
+    // Micrometer metrics
+    private MeterRegistry meterRegistry
+    private Timer s3GetObjectTimer
+    private Timer s3PutObjectTimer
+    private Timer s3HeadObjectTimer
+    private Timer s3DeleteObjectTimer
+    private Timer s3ListObjectsTimer
+    private Timer s3CopyObjectTimer
+    private Counter s3OperationErrorCounter
+    private Counter s3OperationSuccessCounter
 
     private static final int maxConnections = Holders.getConfig().getProperty('aws.s3.max.connections', Integer, Integer.getInteger('au.org.ala.images.s3.max.connections', 500))
     private static final int maxErrorRetry = Holders.getConfig().getProperty('aws.s3.max.retry', Integer, Integer.getInteger('au.org.ala.images.s3.max.retry', 3))
@@ -194,6 +210,30 @@ class S3StorageOperations implements StorageOperations {
         String bucket
         String hostname
         boolean pathStyleAccess
+    }
+
+    @VisibleForTesting
+    S3StorageOperations() {
+
+    }
+
+    @NamedVariant
+    S3StorageOperations(String bucket, String region, String prefix, String accessKey, String secretKey,
+                        boolean containerCredentials, boolean publicRead, boolean privateAcl,
+                        boolean redirect, boolean pathStyleAccess, String hostname, String cloudfrontDomain) {
+        this.bucket = bucket
+        this.region = region
+        this.prefix = prefix
+        this.accessKey = accessKey
+        this.secretKey = secretKey
+        this.containerCredentials = containerCredentials
+        this.publicRead = publicRead
+        this.privateAcl = privateAcl
+        this.redirect = redirect
+        this.pathStyleAccess = pathStyleAccess
+        this.hostname = hostname
+        this.cloudfrontDomain = cloudfrontDomain
+        initializeMetrics()
     }
 
     private CacheKey getCacheKeyObject() {
@@ -372,6 +412,98 @@ class S3StorageOperations implements StorageOperations {
             return builder.build()
     }
 
+    /**
+     * Initialize Micrometer metrics for this S3 storage operation instance
+     */
+    private void initializeMetrics() {
+        try {
+            def context = Holders.grailsApplication?.mainContext
+
+            if (context) {
+                meterRegistry = context?.getBean(MeterRegistry)
+                if (meterRegistry) {
+                    String bucketTag = bucket
+                    String regionTag = region ?: "default"
+
+                    s3GetObjectTimer = Timer.builder("s3.operation.duration")
+                            .tag("bucket", bucketTag)
+                            .tag("region", regionTag)
+                            .tag("operation", "getObject")
+                            .description("Time taken for S3 GET object operations")
+                            .register(meterRegistry)
+
+                    s3PutObjectTimer = Timer.builder("s3.operation.duration")
+                            .tag("bucket", bucketTag)
+                            .tag("region", regionTag)
+                            .tag("operation", "putObject")
+                            .description("Time taken for S3 PUT object operations")
+                            .register(meterRegistry)
+
+                    s3HeadObjectTimer = Timer.builder("s3.operation.duration")
+                            .tag("bucket", bucketTag)
+                            .tag("region", regionTag)
+                            .tag("operation", "headObject")
+                            .description("Time taken for S3 HEAD object operations")
+                            .register(meterRegistry)
+
+                    s3DeleteObjectTimer = Timer.builder("s3.operation.duration")
+                            .tag("bucket", bucketTag)
+                            .tag("region", regionTag)
+                            .tag("operation", "deleteObject")
+                            .description("Time taken for S3 DELETE object operations")
+                            .register(meterRegistry)
+
+                    s3ListObjectsTimer = Timer.builder("s3.operation.duration")
+                            .tag("bucket", bucketTag)
+                            .tag("region", regionTag)
+                            .tag("operation", "listObjects")
+                            .description("Time taken for S3 LIST objects operations")
+                            .register(meterRegistry)
+
+                    s3CopyObjectTimer = Timer.builder("s3.operation.duration")
+                            .tag("bucket", bucketTag)
+                            .tag("region", regionTag)
+                            .tag("operation", "copyObject")
+                            .description("Time taken for S3 COPY object operations")
+                            .register(meterRegistry)
+
+                    s3OperationErrorCounter = Counter.builder("s3.operation.errors")
+                            .tag("bucket", bucketTag)
+                            .tag("region", regionTag)
+                            .description("Count of S3 operation errors")
+                            .register(meterRegistry)
+
+                    s3OperationSuccessCounter = Counter.builder("s3.operation.success")
+                            .tag("bucket", bucketTag)
+                            .tag("region", regionTag)
+                            .description("Count of successful S3 operations")
+                            .register(meterRegistry)
+
+                    log.debug("Micrometer metrics initialized for S3StorageOperations: {}", this)
+                } else {
+                    log.warn("MeterRegistry bean not found in application context; Micrometer metrics will not be recorded for S3StorageOperations: {}", this)
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to initialize Micrometer metrics for S3StorageOperations", e)
+        }
+    }
+
+    private <T> T recordMetric(Timer timer, Closure<T> operation) {
+        if (timer) {
+            try {
+                T result = timer.recordCallable(operation)
+                s3OperationSuccessCounter?.increment()
+                return result
+            } catch (Exception e) {
+                s3OperationErrorCounter?.increment()
+                throw e
+            }
+        } else {
+            return operation.call()
+        }
+    }
+
     // --- Helper methods to route via async client when forceAsyncCalls is enabled ---
 
     private S3Utilities getUtilities() {
@@ -388,17 +520,22 @@ class S3StorageOperations implements StorageOperations {
     }
 
     private HeadObjectResponse headObjectAsyncAware(String bkt, String key) {
-        if (forceAsyncCalls) {
-            return s3AsyncClient.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>).join()
+        return recordMetric(s3HeadObjectTimer) {
+            if (forceAsyncCalls) {
+                return s3AsyncClient.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>).join()
+            }
+            return s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>)
         }
-        return s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>)
     }
 
     private void copyObjectAsyncAware(Consumer<V2CopyObjectRequest.Builder> consumer) {
-        if (forceAsyncCalls) {
-            s3AsyncClient.copyObject(consumer).join()
-        } else {
-            s3Client.copyObject(consumer)
+        recordMetric(s3CopyObjectTimer) {
+            if (forceAsyncCalls) {
+                s3AsyncClient.copyObject(consumer).join()
+            } else {
+                s3Client.copyObject(consumer)
+            }
+            return null
         }
     }
 
@@ -411,55 +548,66 @@ class S3StorageOperations implements StorageOperations {
     }
 
     private void deleteObjectAsyncAware(String bkt, String key) {
-        if (forceAsyncCalls) {
-            s3AsyncClient.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>).join()
-        } else {
-            s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
+        recordMetric(s3DeleteObjectTimer) {
+            if (forceAsyncCalls) {
+                s3AsyncClient.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>).join()
+            } else {
+                s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
+            }
+            return null
         }
     }
 
     private void putObjectSmallAsyncAware(String bkt, String key, String contentType, byte[] bytes) {
-        def consumer = { PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(contentType) } as Consumer<PutObjectRequest.Builder>
-        if (forceAsyncCalls) {
-            s3AsyncClient.putObject(consumer, AsyncRequestBody.fromBytes(bytes)).join()
-        } else {
-            s3Client.putObject(consumer, RequestBody.fromBytes(bytes))
+        recordMetric(s3PutObjectTimer) {
+            def consumer = { PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(contentType) } as Consumer<PutObjectRequest.Builder>
+            if (forceAsyncCalls) {
+                s3AsyncClient.putObject(consumer, AsyncRequestBody.fromBytes(bytes)).join()
+            } else {
+                s3Client.putObject(consumer, RequestBody.fromBytes(bytes))
+            }
+            return null
         }
     }
 
     private void putObjectStreamAsyncAware(String bkt, String key, String contentType, InputStream stream, long length) {
-        def consumer = { PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(contentType) } as Consumer<PutObjectRequest.Builder>
-        if (forceAsyncCalls) {
-            // Use TransferManager with a blocking async request body to stream data
-            def transferManager = getS3TransferManager()
-            def blockingBody = BlockingOutputStreamAsyncRequestBody.builder().build()
-            def uploadReq = UploadRequest.builder()
-                    .putObjectRequest(PutObjectRequest.builder().bucket(bkt).key(key).contentType(contentType).build())
-                    .requestBody(blockingBody)
-                    .build()
-            def future = transferManager.upload(uploadReq).completionFuture()
-            blockingBody.outputStream().withStream { os ->
-                stream.transferTo(os)
+        recordMetric(s3PutObjectTimer) {
+            def consumer = { PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(contentType) } as Consumer<PutObjectRequest.Builder>
+            if (forceAsyncCalls) {
+                // Use TransferManager with a blocking async request body to stream data
+                def transferManager = getS3TransferManager()
+                def blockingBody = BlockingOutputStreamAsyncRequestBody.builder().build()
+                def uploadReq = UploadRequest.builder()
+                        .putObjectRequest(PutObjectRequest.builder().bucket(bkt).key(key).contentType(contentType).build())
+                        .requestBody(blockingBody)
+                        .build()
+                def future = transferManager.upload(uploadReq).completionFuture()
+                blockingBody.outputStream().withStream { os ->
+                    stream.transferTo(os)
+                }
+                future.join()
+            } else {
+                s3Client.putObject(consumer, RequestBody.fromInputStream(stream, length))
             }
-            future.join()
-        } else {
-            s3Client.putObject(consumer, RequestBody.fromInputStream(stream, length))
+            return null
         }
     }
 
     private byte[] getObjectBytesAsyncAware(String bkt, String key, Range range) {
-        def consumer = { V2GetObjectRequest.Builder b ->
-            b.bucket(bkt).key(key)
-            if (range != null && !range.empty) {
-                b.range("bytes=${range.start()}-${range.end()}")
+        return recordMetric(s3GetObjectTimer) {
+            def consumer = { V2GetObjectRequest.Builder b ->
+                b.bucket(bkt).key(key)
+                if (range != null && !range.empty) {
+                    b.range("bytes=${range.start()}-${range.end()}")
+                }
+            } as Consumer<V2GetObjectRequest.Builder>
+            if (forceAsyncCalls) {
+                def resp = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBytes()).join()
+                return resp.asByteArray()
+            } else {
+                def s3Object = s3Client.getObject(consumer)
+                return s3Object.withStream { it.bytes }
             }
-        } as Consumer<V2GetObjectRequest.Builder>
-        if (forceAsyncCalls) {
-            def resp = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBytes()).join()
-            return resp.asByteArray()
-        } else {
-            def s3Object = s3Client.getObject(consumer)
-            return s3Object.withStream { it.bytes }
         }
     }
 
@@ -469,30 +617,32 @@ class S3StorageOperations implements StorageOperations {
     }
 
     private ListResult listObjectsV2AsyncAware(String bkt, String prefix, String delimiter) {
-        if (!forceAsyncCalls) {
-            ListObjectsV2Iterable pages = s3Client.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
-            ListResult lr = new ListResult()
-            pages.each { page ->
-                lr.contents.addAll(page.contents())
-                lr.commonPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
+        return recordMetric(s3ListObjectsTimer) {
+            if (!forceAsyncCalls) {
+                ListObjectsV2Iterable pages = s3Client.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
+                ListResult lr = new ListResult()
+                pages.each { page ->
+                    lr.contents.addAll(page.contents())
+                    lr.commonPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
+                }
+                return lr
             }
-            return lr
+            ListResult result = new ListResult()
+            CountDownLatch latch = new CountDownLatch(1)
+            def publisher = s3AsyncClient.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
+            publisher.subscribe(new org.reactivestreams.Subscriber<ListObjectsV2Response>() {
+                org.reactivestreams.Subscription s
+                @Override void onSubscribe(org.reactivestreams.Subscription s) { this.s = s; s.request(Long.MAX_VALUE) }
+                @Override void onNext(ListObjectsV2Response page) {
+                    result.contents.addAll(page.contents())
+                    result.commonPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
+                }
+                @Override void onError(Throwable t) { latch.countDown(); }
+                @Override void onComplete() { latch.countDown(); }
+            })
+            latch.await()
+            return result
         }
-        ListResult result = new ListResult()
-        CountDownLatch latch = new CountDownLatch(1)
-        def publisher = s3AsyncClient.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
-        publisher.subscribe(new org.reactivestreams.Subscriber<ListObjectsV2Response>() {
-            org.reactivestreams.Subscription s
-            @Override void onSubscribe(org.reactivestreams.Subscription s) { this.s = s; s.request(Long.MAX_VALUE) }
-            @Override void onNext(ListObjectsV2Response page) {
-                result.contents.addAll(page.contents())
-                result.commonPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
-            }
-            @Override void onError(Throwable t) { latch.countDown(); }
-            @Override void onComplete() { latch.countDown(); }
-        })
-        latch.await()
-        return result
     }
 
     @Override
@@ -654,7 +804,12 @@ class S3StorageOperations implements StorageOperations {
                 rawStream = s3Client.getObject(consumer)
             }
 
-            return rawStream
+            // Wrap the stream with metrics tracking if meterRegistry is available
+            if (meterRegistry != null) {
+                return new MetricsTrackingInputStream(rawStream, meterRegistry, bucket, region)
+            } else {
+                return rawStream
+            }
         } catch (CompletionException e) {
             def cause = e.cause
             if (cause instanceof NoSuchKeyException) {
@@ -813,7 +968,7 @@ class S3StorageOperations implements StorageOperations {
     }
 
     ByteSinkFactory byteSinkFactory(String uuid, Map<String, String> tags, String... prefixes) {
-        return new S3ByteSinkFactory(s3AsyncClient, s3TransferManager, apiCallTimeout, storagePathStrategy(), bucket, uuid, tags, prefixes)
+        return new S3ByteSinkFactory(s3AsyncClient, s3TransferManager, apiCallTimeout, storagePathStrategy(), bucket, uuid, tags, meterRegistry, region, prefixes)
     }
 
     @Override

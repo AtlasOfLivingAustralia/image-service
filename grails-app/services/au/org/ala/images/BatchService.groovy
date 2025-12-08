@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.metrics.MetricsSupport
 import grails.gorm.transactions.NotTransactional
 import groovyx.gpars.GParsPool
 import jsr166y.ForkJoinPool
@@ -13,7 +14,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
 
-class BatchService {
+class BatchService implements MetricsSupport {
 
     private final static Map<String, BatchStatus> _Batches = [:]
     public static final String LOADING = "LOADING"
@@ -284,6 +285,7 @@ class BatchService {
 
                 boolean hasField =  currRecord.hasField(MULTIMEDIA_ITEMS)
                 if (hasField) {
+                    log.trace("loadBatchFile: Gathering records from multimedia items")
                     def multimediaRecords = currRecord.get(MULTIMEDIA_ITEMS);
                     // Here we can add in data manipulation like anonymization etc
                     multimediaRecords.each { GenericRecord record ->
@@ -309,7 +311,7 @@ class BatchService {
                         }
                     }
                 } else {
-
+                    log.trace("loadBatchFile: Gathering record from single item")
                     def identifier = currRecord.get("identifier")
 
                     if (identifier && !identifiers.contains(identifier)) {
@@ -331,16 +333,19 @@ class BatchService {
                 }
                 batchSize ++
             }
+            log.trace("loadBatchFile: Processing batch of size ${batch.size()} for batch file id ${id}")
 //            List<Map<String, Object>> results //= Collections.synchronizedList(new ArrayList<Map<String, Object>>());
 
             // TODO: Use virtual threads
             //def pool = Executors.newVirtualThreadPerTaskExecutor()
             List<Map<String, Object>> results = GParsPool.withExistingPool(getBackgroundTasksPool(batchThreads)) {
                 batch.collectParallel { image ->
+                    log.trace("loadBatchFile: About to execute image ${image.identifier} for batch file id ${id}")
                     def result = execute(image, BATCH_UPDATE_USERNAME)
                     if (batchThrottleInMillis > 0){
                         Thread.sleep(batchThrottleInMillis)
                     }
+                    log.trace("loadBatchFile: Completed execute image ${image.identifier} for batch file id ${id}")
                     result
                 }
             }
@@ -361,6 +366,7 @@ class BatchService {
                 }
             }
 
+            log.trace("loadBatchFile: Completed a batch for batch file id ${id}. ProcessedCount: ${processedCount}, NewImageCount: ${newImageCount}, ErrorCount: ${errorCount}, MetadataUpdateCount: ${metadataUpdateCount}")
             BatchFile.withNewTransaction {
                 BatchFile batchFile = BatchFile.get(id)
                 batchFile.metadataUpdates = metadataUpdateCount
@@ -368,7 +374,11 @@ class BatchService {
                 batchFile.errorCount = errorCount
                 batchFile.processedCount = processedCount
                 batchFile.timeTakenToLoad = Duration.between(start, Instant.now()).toMillis() / 1000
-                batchFile.save()
+                try {
+                    batchFile.save(failOnError: true)
+                } catch (e) {
+                    log.error("Problem saving batch file status for id ${id}: " + e.getMessage(), e)
+                }
             }
 
             completed = !reader.hasNext()
@@ -387,13 +397,17 @@ class BatchService {
     Map execute(Map imageSource,  String _userId) {
 
         try {
+            log.trace("execute: Executing image upload for identifier ${imageSource.identifier} by user ${_userId}")
             def imageUpdateResult = imageService.uploadImage(imageSource, _userId)
+            log.trace("execute: Completed image upload for identifier ${imageSource.identifier} by user ${_userId} with result: ${imageUpdateResult}")
             if (imageUpdateResult && imageUpdateResult.success && imageUpdateResult.image && !imageUpdateResult.isDuplicate) {
                 if (imageUpdateResult.metadataUpdated) {
+                    log.trace("execute: Scheduling image index for metadata update for image id ${imageUpdateResult.image.id}")
                     imageService.scheduleImageIndex(imageUpdateResult.image.id)
                 }
 
                 if (!imageUpdateResult.alreadyStored) {
+                    log.trace("execute: Scheduling artifact generation and metadata persist for new image id ${imageUpdateResult.image.id}")
 //                    imageService.scheduleArtifactGeneration(imageUpdateResult.image.id, _userId)
                     imageService.scheduleImageIndex(imageUpdateResult.image.id)
                     //Only run for new images......
@@ -405,6 +419,7 @@ class BatchService {
                             _userId)
                 }
             }
+            log.trace("execute: Finished processing image upload for identifier ${imageSource.identifier} by user ${_userId}")
             imageUpdateResult
         } catch (Exception e){
             // not sure where this exception comes from
