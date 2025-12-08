@@ -864,7 +864,7 @@ unnest(all_urls) AS unnest_url;
             if (!result) {
                 Long defaultStorageLocationID
                 StorageOperations operations
-                Image.withTransaction(readOnly: true) {
+                Image.withTransaction { // this should be readonly but the settingService may create the setting if it does not exist
                     defaultStorageLocationID = settingService.getStorageLocationDefault()
                     operations = StorageLocation.get(defaultStorageLocationID)?.asStandaloneStorageOperations()
                 }

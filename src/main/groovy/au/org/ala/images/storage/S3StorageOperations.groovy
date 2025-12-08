@@ -19,6 +19,7 @@ import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import org.slf4j.event.Level
+import org.springframework.beans.factory.NoSuchBeanDefinitionException
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
@@ -484,7 +485,9 @@ class S3StorageOperations implements StorageOperations {
                     log.warn("MeterRegistry bean not found in application context; Micrometer metrics will not be recorded for S3StorageOperations: {}", this)
                 }
             }
-        } catch (Exception e) {
+        } catch(NoSuchBeanDefinitionException e) {
+            log.warn("MeterRegistry bean not found in application context; Micrometer metrics will not be recorded for S3StorageOperations: {}", this)
+        } catch(Exception e) {
             log.warn("Failed to initialize Micrometer metrics for S3StorageOperations", e)
         }
     }

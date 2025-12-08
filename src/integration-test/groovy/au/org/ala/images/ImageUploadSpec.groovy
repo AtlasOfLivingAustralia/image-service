@@ -44,6 +44,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
     void "test home page"() {
         when:
         def request = HttpRequest.create(HttpMethod.GET,"${baseUrl}")
+                .header('User-Agent', userAgent())
         HttpResponse uploadResponse = rest.exchange(request, String)
         println(uploadResponse.status)
         then:
@@ -54,6 +55,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         when:
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImagesFromUrls")
                 .contentType("application/json")
+                .header('User-Agent', userAgent())
                 .body([:])
         HttpResponse resp = rest.exchange(request, String)
         then:
@@ -69,6 +71,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
             .contentType("application/x-www-form-urlencoded")
+            .header('User-Agent', userAgent())
             .body(form)
         HttpResponse resp = rest.exchange(request, String)
         then:
@@ -83,6 +86,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImagesFromUrls")
                 .contentType("application/json")
+                .header('User-Agent', userAgent())
                 .body([images:[[sourceURL:url1], [sourceURL: url2]]])
         HttpResponse resp = rest.exchange(request, String)
 
@@ -101,6 +105,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImagesFromUrls")
                 .contentType("application/json")
+                .header('User-Agent', userAgent())
                 .body([images:[[sourceUrl:url1], [sourceUrl: url2]]])
         HttpResponse resp = rest.exchange(request, String)
 
@@ -124,6 +129,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         form.add("imageUrl", "https://static.inaturalist.org/photos/35335345/original.jpeg?1555821308")
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
             .contentType("application/x-www-form-urlencoded")
+            .header('User-Agent', userAgent())
             .body(form)
 
         HttpResponse resp = rest.exchange(request, String)
@@ -133,6 +139,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         form2.add("imageUrl", "https://static.inaturalist.org/photos/35335341/original.jpeg?1555821307")
         def request2 = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
             .contentType("application/x-www-form-urlencoded")
+            .header('User-Agent', userAgent())
             .body(form2)
         HttpResponse resp2 = rest.exchange(request2, String)
         def jsonResponse2 = new JsonSlurper().parseText(resp2.body())
@@ -152,6 +159,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
                 .contentType("multipart/form-data")
+                .header('User-Agent', userAgent())
                 .body(MultipartBody.builder()
                         .addPart("image", imageFile)
                         .build())

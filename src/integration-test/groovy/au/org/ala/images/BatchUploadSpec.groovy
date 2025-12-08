@@ -65,6 +65,7 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         int start = System.currentTimeSeconds()
         // Poll until the image tiler has run on the last image in the batch upload
         def upload = findBatchFileUpload(response.batchID, start)
+        start = System.currentTimeSeconds()
         def image = findImage(imageUrl, true, start)
 
         then:
@@ -117,7 +118,7 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         // Poll until the image tiler has run on the last image in the batch upload
         def upload = findBatchFileUpload(response.batchID, start)
         def images = imageUrls.flatten().collect {
-
+            start = System.currentTimeSeconds()
             findImage(it, true, start)
         }
 
@@ -174,6 +175,7 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         // Poll until the image tiler has run on the last image in the batch upload
         def upload = findBatchFileUpload(response.batchID, start)
         def images = imageUrls.flatten().toSet().collect {
+            start = System.currentTimeSeconds()
             findImage(it, true, start)
         }
 
@@ -228,7 +230,7 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         int start = System.currentTimeSeconds()
         // Poll until the image tiler has run on the last image in the batch upload
         def upload = findBatchFileUpload(response.batchID, start)
-
+        start = System.currentTimeSeconds()
         def originalImage = findImage(imageUrls[0][0][(IDENTIFIER)], true, start)
 
         then:

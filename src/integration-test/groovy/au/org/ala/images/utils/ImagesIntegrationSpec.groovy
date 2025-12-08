@@ -133,4 +133,8 @@ abstract class ImagesIntegrationSpec extends Specification {
         setNewValue(BaseClient.class.getDeclaredField("profileCreator"), profileCreator, alaAuthClient)
     }
 
+    def userAgent() {
+        return "image-service-integration-test/${config.getProperty('info.app.version', String, '1.0')}"
+    }
+
 }

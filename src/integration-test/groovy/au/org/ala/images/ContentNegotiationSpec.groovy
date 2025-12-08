@@ -42,6 +42,7 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
                 .contentType("application/x-www-form-urlencoded")
+                .header('User-Agent', userAgent())
                 .body(form)
         HttpResponse uploadResponse = rest.exchange(request, String)
 
@@ -66,6 +67,7 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
         when:
         def request = HttpRequest.create(HttpMethod.GET,"${baseUrl}/image/${imageId}")
             .accept(MediaType.APPLICATION_JSON_TYPE)
+            .header('User-Agent', userAgent())
         HttpResponse uploadResponse = rest.exchange(request, String)
 
         println("response received")
@@ -87,6 +89,7 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
         when:
         def request = HttpRequest.create(HttpMethod.GET,"${baseUrl}/image/ABC")
             .accept(MediaType.APPLICATION_JSON_TYPE)
+            .header('User-Agent', userAgent())
         HttpResponse resp = rest.exchange(request, String)
 
         then:
@@ -105,6 +108,7 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
         when:
         def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/ABC")
             .accept(MediaType.APPLICATION_JSON_TYPE)
+            .header('User-Agent', userAgent())
         HttpResponse resp = rest.exchange(request, String)
 
         then:
@@ -124,6 +128,7 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/${imageId}")
                 .accept("image/jpeg")
+                .header('User-Agent', userAgent())
 
         def resp = rest.exchange(request, byte[])
         def imageInBytes = resp.body()
@@ -148,6 +153,7 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
         when:
         def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/ABC")
                 .accept("image/jpeg")
+                .header('User-Agent', userAgent())
         rest.exchange(request, byte[])
 
         then:
