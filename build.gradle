@@ -9,7 +9,7 @@ plugins {
     id "application"
     id "eclipse"
     id "maven-publish"
-    id "com.gorylenko.gradle-git-properties" version "2.3.2"
+    id "com.gorylenko.gradle-git-properties" version "2.5.4"
     id "org.flywaydb.flyway" version "9.4.0"
 }
 
@@ -112,6 +112,7 @@ dependencies {
     implementation "org.flywaydb:flyway-core:9.4.0"
     implementation 'org.grails.plugins:cache-headers:2.0.2'
     runtimeOnly 'org.codehaus.groovy:groovy-dateutil'
+    runtimeOnly 'org.codehaus.groovy:groovy-datetime'
     implementation 'dk.glasius:external-config:3.1.1'
 
     implementation 'org.grails.plugins:quartz:3.0.0'
@@ -150,6 +151,9 @@ dependencies {
 
     implementation 'org.apache.avro:avro:1.11.4'
     implementation 'org.xerial.snappy:snappy-java:1.1.10.4'
+
+    // Retry library for exponential backoff
+    implementation 'dev.failsafe:failsafe:3.3.2'
 
     // Swagger
     implementation 'au.org.ala.plugins:openapi:1.1.0'
