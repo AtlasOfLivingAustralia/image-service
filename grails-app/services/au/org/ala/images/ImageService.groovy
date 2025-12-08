@@ -1,12 +1,14 @@
 package au.org.ala.images
 
 import au.org.ala.images.metadata.MetadataExtractor
+import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.thumb.ThumbnailingResult
 import au.org.ala.images.tiling.TileFormat
 import com.google.common.hash.Hashing
 import com.google.common.io.ByteSource
 import com.google.common.io.Files
+import com.google.common.util.concurrent.Striped
 import com.opencsv.CSVParserBuilder
 import com.opencsv.CSVWriterBuilder
 import com.opencsv.RFC4180ParserBuilder
@@ -37,13 +39,17 @@ import org.apache.commons.imaging.formats.tiff.constants.ExifTagConstants
 import org.apache.commons.imaging.formats.tiff.taginfos.TagInfo
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
+import org.apache.commons.lang3.RandomUtils
 import org.apache.commons.lang3.StringUtils
 import org.apache.tika.mime.MimeType
 import org.apache.tika.mime.MimeTypes
 import org.codehaus.groovy.runtime.StackTraceUtils
 import org.hibernate.FlushMode
 import org.hibernate.ScrollMode
+import org.hibernate.StaleStateException
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.orm.hibernate5.HibernateOptimisticLockingFailureException
+import org.springframework.transaction.TransactionStatus
 import org.springframework.web.multipart.MultipartFile
 
 import javax.annotation.PostConstruct
@@ -57,13 +63,13 @@ import java.sql.Timestamp
 import java.sql.Types
 import java.text.SimpleDateFormat
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.locks.Lock
 
 import static grails.web.http.HttpHeaders.USER_AGENT
 import static java.nio.file.Files.createTempFile
 
 @Slf4j
-class ImageService {
+class ImageService implements MetricsSupport {
 
     static final String EXPORT_IMAGES_SQL = """SELECT * FROM export_images;"""
     static final String EXPORT_MAPPING_SQL = """SELECT * FROM export_mapping;"""
@@ -195,7 +201,25 @@ unnest(all_urls) AS unnest_url;
     @Value('${batch.upload.file.threshold:10485760}')
     long fileCacheThreshold = 1024 * 1024 * 10 // 10MB
 
+    @Value('${back.optimisticLocking.maxRetries:3}')
+    int maxLockingRetries = 3
+
+    @Value('${batch.optimisticLocking.maxSleepMs:2000}')
+    int maxLockingSleepMs = 2000
+
+    @Value('${batch.optimisticLocking.stripes:250}')
+    int optimisticLockingStripes = 250
+
     Map imagePropertyMap = null
+
+    private Striped<Lock> imageUrlLocks// = Striped.lock(256)
+    private Striped<Lock> md5HashLocks// = Striped.lock(256)
+
+    @PostConstruct
+    def initStripes() {
+        imageUrlLocks = Striped.lock(optimisticLockingStripes)
+        md5HashLocks = Striped.lock(optimisticLockingStripes)
+    }
 
     @PostConstruct
     def initImagePropertyMap() {
@@ -501,104 +525,179 @@ unnest(all_urls) AS unnest_url;
     }
 
     boolean isBadUrl(String url){
-        FailedUpload.findByUrl(url) != null
+        FailedUpload.countByUrl(url) > 0
     }
 
 //    @Transactional
     @NotTransactional // transactions managed in method
     Map uploadImage(Map imageSource, String uploader){
+        log.trace("uploadImage: called with imageSource: {}", imageSource)
+        return recordTime('image.upload', 'Time to upload and process an image') {
+            log.trace("uploadImage: processing imageSource: {}", imageSource)
+            try {
+                log.trace("uploadImage: getting imageUrl from imageSource: {}", imageSource)
+                def imageUrl = getImageUrl(imageSource) as String
+                log.trace("uploadImage: obtained imageUrl: {}", imageUrl)
 
-        def imageUrl = getImageUrl(imageSource) as String
-
-        def result
-        if (imageUrl) {
-
-            Image image = null
-
-            // Image.withTransaction {}
-            result = Image.withTransaction {
-                image = findImageInImageServiceUrl(imageUrl)
-
-                // Its not an image service URL, check DB
-                // For full URLs, we can treat these as unique identifiers
-                // For filenames (non URLs), use the filename and dataResourceUid to unique identify
-                if (!image){
-                    if (imageUrl.startsWith("http")){
-                        image = Image.byOriginalFileOrAlternateFilename(imageUrl) // findByOriginalFilename(imageUrl)
-                    } else {
-                        image = Image.findByOriginalFilenameAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
-                    }
-                }
-
-                if (!image && isBadUrl(imageUrl)) {
-                    log.debug("We have already attempted to load {} without success. Skipping.", imageUrl)
-                    return [success: false, alreadyStored: false]
-                }
-
-                if (image) {
-                    def metadataUpdated = false
-
-                    SUPPORTED_UPDATE_FIELDS.each { updateField ->
-                        if (image[updateField] != imageSource[updateField]){
-                            image[updateField] = imageSource[updateField]
-                            metadataUpdated = true
-                        }
-                    }
-
-                    if (metadataUpdated){
-                        image.save()
-                    }
-
-                    //update metadata if required
-                    return [success: true,
-                     imageId: image.imageIdentifier,
-                     image: image,
-                     alreadyStored: true,
-                     metadataUpdated: metadataUpdated,
-                     isDuplicate: image.alternateFilename?.contains(imageUrl) ?: false
-                    ]
-                }
-                return null // new image
-            }
-            // end Image.withTransaction {}
-
-            if (!result) {
-                def bytes
-                try {
-                    def url = new URL(imageUrl)
-                    bytes = createByteSourceFromUrl(url, null, imageUrl)
-                } catch (Exception e) {
-                    log.error("Unable to load image from URL: {}. Logging as failed URL, Exception: {}", imageUrl, e.message)
-                    logBadUrl(imageUrl) // transaction
-                    result = [success: false, alreadyStored: false]
-                }
-                if (!result) {
-                    result = [:]
+                def result
+                if (imageUrl) {
+                    // Use striped lock to prevent concurrent processing of the same imageUrl
+                    log.trace("uploadImage: acquiring lock for imageUrl: {}", imageUrl)
+                    def lock = imageUrlLocks.get(imageUrl)
+                    log.trace("uploadImage: got lock for imageUrl: {}, lock: {}", imageUrl, lock)
+                    lock.lock()
+                    log.trace("uploadImage: locked lock for imageUrl: {}, lock: {}", imageUrl, lock)
                     try {
-                        def contentType = detectMimeType(bytes, imageUrl)
-                        ImageStoreResult storeResult = storeImageBytes(bytes, imageUrl, bytes.size(),
-                                contentType, uploader, true, imageSource)
-                        result.imageId = storeResult.image.imageIdentifier
-                        result.image = storeResult.image
-                        result.success = true
-                        result.alreadyStored = storeResult.alreadyStored
-                        result.isDuplicate = storeResult.isDuplicate
-                        result.metadataUpdated = false
-                    } catch (Exception ex) {
-                        //log to batch update error file
-                        log.error("Problem storing image - ", ex)
-                        result.message = ex.message
-                        result.success = false
-                    } finally {
-                        bytes.close()
-                    }
-                }
-            }
-        } else {
-            result = [success: false]
-        }
+                        Image image = null
 
-        return result
+                        int maxRetries = maxLockingRetries
+                        int retryCount = 0
+                        while (retryCount < maxRetries) {
+                            try {
+                                log.trace("uploadImage: checking for existing image for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
+                                // This should be a new transaction anyway but be explicit just in case
+                                result = Image.withNewSession { Image.withNewTransaction { TransactionStatus status ->
+                                    log.trace("uploadImage: inside Image.withTransaction for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
+                                    image = findImageInImageServiceUrl(imageUrl)?.refresh()
+                                    log.trace("uploadImage: findImageInImageServiceUrl returned image: {} for imageUrl: {} (attempt {}/{})", image, imageUrl, retryCount + 1, maxRetries)
+
+                                    // Its not an image service URL, check DB
+                                    // For full URLs, we can treat these as unique identifiers
+                                    // For filenames (non URLs), use the filename and dataResourceUid to unique identify
+                                    if (!image){
+                                        Image temp
+                                        if (imageUrl.startsWith("http")){
+                                            temp = Image.byOriginalFileOrAlternateFilename(imageUrl) // findByOriginalFilename(imageUrl)
+                                        } else {
+                                            temp = Image.findByOriginalFilenameAndDataResourceUid(imageUrl, imageSource.dataResourceUid, [ cache: false ])
+                                        }
+                                        image = temp?.refresh()
+                                    }
+                                    log.trace("uploadImage: after DB lookup, image: {} for imageUrl: {} (attempt {}/{})", image, imageUrl, retryCount + 1, maxRetries)
+
+                                    if (!image && isBadUrl(imageUrl)) {
+                                        log.debug("We have already attempted to load {} without success. Skipping.", imageUrl)
+                                        incrementCounter('image.upload.skipped', 'Images skipped due to bad URL')
+                                        return [success: false, alreadyStored: false]
+                                    }
+
+                                    if (image) {
+                                        log.trace("uploadImage: found existing image: {} for imageUrl: {} (attempt {}/{})", image, imageUrl, retryCount + 1, maxRetries)
+                                        def metadataUpdated = false
+
+                                        SUPPORTED_UPDATE_FIELDS.each { updateField ->
+                                            def propertyName = hasImageCaseFriendlyProperty(image, updateField)
+                                            if (propertyName) {
+                                                if (image[propertyName] != imageSource[updateField]){
+                                                    image[propertyName] = imageSource[updateField]
+                                                    metadataUpdated = true
+                                                }
+                                            } else {
+                                                log.warn("uploadImage: image does not have property: {} for imageUrl: {} (attempt {}/{})", updateField, imageUrl, retryCount + 1, maxRetries)
+                                            }
+                                        }
+
+                                        log.trace("uploadImage: metadataUpdated={} for imageUrl: {} (attempt {}/{})", metadataUpdated, imageUrl, retryCount + 1, maxRetries)
+                                        if (metadataUpdated){
+                                            if (image.isDirty()) {
+                                                image.save()
+                                                status.flush()
+                                            } else {
+                                                log.trace("uploadImage: metadataUpdated but image not dirty, no save required for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
+                                            }
+                                        } else {
+                                            status.setRollbackOnly()
+                                        }
+                                        log.trace("uploadImage: completed metadata update for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
+
+                                        incrementCounter('image.upload.duplicate', 'Duplicate image uploads')
+                                        //update metadata if required
+                                        log.trace("uploadImage: returning existing image for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
+                                        return [success: true,
+                                         imageId: image.imageIdentifier,
+                                         image: image,
+                                         alreadyStored: true,
+                                         metadataUpdated: metadataUpdated,
+                                         isDuplicate: image.alternateFilename?.contains(imageUrl) ?: false
+                                        ]
+                                    }
+                                    log.trace("uploadImage: no existing image found for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
+                                    return null // new image
+                                } } // end transaction and session
+                                break // Success, exit retry loop
+                            } catch (HibernateOptimisticLockingFailureException | StaleStateException ex) {
+                                retryCount++
+                                if (retryCount >= maxRetries) {
+                                    log.error("Failed to update image metadata for {} after {} retries due to optimistic locking failure", imageUrl, maxRetries)
+                                    throw ex
+                                } else {
+                                    def sleepTime = RandomUtils.nextInt(0, maxLockingSleepMs)
+                                    log.warn("Optimistic locking failure updating metadata for {}, retry {}/{}", imageUrl, retryCount, maxRetries)
+                                    log.trace("Sleeping for {} ms before retrying", sleepTime)
+                                    Thread.sleep(sleepTime) // Brief exponential backoff
+                                    result = null // Reset result to retry
+                                }
+                            }
+                        }
+                        // end Image.withTransaction {}
+
+                        if (!result) {
+                            def bytes
+                            try {
+                                log.trace("uploadImage: loading image bytes from URL: {}", imageUrl)
+                                def url = new URL(imageUrl)
+                                bytes = createByteSourceFromUrl(url, null, imageUrl)
+                                log.trace("uploadImage: loaded image bytes from URL: {}", imageUrl)
+                            } catch (Exception e) {
+                                log.error("Unable to load image from URL: {}. Logging as failed URL, Exception: {}", imageUrl, e.message)
+                                logBadUrl(imageUrl) // transaction
+                                result = [success: false, alreadyStored: false]
+                            }
+                            if (!result) {
+                                result = [:]
+                                try {
+                                    log.trace("uploadImage: detecting content type for URL: {}", imageUrl)
+                                    def contentType = detectMimeType(bytes, imageUrl)
+                                    log.trace("uploadImage: storing image bytes for URL: {} with content type", imageUrl, contentType)
+                                    ImageStoreResult storeResult = storeImageBytes(bytes, imageUrl, bytes.size(),
+                                            contentType, uploader, true, imageSource)
+                                    log.trace("uploadImage: stored image bytes for URL: {}", imageUrl)
+                                    result.imageId = storeResult.image.imageIdentifier
+                                    result.image = storeResult.image
+                                    result.success = true
+                                    result.alreadyStored = storeResult.alreadyStored
+                                    result.isDuplicate = storeResult.isDuplicate
+                                    result.metadataUpdated = false
+                                } catch (Exception ex) {
+                                    //log to batch update error file
+                                    log.error("Problem storing image - ", ex)
+                                    result.message = ex.message
+                                    result.success = false
+                                    recordError('uploadImage', [error: ex.class.simpleName])
+                                } finally {
+                                    bytes.close()
+                                }
+                            }
+                        }
+                    } finally {
+                        lock.unlock()
+                        log.trace("uploadImage: unlocked lock for imageUrl: {}, lock: {}", imageUrl, lock)
+                    }
+                } else {
+                    result = [success: false]
+                }
+
+                if (result?.success) {
+                    log.trace("uploadImage: successful upload for imageUrl: {}", imageUrl)
+                    recordSuccess('uploadImage', [alreadyStored: result.alreadyStored?.toString() ?: 'false'])
+                }
+                log.trace("uploadImage: returning result for imageUrl: {}: {}", imageUrl, result)
+                return result
+            } catch (Exception e) {
+                recordError('uploadImage', [error: e.class.simpleName])
+                throw e
+            }
+        }
     }
 
     int getImageTaskQueueLength() {
@@ -650,7 +749,6 @@ unnest(all_urls) AS unnest_url;
         }
     }
 
-    private final ReentrantLock lock = new ReentrantLock();
 
     /**
      * Store the bytes for an image.
@@ -667,77 +765,124 @@ unnest(all_urls) AS unnest_url;
     @NotTransactional // transactions managed in method
     ImageStoreResult storeImageBytes(ByteSource bytes, String originalFilename, long filesize, String contentType,
                                      String uploaderId, boolean createDuplicates, Map metadata = [:]) {
-
+        log.trace("storeImageBytes: called with originalFilename: {}, filesize: {}, contentType: {}, uploaderId: {}, createDuplicates: {}, metadata: {}", originalFilename, filesize, contentType, uploaderId, createDuplicates, metadata)
         ImageStoreResult result
+
+        def md5Hash = bytes.hash(Hashing.md5()).asBytes().encodeAsHex() // DigestUtils.digest(DigestUtils.getDigest('MD5'), bytes.openStream())
+        log.trace("storeImageBytes: calculated MD5 hash: {} for originalFilename: {}", md5Hash, originalFilename)
+
+        // Use striped lock to prevent concurrent processing of the same md5Hash
+        def lock = md5HashLocks.get(md5Hash)
+        lock.lock()
         try {
-//            lock.lock() // TODO Remove this or change this to countdown latch?
-
-            def md5Hash = bytes.hash(Hashing.md5()).asBytes().encodeAsHex() // DigestUtils.digest(DigestUtils.getDigest('MD5'), bytes.openStream())
-
             def preExisting = false
             def isDuplicate = false
-            StorageLocation sl
-            StorageOperations operations
-            //check for existing image using MD5 hash
-            result = Image.withTransaction {
-                def image = Image.findByContentMD5Hash(md5Hash)
-                Long defaultStorageLocationID = settingService.getStorageLocationDefault()
-                sl = StorageLocation.get(defaultStorageLocationID)
-                operations = sl.asStandaloneStorageOperations()
-
-                preExisting = image != null
-                if (image) {
-                    boolean updated = false
-                    if (image.dateDeleted) {
-                        log.warn("Deleted Image ${image.originalFilename} has been re-uploaded.  Will undelete.")
-                        image.dateDeleted = null //reset date deleted if image resubmitted...
-                        updated = true
-                    }
-                    if (createDuplicates && image.originalFilename != originalFilename) {
-                        log.warn("Existing image found at different URL ${image.originalFilename} to ${originalFilename}. Will add duplicate.")
-
-                        // we have seen this image before, but the URL has changed at source
-                        // so lets update it so that subsequent loads dont need
-                        // to re-download this image
-                        if (image.alternateFilename == null) {
-                            image.alternateFilename = []
-                            updated = true
+            //check for existing image using MD5 hash with retry logic for optimistic locking
+            int maxRetries = maxLockingRetries
+            int retryCount = 0
+            while (retryCount < maxRetries) {
+                try {
+                    result = Image.withNewSession { Image.withNewTransaction { TransactionStatus status ->
+                        log.trace("storeImageBytes: inside Image.withTransaction for originalFilename: {} (attempt {}/{})", originalFilename, retryCount + 1, maxRetries)
+                        def image = recordTime("image.lookup.md5", "Time to lookup image by MD5 hash") {
+                            Image.findByContentMD5Hash(md5Hash, [ cache: false ])?.refresh()
                         }
-                        if (!image.alternateFilename.contains(originalFilename)) {
-                            image.alternateFilename += originalFilename
-                            updated = true
+                        log.trace("storeImageBytes: lookup by MD5 hash returned image: {} for originalFilename: {} (attempt {}/{})", image, originalFilename, retryCount + 1, maxRetries)
+
+                        preExisting = image != null
+                        if (image) {
+                            boolean updated = false
+                            if (image.dateDeleted) {
+                                log.warn("Deleted Image ${image.originalFilename} has been re-uploaded.  Will undelete.")
+                                image.dateDeleted = null //reset date deleted if image resubmitted...
+                                updated = true
+                            }
+                            if (createDuplicates && image.originalFilename != originalFilename) {
+                                log.info("Existing image found at different URL ${image.originalFilename} to ${originalFilename}. Will add duplicate.")
+
+                                // we have seen this image before, but the URL has changed at source
+                                // so lets update it so that subsequent loads dont need
+                                // to re-download this image
+                                if (image.alternateFilename == null) {
+                                    image.alternateFilename = []
+                                    updated = true
+                                }
+                                if (!image.alternateFilename.contains(originalFilename)) {
+                                    image.alternateFilename += originalFilename
+                                    updated = true
+                                }
+                                isDuplicate = true
+                            } else if (!createDuplicates && image.originalFilename != originalFilename) {
+                                log.warn("Got a pre-existing image to store {} but it already exists at {}", originalFilename, image.imageIdentifier)
+                            } else {
+                                log.info("Image already exists for ${originalFilename}.")
+                            }
+
+                            try {
+                                if (updated) {
+                                    image.save(failOnError: true)
+                                    status.flush()
+                                }
+                            } catch (Exception ex) {
+                                if (ex instanceof HibernateOptimisticLockingFailureException || ex instanceof StaleStateException) {
+                                    throw ex //rethrow to be handled by outer retry logic
+                                } else {
+                                    // other exception saving image
+                                    log.error("Problem updating image {}  -", originalFilename, ex)
+                                }
+                            }
+
+                            return new ImageStoreResult(image, preExisting, isDuplicate)
+                        } else {
+                            // no existing image found,
+                            return null
                         }
-                        isDuplicate = true
+                    } }// transaction -> session
+                    log.trace("storeImageBytes: completed Image.withTransaction for originalFilename: {} (attempt {}/{})", originalFilename, retryCount + 1, maxRetries)
+                    break // Success, exit retry loop
+                } catch (HibernateOptimisticLockingFailureException | StaleStateException ex) {
+                    retryCount++
+                    if (retryCount >= maxRetries) {
+                        log.error("Failed to update image {} after {} retries due to optimistic locking failure. Treating as already stored.", originalFilename, maxRetries)
+                        // On final retry failure, just return that it's a duplicate without updating
+                        // Needs a new session because we're outside the previous transaction
+                        // which feels a bit wrong but avoids further complications
+                        def image = Image.withNewSession { Image.findByContentMD5Hash(md5Hash) }
+                        if (image) {
+                            return new ImageStoreResult(image, true, true)
+                        }
+                        throw ex
                     } else {
-                        log.warn("Got a pre-existing image to store {} but it already exists at {}", originalFilename, image.imageIdentifier)
+                        def sleepTime = RandomUtils.nextInt(0, maxLockingSleepMs)
+                        log.warn("Optimistic locking failure updating image {}, retry {}/{}", originalFilename, retryCount, maxRetries)
+                        log.debug("Sleeping for {} ms before retrying", sleepTime)
+                        Thread.sleep(sleepTime) // Brief exponential backoff
                     }
-                    try {
-                        if (updated) {
-                            image.save(failOnError: true)
-                        }
-                    } catch (Exception ex) {
-                        log.error("Problem updating image {}  -", originalFilename, ex)
-                    }
-
-                    return new ImageStoreResult(image, preExisting, isDuplicate)
-                } else {
-                    // no existing image found,
-                    return null
                 }
             }
 
             if (!result) {
+                Long defaultStorageLocationID
+                StorageOperations operations
+                Image.withTransaction { // this should be readonly but the settingService may create the setting if it does not exist
+                    defaultStorageLocationID = settingService.getStorageLocationDefault()
+                    operations = StorageLocation.get(defaultStorageLocationID)?.asStandaloneStorageOperations()
+                }
+                log.trace("storeImageBytes: obtained StorageLocation: {} for originalFilename: {}", defaultStorageLocationID, originalFilename)
+
+                log.trace("storeImageBytes: storing new image for originalFilename: {}", originalFilename)
                 def sha1Hash = bytes.hash(Hashing.sha1()).asBytes().encodeAsHex() //DigestUtils.digest(DigestUtils.getDigest('SHA-1'), bytes.openStream()).encodeAsHex()
+                log.trace("storeImageBytes: calculated SHA1 hash: {} for originalFilename: {}", sha1Hash, originalFilename)
 
                 def imgDesc = imageStoreService.storeImage(bytes, operations, contentType, originalFilename)
+                log.trace("storeImageBytes: imageStoreService.storeImage returned imgDesc: {} for originalFilename: {}", imgDesc, originalFilename)
 
                 // Create the image record, and set the various attributes
                 Image image = new Image(
                         imageIdentifier: imgDesc.imageIdentifier,
                         contentMD5Hash: md5Hash,
                         contentSHA1Hash: sha1Hash,
-                        uploader: uploaderId,
-                        storageLocation: sl
+                        uploader: uploaderId
                 )
 
                 if (metadata.extension) {
@@ -766,22 +911,25 @@ unnest(all_urls) AS unnest_url;
                 //update metadata stored in the `image` table
                 setMetadataOnImage(metadata, image)
 
-                try {
-                    Image.withTransaction {
+                result = Image.withTransaction {
+                    image.storageLocation = StorageLocation.get(defaultStorageLocationID)
+                    try {
+                        log.trace("storeImageBytes: saving new image record for originalFilename: {}", originalFilename)
                         //try to match licence
                         updateLicence(image)
                         image.save(failOnError: true)
+                        log.trace("storeImageBytes: saved new image record for originalFilename: {}", originalFilename)
+                    } catch (Exception ex) {
+                        log.error("Problem saving image {}  -", originalFilename, ex)
                     }
-                } catch (Exception ex) {
-                    log.error("Problem saving image {}  -", originalFilename, ex)
+                    return new ImageStoreResult(image, preExisting, isDuplicate)
                 }
-                result = new ImageStoreResult(image, preExisting, isDuplicate)
             }
 
         } finally {
-//            lock.unlock()
+            lock.unlock()
         }
-
+        log.trace("storeImageBytes: returning result: {} for originalFilename: {}", result, originalFilename)
         return result
     }
 

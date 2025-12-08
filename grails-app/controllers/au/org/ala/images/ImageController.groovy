@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.web.AlaSecured
 import au.org.ala.web.CASRoles
 import grails.converters.JSON
@@ -34,7 +35,7 @@ import static javax.servlet.http.HttpServletResponse.SC_PARTIAL_CONTENT
 import static javax.servlet.http.HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE
 
 @Slf4j
-class ImageController {
+class ImageController implements MetricsSupport {
 
     private final static NEW_LINE = '\r\n'
     public static final String HEADER_ETAG = 'ETag'
@@ -271,17 +272,21 @@ class ImageController {
             boolean sendAnalytics,
             String requestType,
             boolean noRedirect = false) {
-        def imageIdentifier = imageInfo.imageIdentifier
-        if (!imageIdentifier || !imageInfo.exists) {
-            if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
-                sendMissingImage(requestType)
-            } else {
-                render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+        recordTime('image.serve', 'Time to serve image request', [type: requestType]) {
+            def imageIdentifier = imageInfo.imageIdentifier
+            if (!imageIdentifier || !imageInfo.exists) {
+                incrementCounter('image.serve.notfound', 'Image not found requests', [type: requestType])
+                if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
+                    sendMissingImage(requestType)
+                } else {
+                    render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+                }
+                return
             }
-            return
-        }
 
-        boolean contentDisposition = params.boolean("contentDisposition", false)
+            incrementCounter('image.serve.request', 'Image serve requests', [type: requestType])
+
+            boolean contentDisposition = params.boolean("contentDisposition", false)
 
         if (sendAnalytics) {
             analyticsService.sendAnalytics(imageInfo.exists, imageInfo.dataResourceUid, 'imageview', request.getHeader("User-Agent"))
@@ -398,8 +403,10 @@ class ImageController {
             }
         } catch (ClientAbortException e) {
             // User hung up, just ignore this exception since we can't recover into a nice error response.
+            incrementCounter('image.serve.client_abort', 'Client aborted requests', [type: requestType])
         } catch (Exception e) {
             log.error("Exception serving image", e)
+            recordError('serveImage', [type: requestType, error: e.class.simpleName])
             cache(false)
             if (response.containsHeader(HEADER_LAST_MODIFIED)) {
                 response.setHeader(HEADER_LAST_MODIFIED, '')
@@ -408,6 +415,7 @@ class ImageController {
                 response.setHeader(HEADER_ETAG, '')
             }
             throw e
+        }
         }
     }
 

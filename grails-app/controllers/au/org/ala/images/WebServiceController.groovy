@@ -1,6 +1,7 @@
 package au.org.ala.images
 
 import au.ala.org.ws.security.RequireApiKey
+import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.plugins.openapi.Path
 import au.org.ala.web.SSO
 import com.google.common.base.Suppliers
@@ -31,7 +32,7 @@ import static io.swagger.v3.oas.annotations.enums.ParameterIn.PATH
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
 
 @Slf4j
-class WebServiceController {
+class WebServiceController implements MetricsSupport {
 
     static String LEGACY_API_KEY_HEADER_NAME = 'apiKey'
 
@@ -2390,12 +2391,15 @@ class WebServiceController {
     @Consumes("application/json")
     @Produces("application/gzip")
     def exportCSV(){
-        response.setHeader("Content-disposition", "attachment;filename=images-export.csv.gz")
-        response.contentType = "application/gzip"
-        def bos = new GZIPOutputStream(response.outputStream)
-        imageService.exportCSV(bos)
-        bos.flush()
-        bos.close()
+        recordTime('export.catalogue', 'Time to export full catalogue', [format: 'csv']) {
+            incrementCounter('export.catalogue.count', 'Full catalogue export count', [format: 'csv'])
+            response.setHeader("Content-disposition", "attachment;filename=images-export.csv.gz")
+            response.contentType = "application/gzip"
+            def bos = new GZIPOutputStream(response.outputStream)
+            imageService.exportCSV(bos)
+            bos.flush()
+            bos.close()
+        }
     }
 
     @Operation(
@@ -2416,11 +2420,14 @@ class WebServiceController {
     @Consumes("application/json")
     @Produces("application/octet-stream")
     def exportAvro(){
-        response.setHeader("Content-disposition", "attachment;filename=images-export.avro")
-        response.contentType = "application/octet-stream"
-        def os = response.outputStream
-        imageService.exportAvro(os)
-        os.flush()
+        recordTime('export.catalogue', 'Time to export full catalogue', [format: 'avro']) {
+            incrementCounter('export.catalogue.count', 'Full catalogue export count', [format: 'avro'])
+            response.setHeader("Content-disposition", "attachment;filename=images-export.avro")
+            response.contentType = "application/octet-stream"
+            def os = response.outputStream
+            imageService.exportAvro(os)
+            os.flush()
+        }
     }
 
     @Operation(
@@ -2440,12 +2447,15 @@ class WebServiceController {
     @Consumes("application/json")
     @Produces("application/gzip")
     def exportMapping(){
-        response.setHeader("Content-disposition", "attachment;filename=image-mapping.csv.gz")
-        response.contentType = "application/gzip"
-        def bos = new GZIPOutputStream(response.outputStream)
-        imageService.exportMappingCSV(bos)
-        bos.flush()
-        bos.close()
+        recordTime('export.mapping', 'Time to export URL to imageIdentifier mappings', [format: 'csv']) {
+            incrementCounter('export.mapping.count', 'Mapping export count', [format: 'csv'])
+            response.setHeader("Content-disposition", "attachment;filename=image-mapping.csv.gz")
+            response.contentType = "application/gzip"
+            def bos = new GZIPOutputStream(response.outputStream)
+            imageService.exportMappingCSV(bos)
+            bos.flush()
+            bos.close()
+        }
     }
 
     @Operation(
@@ -2465,11 +2475,14 @@ class WebServiceController {
     @Consumes("application/json")
     @Produces("application/octet-stream")
     def exportMappingAvro(){
-        response.setHeader("Content-disposition", "attachment;filename=image-mapping.avro")
-        response.contentType = "application/octet-stream"
-        def os = response.outputStream
-        imageService.exportMappingAvro(os)
-        os.flush()
+        recordTime('export.mapping', 'Time to export URL to imageIdentifier mappings', [format: 'avro']) {
+            incrementCounter('export.mapping.count', 'Mapping export count', [format: 'avro'])
+            response.setHeader("Content-disposition", "attachment;filename=image-mapping.avro")
+            response.contentType = "application/octet-stream"
+            def os = response.outputStream
+            imageService.exportMappingAvro(os)
+            os.flush()
+        }
     }
 
     @Operation(
@@ -2501,12 +2514,15 @@ class WebServiceController {
         if (!params.id){
             renderResults([success: false, message: "id param is missing"], 400)
         } else {
-            response.setHeader("Content-disposition", "attachment;filename=image-mapping-${params.id}.csv.gz")
-            response.contentType = "application/gzip"
-            def bos = new GZIPOutputStream(response.outputStream)
-            imageService.exportDatasetMappingCSV(params.id, bos)
-            bos.flush()
-            bos.close()
+            recordTime('export.dataset.mapping', 'Time to export dataset mappings', [format: 'csv']) {
+                incrementCounter('export.dataset.mapping.count', 'Dataset mapping export count', [format: 'csv'])
+                response.setHeader("Content-disposition", "attachment;filename=image-mapping-${params.id}.csv.gz")
+                response.contentType = "application/gzip"
+                def bos = new GZIPOutputStream(response.outputStream)
+                imageService.exportDatasetMappingCSV(params.id, bos)
+                bos.flush()
+                bos.close()
+            }
         }
     }
 
@@ -2539,11 +2555,14 @@ class WebServiceController {
         if (!params.id){
             renderResults([success: false, message: "id param is missing"], 400)
         } else {
-            response.setHeader("Content-disposition", "attachment;filename=image-mapping-${params.id}.avro")
-            response.contentType = "application/octet-stream"
-            def os = response.outputStream
-            imageService.exportDatasetMappingAvro(params.id, os)
-            os.flush()
+            recordTime('export.dataset.mapping', 'Time to export dataset mappings', [format: 'avro']) {
+                incrementCounter('export.dataset.mapping.count', 'Dataset mapping export count', [format: 'avro'])
+                response.setHeader("Content-disposition", "attachment;filename=image-mapping-${params.id}.avro")
+                response.contentType = "application/octet-stream"
+                def os = response.outputStream
+                imageService.exportDatasetMappingAvro(params.id, os)
+                os.flush()
+            }
         }
     }
 
@@ -2591,12 +2610,15 @@ class WebServiceController {
         if (!params.id){
             renderResults([success: false, message: "id param is missing"], 400)
         } else {
-            response.setHeader("Content-disposition", "attachment;filename=image-export-${params.id}.csv.gz")
-            response.contentType = "application/gzip"
-            def bos = new GZIPOutputStream(response.outputStream)
-            imageService.exportDatasetCSV(params.id, bos)
-            bos.flush()
-            bos.close()
+            recordTime('export.dataset', 'Time to export dataset', [format: 'csv']) {
+                incrementCounter('export.dataset.count', 'Dataset export count', [format: 'csv'])
+                response.setHeader("Content-disposition", "attachment;filename=image-export-${params.id}.csv.gz")
+                response.contentType = "application/gzip"
+                def bos = new GZIPOutputStream(response.outputStream)
+                imageService.exportDatasetCSV(params.id, bos)
+                bos.flush()
+                bos.close()
+            }
         }
     }
 
@@ -2644,11 +2666,14 @@ class WebServiceController {
         if (!params.id){
             renderResults([success: false, message: "id param is missing"], 400)
         } else {
-            response.setHeader("Content-disposition", "attachment;filename=image-export-${params.id}.avro")
-            response.contentType = "application/octet-stream"
-            def os = response.outputStream
-            imageService.exportDatasetAvro(params.id, os)
-            os.flush()
+            recordTime('export.dataset', 'Time to export dataset', [format: 'avro']) {
+                incrementCounter('export.dataset.count', 'Dataset export count', [format: 'avro'])
+                response.setHeader("Content-disposition", "attachment;filename=image-export-${params.id}.avro")
+                response.contentType = "application/octet-stream"
+                def os = response.outputStream
+                imageService.exportDatasetAvro(params.id, os)
+                os.flush()
+            }
         }
     }
 }

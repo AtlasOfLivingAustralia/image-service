@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
@@ -47,7 +48,7 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 @Slf4j
-class ImageStoreService {
+class ImageStoreService implements MetricsSupport {
 
     public static final int TILE_SIZE = 256
 
@@ -192,32 +193,35 @@ class ImageStoreService {
 
     @NotTransactional
     ImageDescriptor storeImage(ByteSource imageBytes, StorageOperations operations, String contentType, String originalFilename, String contentDisposition = null) {
-        def uuid = UUID.randomUUID().toString()
-        if (log.isTraceEnabled()) {
-            log.trace('Storing image {} with content type {}, original filename {}, content disposition {} to {}', uuid, contentType, originalFilename, contentDisposition, operations)
-        }
-        def imgDesc = new ImageDescriptor(imageIdentifier: uuid)
-        operations.store(uuid, imageBytes.openStream(), contentType, contentDisposition, imageBytes.sizeIfKnown().orNull())
-        def filename = ImageUtils.getFilename(originalFilename)
-        if (contentType?.toLowerCase()?.startsWith('image')) {
+        return recordTime('imagestore.store', 'Time to store image to storage', [contentType: contentType?.split('/')[0] ?: 'unknown']) {
+            def uuid = UUID.randomUUID().toString()
             if (log.isTraceEnabled()) {
-                log.trace('Getting image dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
+                log.trace('Storing image {} with content type {}, original filename {}, content disposition {} to {}', uuid, contentType, originalFilename, contentDisposition, operations)
             }
-            def dimensions = ImageReaderUtils.getImageDimensions(imageBytes, filename) // TODO replace original filename with a temp filename with extension determine by content type?
-            if (dimensions) {
-                imgDesc.height = dimensions.height
-                imgDesc.width = dimensions.width
-                // precalculate the number of zoom levels
-                def pyramid = new DefaultZoomFactorStrategy(TILE_SIZE).getZoomFactors(dimensions.width, dimensions.height)
-                imgDesc.zoomLevels = pyramid.length
+            def imgDesc = new ImageDescriptor(imageIdentifier: uuid)
+            operations.store(uuid, imageBytes.openStream(), contentType, contentDisposition, imageBytes.sizeIfKnown().orNull())
+            def filename = ImageUtils.getFilename(originalFilename)
+            if (contentType?.toLowerCase()?.startsWith('image')) {
+                if (log.isTraceEnabled()) {
+                    log.trace('Getting image dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
+                }
+                def dimensions = ImageReaderUtils.getImageDimensions(imageBytes, filename) // TODO replace original filename with a temp filename with extension determine by content type?
+                if (dimensions) {
+                    imgDesc.height = dimensions.height
+                    imgDesc.width = dimensions.width
+                    // precalculate the number of zoom levels
+                    def pyramid = new DefaultZoomFactorStrategy(TILE_SIZE).getZoomFactors(dimensions.width, dimensions.height)
+                    imgDesc.zoomLevels = pyramid.length
+                }
+            } else {
+                if (log.isTraceEnabled()) {
+                    log.trace('Skipping calculating dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
+                }
             }
-        } else {
-            if (log.isTraceEnabled()) {
-                log.trace('Skipping calculating dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
-            }
-        }
 
-        return imgDesc
+            incrementCounter('imagestore.store.count', 'Images stored', [contentType: contentType?.split('/')[0] ?: 'unknown'])
+            return imgDesc
+        }
     }
 
     @Transactional(readOnly = true)
@@ -226,31 +230,34 @@ class ImageStoreService {
     }
 
     Map retrieveImageRectangle(Image parentImage, int x, int y, int width, int height) {
+        return recordTime('imagestore.retrieve.rectangle', 'Time to retrieve image rectangle', [width: width.toString(), height: height.toString()]) {
+            def results = [bytes: null, contentType: ""]
 
-        def results = [bytes: null, contentType: ""]
-
-        if (parentImage) {
-            def imageBytes = parentImage.retrieve()
-            ImageReaderUtils.withImageReader(ByteSource.wrap(imageBytes)) { reader ->
-                Rectangle stripRect = new Rectangle(x, y, width, height);
-                ImageReadParam params = reader.getDefaultReadParam();
-                params.setSourceRegion(stripRect);
-                params.setSourceSubsampling(1, 1, 0, 0);
-                // This may fail if there is not enough heap!
-                BufferedImage subimage = reader.read(0, params);
-                def bos = new ByteArrayOutputStream()
-                if (!ImageIO.write(subimage, "PNG", bos)) {
-                    log.debug("Could not create subimage in PNG format. Giving up")
-                    return null
-                } else {
-                    results.contentType = "image/png"
+            if (parentImage) {
+                def imageBytes = parentImage.retrieve()
+                ImageReaderUtils.withImageReader(ByteSource.wrap(imageBytes)) { reader ->
+                    Rectangle stripRect = new Rectangle(x, y, width, height);
+                    ImageReadParam params = reader.getDefaultReadParam();
+                    params.setSourceRegion(stripRect);
+                    params.setSourceSubsampling(1, 1, 0, 0);
+                    // This may fail if there is not enough heap!
+                    BufferedImage subimage = reader.read(0, params);
+                    def bos = new ByteArrayOutputStream()
+                    if (!ImageIO.write(subimage, "PNG", bos)) {
+                        log.debug("Could not create subimage in PNG format. Giving up")
+                        incrementCounter('imagestore.retrieve.rectangle.failure', 'Failed rectangle retrievals')
+                        return null
+                    } else {
+                        results.contentType = "image/png"
+                    }
+                    results.bytes = bos.toByteArray()
+                    bos.close()
+                    incrementCounter('imagestore.retrieve.rectangle.success', 'Successful rectangle retrievals')
                 }
-                results.bytes = bos.toByteArray()
-                bos.close()
             }
-        }
 
-        return results
+            return results
+        }
     }
 
     Map getAllUrls(String imageIdentifier) {
@@ -370,58 +377,64 @@ class ImageStoreService {
     }
 
     private List<ThumbnailingResult> generateThumbnailsImpl(ByteSource byteSource, String imageIdentifier, StorageOperations operations, String type = null) {
-        def ct = new CodeTimer("Generating ${type != null ? 1 : 6} thumbnails for image ${imageIdentifier}")
-        def t = new ImageThumbnailer()
-//        def imageIdentifier = image.imageIdentifier
-        int size = grailsApplication.config.getProperty('imageservice.thumbnail.size') as Integer
-        List<ThumbDefinition> thumbDefs = new ArrayList<ThumbDefinition>(type == null ? 6 : 1)
-        if ('thumbnail'.equalsIgnoreCase(type) || ''.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(new ThumbDefinition(size, false, null, "thumbnail"))
-        }
-        if ('thumbnail_square'.equalsIgnoreCase(type) || 'square'.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(new ThumbDefinition(size, true, null, "thumbnail_square"))
-        }
-        if ('thumbnail_square_black'.equalsIgnoreCase(type) || 'square_black'.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(new ThumbDefinition(size, true, Color.black, "thumbnail_square_black"))
-        }
-        if ('thumbnail_square_white'.equalsIgnoreCase(type) || 'square_white'.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(new ThumbDefinition(size, true, Color.white, "thumbnail_square_white"))
-        }
-        if ('thumbnail_square_darkGray'.equalsIgnoreCase(type) || 'thumbnail_square_darkGrey'.equalsIgnoreCase(type) || 'square_darkGray'.equalsIgnoreCase(type) || 'square_darkGrey'.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(new ThumbDefinition(size, true, Color.darkGray, "thumbnail_square_darkGray"))
-        }
-        if ('thumbnail_large'.equalsIgnoreCase(type) || 'large'.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(new ThumbDefinition(650, false, null, "thumbnail_large"))
-        }
-        if ('thumbnail_xlarge'.equalsIgnoreCase(type) || 'xlarge'.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(new ThumbDefinition(1024, false, null, "thumbnail_xlarge"))
-        }
-        if ('thumbnail_centre_crop'.equalsIgnoreCase(type) || 'centre_crop'.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(ThumbDefinition.centreCrop(size, "thumbnail_centre_crop"))
-        }
-        if ('thumbnail_centre_crop_large'.equalsIgnoreCase(type) || 'centre_crop_large'.equalsIgnoreCase(type) || type == null) {
-            thumbDefs.add(ThumbDefinition.centreCrop(650, "thumbnail_centre_crop_large"))
-        }
-
-        List<ThumbnailingResult> results
-        if (thumbnailSemaphore.tryAcquire(thumbnailConcurrencyTimeout, TimeUnit.SECONDS)) {
-            try {
-                results = t.generateThumbnailsNoIntermediateEncode(
-                        byteSource,
-                        operations.thumbnailByteSinkFactory(imageIdentifier),
-                        thumbDefs
-                )
-            } finally {
-                thumbnailSemaphore.release()
+        return recordTime('imagestore.thumbnail.generate', 'Time to generate thumbnails', [type: type ?: 'all', count: type == null ? '6' : '1']) {
+            def ct = new CodeTimer("Generating ${type != null ? 1 : 6} thumbnails for image ${imageIdentifier}")
+            def t = new ImageThumbnailer()
+    //        def imageIdentifier = image.imageIdentifier
+            int size = grailsApplication.config.getProperty('imageservice.thumbnail.size') as Integer
+            List<ThumbDefinition> thumbDefs = new ArrayList<ThumbDefinition>(type == null ? 6 : 1)
+            if ('thumbnail'.equalsIgnoreCase(type) || ''.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(new ThumbDefinition(size, false, null, "thumbnail"))
             }
-        } else {
-            throw new GenerateDerivativeTimeout("Could not acquire thumbnail semaphore to thumb image ${imageIdentifier} in ${thumbnailConcurrencyTimeout}s")
+            if ('thumbnail_square'.equalsIgnoreCase(type) || 'square'.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(new ThumbDefinition(size, true, null, "thumbnail_square"))
+            }
+            if ('thumbnail_square_black'.equalsIgnoreCase(type) || 'square_black'.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(new ThumbDefinition(size, true, Color.black, "thumbnail_square_black"))
+            }
+            if ('thumbnail_square_white'.equalsIgnoreCase(type) || 'square_white'.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(new ThumbDefinition(size, true, Color.white, "thumbnail_square_white"))
+            }
+            if ('thumbnail_square_darkGray'.equalsIgnoreCase(type) || 'thumbnail_square_darkGrey'.equalsIgnoreCase(type) || 'square_darkGray'.equalsIgnoreCase(type) || 'square_darkGrey'.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(new ThumbDefinition(size, true, Color.darkGray, "thumbnail_square_darkGray"))
+            }
+            if ('thumbnail_large'.equalsIgnoreCase(type) || 'large'.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(new ThumbDefinition(650, false, null, "thumbnail_large"))
+            }
+            if ('thumbnail_xlarge'.equalsIgnoreCase(type) || 'xlarge'.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(new ThumbDefinition(1024, false, null, "thumbnail_xlarge"))
+            }
+            if ('thumbnail_centre_crop'.equalsIgnoreCase(type) || 'centre_crop'.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(ThumbDefinition.centreCrop(size, "thumbnail_centre_crop"))
+            }
+            if ('thumbnail_centre_crop_large'.equalsIgnoreCase(type) || 'centre_crop_large'.equalsIgnoreCase(type) || type == null) {
+                thumbDefs.add(ThumbDefinition.centreCrop(650, "thumbnail_centre_crop_large"))
+            }
+
+            List<ThumbnailingResult> results
+            if (thumbnailSemaphore.tryAcquire(thumbnailConcurrencyTimeout, TimeUnit.SECONDS)) {
+                try {
+                    results = t.generateThumbnailsNoIntermediateEncode(
+                            byteSource,
+                            operations.thumbnailByteSinkFactory(imageIdentifier),
+                            thumbDefs
+                    )
+                    incrementCounter('imagestore.thumbnail.success', 'Successful thumbnail generations', [type: type ?: 'all'])
+                } catch (Exception e) {
+                    incrementCounter('imagestore.thumbnail.error', 'Thumbnail generation errors', [type: type ?: 'all', error: e.class.simpleName])
+                    throw e
+                } finally {
+                    thumbnailSemaphore.release()
+                }
+            } else {
+                incrementCounter('imagestore.thumbnail.timeout', 'Thumbnail generation timeouts', [type: type ?: 'all'])
+                throw new GenerateDerivativeTimeout("Could not acquire thumbnail semaphore to thumb image ${imageIdentifier} in ${thumbnailConcurrencyTimeout}s")
+            }
+
+            auditService.log(imageIdentifier, "Thumbnails created", "N/A")
+            ct.stop(true)
+            return results
         }
-
-
-        auditService.log(imageIdentifier, "Thumbnails created", "N/A")
-        ct.stop(true)
-        return results
     }
 
     void generateTMSTiles(String imageIdentifier) {
@@ -436,44 +449,55 @@ class ImageStoreService {
 
     @NotTransactional
     ImageTilerResults generateTMSTiles(String imageIdentifier, StorageOperations operations, int zoomLevels, Integer z = null) {
-        log.debug("Generating TMS compatible tiles for image ${imageIdentifier}, zoom level ${z}")
-        def ct = new CodeTimer("Tiling image ${imageIdentifier}, z index: $z")
+        return recordTime('imagestore.tile.generate', 'Time to generate TMS tiles', [level: z != null ? 'single' : 'all', z: z?.toString() ?: 'all']) {
+            log.debug("Generating TMS compatible tiles for image ${imageIdentifier}, zoom level ${z}")
+            def ct = new CodeTimer("Tiling image ${imageIdentifier}, z index: $z")
 
-        def results
-        if (tilingSemaphore.tryAcquire(tileConcurrencyTimeout, TimeUnit.SECONDS)) {
-            try {
-                if (z != null) {
-                    results = tileImageLevel(imageIdentifier, operations, z)
-                } else {
-                    results = tileImage(imageIdentifier, operations)
+            def results
+            if (tilingSemaphore.tryAcquire(tileConcurrencyTimeout, TimeUnit.SECONDS)) {
+                try {
+                    if (z != null) {
+                        results = tileImageLevel(imageIdentifier, operations, z)
+                    } else {
+                        results = tileImage(imageIdentifier, operations)
+                    }
+                    if (results.success) {
+                        incrementCounter('imagestore.tile.success', 'Successful tile generations', [level: z != null ? 'single' : 'all'])
+                    } else {
+                        incrementCounter('imagestore.tile.failure', 'Failed tile generations', [level: z != null ? 'single' : 'all'])
+                    }
+                } catch (Exception e) {
+                    incrementCounter('imagestore.tile.error', 'Tile generation errors', [level: z != null ? 'single' : 'all', error: e.class.simpleName])
+                    throw e
+                } finally {
+                    tilingSemaphore.release()
                 }
-            } finally {
-                tilingSemaphore.release()
+            } else {
+                incrementCounter('imagestore.tile.timeout', 'Tile generation timeouts', [level: z != null ? 'single' : 'all'])
+                throw new GenerateDerivativeTimeout("Could not acquire tiling semaphore to tile image ${imageIdentifier} in ${tileConcurrencyTimeout}s")
             }
-        } else {
-            throw new GenerateDerivativeTimeout("Could not acquire tiling semaphore to tile image ${imageIdentifier} in ${tileConcurrencyTimeout}s")
-        }
 
-        if (results.success) {
-            if (zoomLevels != results.zoomLevels) {
-                // only update the zoom levels if they have changed
-                // run the update concurrently so as not to block a tile http request
-                Image.async.task {
-                    withTransaction {
-                        def updates = Image.executeUpdate("update Image set zoomLevels = :zoomLevels where imageIdentifier = :imageIdentifier and zoomLevels != :zoomLevels", [zoomLevels: results.zoomLevels, imageIdentifier: imageIdentifier])
-                        if (updates < 1) {
-                            log.warn("Failed to update zoom levels for image ${imageIdentifier}")
+            if (results.success) {
+                if (zoomLevels != results.zoomLevels) {
+                    // only update the zoom levels if they have changed
+                    // run the update concurrently so as not to block a tile http request
+                    Image.async.task {
+                        withTransaction {
+                            def updates = Image.executeUpdate("update Image set zoomLevels = :zoomLevels where imageIdentifier = :imageIdentifier and zoomLevels != :zoomLevels", [zoomLevels: results.zoomLevels, imageIdentifier: imageIdentifier])
+                            if (updates < 1) {
+                                log.warn("Failed to update zoom levels for image ${imageIdentifier}")
+                            }
                         }
                     }
                 }
+            } else {
+                log.warn("Image tiling for $imageIdentifier with z = $z failed! Results zoomLevels: ${results.zoomLevels}")
             }
-        } else {
-            log.warn("Image tiling for $imageIdentifier with z = $z failed! Results zoomLevels: ${results.zoomLevels}")
-        }
-        auditService.log(imageIdentifier, "TMS tiles generated", "N/A")
-        ct.stop(true)
+            auditService.log(imageIdentifier, "TMS tiles generated", "N/A")
+            ct.stop(true)
 
-        return results
+            return results
+        }
     }
 
     private ImageTilerResults tileImageLevel(String imageIdentifier, StorageOperations operations, int z) {
@@ -546,13 +570,17 @@ class ImageStoreService {
      * @param sl The destination storage location
      */
     void migrateImage(Image image, StorageLocation sl) {
-        try {
-            image.migrateTo(sl)
-        } catch (Exception e) {
-            log.error("Unable to migrate image {} to storage location {}, rolling back changes...", image.imageIdentifier, sl)
-            // rollback any files migrated
-            sl.deleteStored(image.imageIdentifier)
-            throw e
+        recordTime('imagestore.migrate', 'Time to migrate image between storage locations', [from: image.storageLocation?.class?.simpleName ?: 'unknown', to: sl?.class?.simpleName ?: 'unknown']) {
+            try {
+                image.migrateTo(sl)
+                incrementCounter('imagestore.migrate.success', 'Successful image migrations', [from: image.storageLocation?.class?.simpleName ?: 'unknown', to: sl?.class?.simpleName ?: 'unknown'])
+            } catch (Exception e) {
+                log.error("Unable to migrate image {} to storage location {}, rolling back changes...", image.imageIdentifier, sl)
+                incrementCounter('imagestore.migrate.error', 'Failed image migrations', [from: image.storageLocation?.class?.simpleName ?: 'unknown', to: sl?.class?.simpleName ?: 'unknown', error: e.class.simpleName])
+                // rollback any files migrated
+                sl.deleteStored(image.imageIdentifier)
+                throw e
+            }
         }
 
     }
@@ -724,93 +752,115 @@ class ImageStoreService {
     }
 
     ImageInfo originalImageInfo(String imageIdentifier) {
-        def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
-        if (image) {
-            def imageInfo = image.storageLocation.originalImageInfo(image.imageIdentifier)
-            // override these to match original behaviour
-            imageInfo.dataResourceUid = image.dataResourceUid
-            imageInfo.etag = image.contentSHA1Hash
-            imageInfo.lastModified = image.dateUploaded
-            imageInfo.contentType = image.mimeType
-            imageInfo.extension = image.extension
-            imageInfo.shouldExist = true
-            return imageInfo
+        return recordTime('imagestore.info.original', 'Time to get original image info') {
+            def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
+            if (image) {
+                incrementCounter('imagestore.info.original.found', 'Original image info found')
+                def imageInfo = image.storageLocation.originalImageInfo(image.imageIdentifier)
+                // override these to match original behaviour
+                imageInfo.dataResourceUid = image.dataResourceUid
+                imageInfo.etag = image.contentSHA1Hash
+                imageInfo.lastModified = image.dateUploaded
+                imageInfo.contentType = image.mimeType
+                imageInfo.extension = image.extension
+                imageInfo.shouldExist = true
+                return imageInfo
+            }
+            incrementCounter('imagestore.info.original.notfound', 'Original image not found')
+            return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'application/octet-stream')
         }
-        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'application/octet-stream')
     }
 
     @NotTransactional
     ImageInfo thumbnailImageInfo(String imageIdentifier, String type, boolean refresh = false) {
-        Image image
-        StorageOperations operations = null
-        String dataResourceUid = null
-        Image.withNewTransaction(readOnly: true) {
-            image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
-            if (image) {
-                operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
-                dataResourceUid = image.dataResourceUid
-            }
-        }
-        if (image) {
-            if (image.mimeType.startsWith('image/')) {
-                def info = ensureThumbnailExists(imageIdentifier, dataResourceUid, operations, type, refresh)
-                if (info) {
-                    return info
+        return recordTime('imagestore.info.thumbnail', 'Time to get thumbnail image info', [type: type ?: 'default', refresh: refresh.toString()]) {
+            Image image
+            StorageOperations operations = null
+            String dataResourceUid = null
+            Image.withNewTransaction(readOnly: true) {
+                image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
+                if (image) {
+                    operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
+                    dataResourceUid = image.dataResourceUid
                 }
-            } else {
-                def resource
-                if (image.mimeType.startsWith('audio/')) {
-                    if (type == 'large' || type == 'thumbnail_large') {
-                        resource = audioLargeThumbnail
-                    } else {
-                        resource = audioThumbnail
+            }
+            if (image) {
+                if (image.mimeType.startsWith('image/')) {
+                    incrementCounter('imagestore.info.thumbnail.lookup', 'Thumbnail info lookups', [type: type ?: 'default', mimeType: 'image'])
+                    def info = ensureThumbnailExists(imageIdentifier, dataResourceUid, operations, type, refresh)
+                    if (info) {
+                        if (info.exists) {
+                            incrementCounter('imagestore.info.thumbnail.found', 'Thumbnail found', [type: type ?: 'default'])
+                        } else {
+                            incrementCounter('imagestore.info.thumbnail.notfound', 'Thumbnail not found', [type: type ?: 'default'])
+                        }
+                        return info
                     }
                 } else {
-                    if (type == 'large' || type == 'thumbnail_large') {
-                        resource = documentLargeThumbnail
+                    incrementCounter('imagestore.info.thumbnail.placeholder', 'Placeholder thumbnail used', [mimeType: image.mimeType.split('/')[0]])
+                    def resource
+                    if (image.mimeType.startsWith('audio/')) {
+                        if (type == 'large' || type == 'thumbnail_large') {
+                            resource = audioLargeThumbnail
+                        } else {
+                            resource = audioThumbnail
+                        }
                     } else {
-                        resource = documentThumbnail
+                        if (type == 'large' || type == 'thumbnail_large') {
+                            resource = documentLargeThumbnail
+                        } else {
+                            resource = documentThumbnail
+                        }
                     }
+
+                    return new ImageInfo(
+                            exists: true,
+                            imageIdentifier: imageIdentifier,
+                            dataResourceUid: dataResourceUid,
+                            length: resource.contentLength(),
+                            lastModified: new Date(resource.lastModified()),
+                            contentType: 'image/png',
+                            extension: 'png',
+                            inputStreamSupplier: { range -> range.wrapInputStream(resource.inputStream) },
+                            shouldExist: true
+                    )
+
                 }
-
-                return new ImageInfo(
-                        exists: true,
-                        imageIdentifier: imageIdentifier,
-                        dataResourceUid: dataResourceUid,
-                        length: resource.contentLength(),
-                        lastModified: new Date(resource.lastModified()),
-                        contentType: 'image/png',
-                        extension: 'png',
-                        inputStreamSupplier: { range -> range.wrapInputStream(resource.inputStream) },
-                        shouldExist: true
-                )
-
             }
+            incrementCounter('imagestore.info.thumbnail.notfound', 'Thumbnail not found - image not found', [type: type ?: 'default'])
+            return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/jpeg')
         }
-        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/jpeg')
     }
 
     @NotTransactional
     ImageInfo tileImageInfo(String imageIdentifier, int x, int y, int z, boolean refresh = false) {
-
-        Image image
-        StorageOperations operations = null
-        String dataResourceUid = null
-        Image.withNewTransaction(readOnly: true) {
-            image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
+        return recordTime('imagestore.info.tile', 'Time to get tile image info', [z: z.toString(), refresh: refresh.toString()]) {
+            Image image
+            StorageOperations operations = null
+            String dataResourceUid = null
+            Image.withNewTransaction(readOnly: true) {
+                image = Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
+                if (image) {
+                    operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
+                    dataResourceUid = image.dataResourceUid
+                }
+            }
             if (image) {
-                operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
-                dataResourceUid = image.dataResourceUid
+                if (image.mimeType.startsWith('image/')) {
+                    incrementCounter('imagestore.info.tile.lookup', 'Tile info lookups', [z: z.toString()])
+                    def info = ensureTileExists(imageIdentifier, dataResourceUid, image.zoomLevels, operations, x, y, z, refresh)
+                    if (info.exists) {
+                        incrementCounter('imagestore.info.tile.found', 'Tile found', [z: z.toString()])
+                    } else {
+                        incrementCounter('imagestore.info.tile.notfound', 'Tile not found', [z: z.toString(), shouldExist: info.shouldExist.toString()])
+                    }
+                    return info
+                }
             }
-        }
-        if (image) {
-            if (image.mimeType.startsWith('image/')) {
-                def info = ensureTileExists(imageIdentifier, dataResourceUid, image.zoomLevels, operations, x, y, z, refresh)
-                return info
-            }
-        }
 
-        return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/png')
+            incrementCounter('imagestore.info.tile.notfound', 'Tile not found - image not found', [z: z.toString()])
+            return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/png')
+        }
     }
 
     long consumedSpace(Image image) {

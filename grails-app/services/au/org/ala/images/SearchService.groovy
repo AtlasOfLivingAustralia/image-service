@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.metrics.MetricsSupport
 import grails.web.servlet.mvc.GrailsParameterMap
 import org.springframework.web.context.request.RequestContextHolder
 
@@ -7,22 +8,31 @@ import javax.servlet.http.HttpSession
 import java.lang.reflect.Field
 import java.util.regex.Pattern
 
-class SearchService {
+class SearchService implements MetricsSupport {
 
     def elasticSearchService
 
     public static final String SEARCH_CRITERIA_SESSION_KEY = "session.key.searchCriteria"
 
     QueryResults<Map<String,Object>> search(GrailsParameterMap params) {
-        return elasticSearchService.simpleImageSearch(getSearchCriteriaList(), params)
+        return recordTime('search.query', 'Time to execute image search') {
+            incrementCounter('search.query.count', 'Search query count')
+            return elasticSearchService.simpleImageSearch(getSearchCriteriaList(), params)
+        }
     }
 
     def facet(GrailsParameterMap params) {
-        return elasticSearchService.simpleFacetSearch(getSearchCriteriaList(), params)
+        return recordTime('search.facet', 'Time to execute facet search') {
+            incrementCounter('search.facet.count', 'Facet search query count')
+            return elasticSearchService.simpleFacetSearch(getSearchCriteriaList(), params)
+        }
     }
 
     QueryResults<Image> download(GrailsParameterMap params, OutputStream output) {
-        return elasticSearchService.simpleImageDownload(getSearchCriteriaList(), params, output)
+        return recordTime('search.download', 'Time to execute download search') {
+            incrementCounter('search.download.count', 'Download search query count')
+            return elasticSearchService.simpleImageDownload(getSearchCriteriaList(), params, output)
+        }
     }
 
     Map findImagesByMetadata(String metaDataKey, List values, GrailsParameterMap params) {

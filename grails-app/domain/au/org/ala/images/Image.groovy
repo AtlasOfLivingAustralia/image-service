@@ -218,10 +218,11 @@ class Image implements AsyncEntity<Image> {
         Image.withCriteria(uniqueResult: true) {
             or {
                 eq 'originalFilename', filename
-                pgArrayContains 'alternateFilename', filename
+                pgArrayContains 'alternateFilename', new String[] { filename }
             }
             maxResults(1)
             order("dateUploaded", "desc") // get the most recent one if multiple exist
+            cache(false) // don't cache this query because pgArrayContains is not compatible with the ehCache query cache LookupOnlyOnHeapKey
         }
     }
 }
