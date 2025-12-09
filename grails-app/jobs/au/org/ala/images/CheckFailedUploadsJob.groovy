@@ -38,18 +38,21 @@ class CheckFailedUploadsJob {
         cron name: 'checkFailedUploadsTrigger', cronExpression: '0 0 2 * * ?'
     }
 
-    def execute() {
+    def execute(context) {
         if (!enabled) {
             log.debug("Failed upload checking is disabled")
             return
         }
         
+        // Check for manual override parameter
+        def forceRun = context?.mergedJobDataMap?.get('forceRun') ?: false
+
         // Check if we should run based on the last run date
         def setting = settingService.getFailedUploadLastCheck()
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(LAST_CHECK_DATE_FORMAT)
         LocalDateTime now = LocalDateTime.now()
 
-        if (setting) {
+        if (setting && !forceRun) {
             try {
                 LocalDateTime localDateTime = LocalDateTime.parse(setting, formatter)
 
@@ -64,8 +67,12 @@ class CheckFailedUploadsJob {
             }
         }
         
+        if (forceRun) {
+            log.info("Manual execution of failed upload check (forced run)")
+        }
+
         log.info("Starting failed upload check (interval: ${intervalDays} days, batch size: ${batchSize}, max age: ${maxAgeDays} days)")
-        
+
         def cutoffDate = now.minusDays(maxAgeDays).toDate()
         def checked = 0
         def removed = 0
@@ -119,4 +126,3 @@ class CheckFailedUploadsJob {
         }
     }
 }
-

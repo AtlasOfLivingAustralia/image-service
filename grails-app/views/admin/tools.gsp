@@ -142,6 +142,15 @@
                 Delete failed upload entries based on a regular expression pattern that matches the URL.
             </td>
         </tr>
+        <tr>
+            <td>
+                <button id="btnRunCheckFailedUploads" class="btn btn-default">Run Failed Uploads Check</button>
+            </td>
+            <td>
+                Manually trigger the failed uploads check job to verify if previously failed URLs are now accessible.
+                This will override the time interval check and run immediately.
+            </td>
+        </tr>
     </table>
 <script>
 
@@ -222,6 +231,13 @@
         $("#btnClearFailedUploads").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'clearFailedUploads')}";
+        });
+
+        $("#btnRunCheckFailedUploads").on('click', function(e) {
+            e.preventDefault();
+            if (confirm('This will manually trigger the failed uploads check job. Are you sure?')) {
+                window.location = "${createLink(action:'runCheckFailedUploadsJob')}";
+            }
         });
     });
 

@@ -125,6 +125,11 @@ class DownloadService {
      * Create an HttpResponse using HttpClient with redirect handling
      */
     private HttpResponse createHttpResponseWithHttpClient(URI uri, String originalUrl) {
+        def response = createHttpResponseWithHttpClient(uri, originalUrl, 'GET', InputStream)
+        return new HttpClientHttpResponse(response)
+    }
+
+    private <T> java.net.http.HttpResponse<T> createHttpResponseWithHttpClient(URI uri, String originalUrl, String method, Class<T> clazz) {
         def currentUri = uri
         def visitedUrls = new HashSet<String>()
         def redirectCount = 0
@@ -139,10 +144,24 @@ class DownloadService {
                 .uri(currentUri)
                 .timeout(Duration.ofMillis(readTimeoutMs))
                 .header("User-Agent", getUserAgent())
-                .GET()
+                .method(method, HttpRequest.BodyPublishers.noBody())
                 .build()
 
-            def response = httpClient.send(request, JavaHttpResponse.BodyHandlers.ofInputStream())
+            java.net.http.HttpResponse.BodyHandler<T> bodyHandler
+            switch(clazz) {
+                case InputStream:
+                    bodyHandler = JavaHttpResponse.BodyHandlers.ofInputStream()
+                    break
+                case String:
+                    bodyHandler = JavaHttpResponse.BodyHandlers.ofString()
+                    break
+                case Void:
+                    bodyHandler = JavaHttpResponse.BodyHandlers.discarding()
+                    break
+                default:
+                    throw new IllegalArgumentException("Unsupported response body type: ${clazz}")
+            }
+            def response = httpClient.send(request, bodyHandler)
             int statusCode = response.statusCode()
 
             // Check for redirect status codes
@@ -164,7 +183,7 @@ class DownloadService {
             }
 
             // Not a redirect, return the response
-            return new HttpClientHttpResponse(response)
+            return response
         }
 
         throw new IOException("Too many redirects (${maxHttpRedirectFollows}) for URL: ${originalUrl}")
@@ -439,6 +458,16 @@ class DownloadService {
     @NotTransactional
     boolean checkUrlAccessible(String urlString) {
         try {
+            if (useHttpClient) {
+                URI uri = new URI(urlString)
+                if (uri.scheme == 'http' || uri.scheme == 'https') {
+                    def response = createHttpResponseWithHttpClient(uri, urlString, 'HEAD', Void)
+                    int statusCode = response.statusCode()
+                    return statusCode >= 200 && statusCode < 400
+                } else if (uri.scheme == 's3') {
+                    return new S3HttpResponse(uri).getStatusCode() == 200
+                }
+            }
             // Fall back to URLConnection
             def url = new URL(urlString)
             def conn = createConnectionWithRedirects(url, urlString)
