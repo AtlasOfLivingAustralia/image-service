@@ -191,11 +191,13 @@ unnest(all_urls) AS unnest_url;
     Map imagePropertyMap = null
 
     private Striped<Lock> imageUrlLocks// = Striped.lock(256)
+    private Striped<Lock> imageIdLocks// = Striped.lock(256)
     private Striped<Lock> md5HashLocks// = Striped.lock(256)
 
     @PostConstruct
     def initStripes() {
         imageUrlLocks = Striped.lock(optimisticLockingStripes)
+        imageIdLocks = Striped.lock(optimisticLockingStripes)
         md5HashLocks = Striped.lock(optimisticLockingStripes)
     }
 
@@ -306,6 +308,28 @@ unnest(all_urls) AS unnest_url;
     }
 
     /**
+     * Find an existing Image for a supplied URL and optional dataResourceUid.
+     */
+    private Image findExistingImageByUrlAndDataResourceUid(String imageUrl, String dataResourceUid) {
+        Image image = null
+        if (!imageUrl) return null
+
+        // Try to resolve via image-service style URL (no need for extra work if this hits)
+        image = findImageInImageServiceUrl(imageUrl)
+
+        // Fallbacks for non image-service URLs
+        if (!image) {
+            if (imageUrl.startsWith("http")) {
+                image = Image.byOriginalFileOrAlternateFilename(imageUrl)
+            } else {
+                image = Image.findByOriginalFilenameAndDataResourceUid(imageUrl, dataResourceUid, [ cache: false ])
+            }
+        }
+
+        return image
+    }
+
+    /**
      * Find an image by discovering an image id from a URL
      * @param url The URL
      * @return The existing image or null if none exists
@@ -380,20 +404,7 @@ unnest(all_urls) AS unnest_url;
 
                     def imageUrl = getImageUrl(imageSource) as String
                     if (imageUrl) {
-                        Image image = null
-
-                        image = findImageInImageServiceUrl(imageUrl)
-
-                        // Its not an image service URL, check DB
-                        // For full URLs, we can treat these as unique identifiers
-                        // For filenames (non URLs), use the filename and dataResourceUid to unique identify
-                        if (!image){
-                            if (imageUrl.startsWith("http")){
-                                image = Image.byOriginalFileOrAlternateFilename(imageUrl) // findByOriginalFilename(imageUrl)
-                            } else {
-                                image = Image.findByOriginalFilenameAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
-                            }
-                        }
+                        Image image = findExistingImageByUrlAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
 
                         if (!image) {
                             def result = [success: false, alreadyStored: false]
@@ -476,12 +487,42 @@ unnest(all_urls) AS unnest_url;
 
                 def result
                 if (imageUrl) {
-                    // Use striped lock to prevent concurrent processing of the same imageUrl
-                    log.trace("uploadImage: acquiring lock for imageUrl: {}", imageUrl)
-                    def lock = imageUrlLocks.get(imageUrl)
-                    log.trace("uploadImage: got lock for imageUrl: {}, lock: {}", imageUrl, lock)
+                    // Prefer locking on imageId (when determinable from URL) to avoid multiple URLs mapping to the same Image
+                    Lock lock
+                    String imageIdForLock = null
+                    // Pre-lock lightweight lookup to see if there is already an Image we can lock on
+                    try {
+                        imageIdForLock = Image.withTransaction(readOnly: true) {
+                            Image preExisting = findExistingImageByUrlAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
+
+                            // Fail fast before locking here if this is a bad URL and we have already tried loading it before
+                            if (!preExisting && downloadService.isBadUrl(imageUrl)) {
+                                log.debug("We have already attempted to load {} without success. Skipping.", imageUrl)
+                                incrementCounter('image.upload.skipped', 'Images skipped due to bad URL')
+                                result = [success: false, alreadyStored: false]
+                            }
+
+                            return preExisting?.imageIdentifier
+                        }
+                    } catch (Throwable t) {
+                        log.debug("uploadImage: pre-lock lookup failed (will fallback to URL lock) for {}: {}", imageUrl, t.message)
+                    }
+
+                    if (result) {
+                        return result
+                    }
+
+                    if (imageIdForLock) {
+                        log.trace("uploadImage: acquiring lock for imageId: {} (derived from URL: {})", imageIdForLock, imageUrl)
+                        lock = imageIdLocks.get(imageIdForLock)
+                    } else {
+                        log.trace("uploadImage: acquiring lock for imageUrl: {}", imageUrl)
+                        lock = imageUrlLocks.get(imageUrl)
+                    }
+
+                    log.trace("uploadImage: got lock: {}", lock)
                     lock.lock()
-                    log.trace("uploadImage: locked lock for imageUrl: {}, lock: {}", imageUrl, lock)
+                    log.trace("uploadImage: locked lock: {}", lock)
                     try {
                         Image image = null
 
@@ -490,31 +531,11 @@ unnest(all_urls) AS unnest_url;
                         while (retryCount < maxRetries) {
                             try {
                                 log.trace("uploadImage: checking for existing image for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
-                                // This should be a new transaction anyway but be explicit just in case
-                                result = Image.withNewSession { Image.withNewTransaction { TransactionStatus status ->
+                                result = Image.withTransaction { TransactionStatus status ->
                                     log.trace("uploadImage: inside Image.withTransaction for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
-                                    image = findImageInImageServiceUrl(imageUrl)?.refresh()
-                                    log.trace("uploadImage: findImageInImageServiceUrl returned image: {} for imageUrl: {} (attempt {}/{})", image, imageUrl, retryCount + 1, maxRetries)
-
-                                    // Its not an image service URL, check DB
-                                    // For full URLs, we can treat these as unique identifiers
-                                    // For filenames (non URLs), use the filename and dataResourceUid to unique identify
-                                    if (!image){
-                                        Image temp
-                                        if (imageUrl.startsWith("http")){
-                                            temp = Image.byOriginalFileOrAlternateFilename(imageUrl) // findByOriginalFilename(imageUrl)
-                                        } else {
-                                            temp = Image.findByOriginalFilenameAndDataResourceUid(imageUrl, imageSource.dataResourceUid, [ cache: false ])
-                                        }
-                                        image = temp?.refresh()
-                                    }
+                                    // TODO should I use the imageIdForLock to load the image directly here instead of searching again?
+                                    image = findExistingImageByUrlAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
                                     log.trace("uploadImage: after DB lookup, image: {} for imageUrl: {} (attempt {}/{})", image, imageUrl, retryCount + 1, maxRetries)
-
-                                    if (!image && downloadService.isBadUrl(imageUrl)) {
-                                        log.debug("We have already attempted to load {} without success. Skipping.", imageUrl)
-                                        incrementCounter('image.upload.skipped', 'Images skipped due to bad URL')
-                                        return [success: false, alreadyStored: false]
-                                    }
 
                                     if (image) {
                                         log.trace("uploadImage: found existing image: {} for imageUrl: {} (attempt {}/{})", image, imageUrl, retryCount + 1, maxRetries)
@@ -558,7 +579,7 @@ unnest(all_urls) AS unnest_url;
                                     }
                                     log.trace("uploadImage: no existing image found for imageUrl: {} (attempt {}/{})", imageUrl, retryCount + 1, maxRetries)
                                     return null // new image
-                                } } // end transaction and session
+                                }
                                 break // Success, exit retry loop
                             } catch (HibernateOptimisticLockingFailureException | StaleStateException ex) {
                                 retryCount++
