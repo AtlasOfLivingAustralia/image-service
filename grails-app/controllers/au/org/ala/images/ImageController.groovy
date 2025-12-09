@@ -191,7 +191,7 @@ class ImageController implements MetricsSupport {
             description = "Get an image thumbnail version.",
             parameters = [
                     @Parameter(name="id", in = PATH, description = 'Image Id', required = true),
-                    @Parameter(name="type", in = PATH, description = 'Thumbnail type (one of: large, square, square_black, square_white, square_darkGrey, square_darkGray)', required = true)
+                    @Parameter(name="type", in = PATH, description = 'Thumbnail type (one of: large, xlarge, square, square_black, square_white, square_darkGrey, square_darkGray, centre_crop, centre_crop_large)', required = true)
             ],
             responses = [
                     @ApiResponse(content = [@Content(mediaType='image/jpeg')],responseCode = "200",
