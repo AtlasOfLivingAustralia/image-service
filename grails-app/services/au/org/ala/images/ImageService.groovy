@@ -62,11 +62,9 @@ import java.sql.SQLException
 import java.sql.Timestamp
 import java.sql.Types
 import java.text.SimpleDateFormat
+import java.time.Duration
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.Lock
-
-import static grails.web.http.HttpHeaders.USER_AGENT
-import static java.nio.file.Files.createTempFile
 
 @Slf4j
 class ImageService implements MetricsSupport {
@@ -87,6 +85,7 @@ class ImageService implements MetricsSupport {
     def elasticSearchService
     def settingService
     def collectoryService
+    def downloadService
 
     final static List<String> SUPPORTED_UPDATE_FIELDS = [
         "audience",
@@ -177,31 +176,10 @@ unnest(all_urls) AS unnest_url;
 
     private static int BACKGROUND_TASKS_BATCH_SIZE = 100
 
-    @Value('${http.default.readTimeoutMs:10000}')
-    int readTimeoutMs = 10000 // 10 seconds
-
-    @Value('${http.default.connectTimeoutMs:5000}')
-    int connectTimeoutMs = 5000 // 5 seconds
-
-    @Value('${http.default.user-agent:}')
-    String userAgent
-
     @Value('${batch.purge.fetch.size:100}')
     int purgeFetchSize = 100
 
-    @Value('${skin.orgNameShort:ALA}')
-    String orgNameShort
-
-    @Value('${info.app.name:image-service}')
-    String appName
-
-    @Value('${info.app.version:NaN}')
-    String version
-
-    @Value('${batch.upload.file.threshold:10485760}')
-    long fileCacheThreshold = 1024 * 1024 * 10 // 10MB
-
-    @Value('${back.optimisticLocking.maxRetries:3}')
+    @Value('${batch.optimisticLocking.maxRetries:3}')
     int maxLockingRetries = 3
 
     @Value('${batch.optimisticLocking.maxSleepMs:2000}')
@@ -253,13 +231,6 @@ unnest(all_urls) AS unnest_url;
         fw.close()
     }
 
-    private String userAgent() {
-        def userAgent = this.userAgent
-        if (!userAgent) {
-            userAgent = "$orgNameShort-$appName/$version"
-        }
-        return userAgent
-    }
 
     ImageStoreResult storeImageFromUrl(String imageUrl, String uploader, Map metadata = [:]) {
         if (imageUrl) {
@@ -269,9 +240,9 @@ unnest(all_urls) AS unnest_url;
                     scheduleMetadataUpdate(image.imageIdentifier, metadata)
                     return new ImageStoreResult(image, true, image.alternateFilename?.contains(imageUrl) ?: false)
                 }
-                def url = new URL(imageUrl)
+                def uri = new URI(imageUrl)
 
-                def conn = createConnection(url)
+                def response = downloadService.createHttpResponse(uri, imageUrl)
 
                 def contentType = null
 
@@ -297,7 +268,7 @@ unnest(all_urls) AS unnest_url;
                     }
                 }
 
-                def urlContentType = conn.getContentType()
+                def urlContentType = response.getContentType()
                 if (!contentType && urlContentType) {
                     try {
                         MimeType mimeType = new MimeTypes().forName(urlContentType)
@@ -309,10 +280,10 @@ unnest(all_urls) AS unnest_url;
                 }
 
                 def result
-                try (ByteSource byteSource = createByteSourceFromConnection(conn, metadata.extension, imageUrl)) {
+                try (ByteSource byteSource = downloadService.createByteSourceFromHttpResponse(response, metadata.extension, imageUrl)) {
                     //detect from file
                     if (contentType == null){
-                        contentType = detectMimeType(byteSource, imageUrl)
+                        contentType = downloadService.detectMimeType(byteSource, imageUrl)
                     }
 
                     result = storeImageBytes(byteSource, imageUrl, byteSource.size(), contentType, uploader, true, metadata)
@@ -327,43 +298,6 @@ unnest(all_urls) AS unnest_url;
         return null
     }
 
-    private URLConnection createConnection(URL url) {
-        def conn = url.openConnection()
-        conn.connectTimeout = connectTimeoutMs
-        conn.readTimeout = readTimeoutMs
-        conn.setRequestProperty(USER_AGENT, userAgent())
-        return conn
-    }
-
-    private CloseableByteSource createByteSourceFromUrl(URL url, String extension, String imageUrl) {
-        def conn = createConnection(url)
-        return createByteSourceFromConnection(conn, extension, imageUrl)
-    }
-
-    /**
-     * Create a ByteSource from a URLConnection.  The byte source is guaranteed to be reusable.
-     * @param conn The URL connection
-     * @param extension The extension to use if the content length is unknown
-     * @param imageUrl The URL
-     * @return A byte source
-     */
-    private CloseableByteSource createByteSourceFromConnection(URLConnection conn, String extension, String imageUrl) {
-        ByteSource byteSource
-        File cacheFile
-
-        long length = conn.getContentLengthLong()
-
-        if (length > fileCacheThreshold || length == -1) {
-            extension = extension ?: FilenameUtils.getExtension(imageUrl.toURI().getPath())
-            cacheFile = createTempFile("image", extension ?: "jpg").toFile()
-            cacheFile.deleteOnExit()
-            cacheFile << conn.inputStream
-            byteSource = new CloseableByteSource(cacheFile)
-        } else {
-            byteSource = new CloseableByteSource(conn.inputStream.bytes)
-        }
-        return byteSource
-    }
 
     def getImageUrl(Map<String, String> imageSource){
         if (imageSource.sourceUrl) return imageSource.sourceUrl
@@ -464,12 +398,12 @@ unnest(all_urls) AS unnest_url;
                         if (!image) {
                             def result = [success: false, alreadyStored: false]
                             try {
-                                def url = new URL(imageUrl)
+                                def uri = new URI(imageUrl)
 //                                def bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs, requestProperties: [(USER_AGENT): userAgent()])
                                 def contentType
                                 ImageStoreResult storeResult
-                                try (def bytes = createByteSourceFromUrl(url, null, imageUrl)) {
-                                    contentType = detectMimeType(bytes, imageUrl)
+                                try (def bytes = downloadService.createByteSourceFromUrl(uri, null, imageUrl)) {
+                                    contentType = downloadService.detectMimeType(bytes, imageUrl)
                                     storeResult = storeImageBytes(bytes, imageUrl, bytes.size(),
                                             contentType, uploader, true, imageSource)
                                 }
@@ -478,9 +412,19 @@ unnest(all_urls) AS unnest_url;
                                 result.success = true
                                 result.alreadyStored = storeResult.alreadyStored
                                 result.metadataUpdated = false
-                            } catch (Exception ex) {
+                            } catch (HttpImageUploadException e) {
+                                log.warn("Unable to load image from URL: {}. Logging as failed URL, HTTP status: {}, Message: {}", imageUrl, e.statusCode, e.message)
+                                downloadService.logBadUrl(imageUrl, e.statusCode, e.message)
+                                result.message = ex.message
+                            } catch(Exception ex) {
                                 //log to batch update error file
-                                log.error("Problem storing image - " + ex.getMessage(), ex)
+                                if (log.isDebugEnabled()) {
+                                    log.error("Problem storing image - " + ex.getMessage(), ex)
+                                } else {
+                                    log.error("Problem storing image - " + ex.getMessage())
+
+                                }
+                                downloadService.logBadUrl(imageUrl, null, ex.message)
                                 result.message = ex.message
                             }
                             results[imageUrl] = result
@@ -517,15 +461,6 @@ unnest(all_urls) AS unnest_url;
         }
 
         results
-    }
-
-    @Transactional
-    def logBadUrl(String url){
-        new FailedUpload(url: url).save()
-    }
-
-    boolean isBadUrl(String url){
-        FailedUpload.countByUrl(url) > 0
     }
 
 //    @Transactional
@@ -575,7 +510,7 @@ unnest(all_urls) AS unnest_url;
                                     }
                                     log.trace("uploadImage: after DB lookup, image: {} for imageUrl: {} (attempt {}/{})", image, imageUrl, retryCount + 1, maxRetries)
 
-                                    if (!image && isBadUrl(imageUrl)) {
+                                    if (!image && downloadService.isBadUrl(imageUrl)) {
                                         log.debug("We have already attempted to load {} without success. Skipping.", imageUrl)
                                         incrementCounter('image.upload.skipped', 'Images skipped due to bad URL')
                                         return [success: false, alreadyStored: false]
@@ -645,19 +580,23 @@ unnest(all_urls) AS unnest_url;
                             def bytes
                             try {
                                 log.trace("uploadImage: loading image bytes from URL: {}", imageUrl)
-                                def url = new URL(imageUrl)
-                                bytes = createByteSourceFromUrl(url, null, imageUrl)
+                                def uri = new URI(imageUrl)
+                                bytes = downloadService.createByteSourceFromUrl(uri, null, imageUrl)
                                 log.trace("uploadImage: loaded image bytes from URL: {}", imageUrl)
                             } catch (Exception e) {
                                 log.error("Unable to load image from URL: {}. Logging as failed URL, Exception: {}", imageUrl, e.message)
-                                logBadUrl(imageUrl) // transaction
+                                if (e instanceof HttpImageUploadException) {
+                                    downloadService.logBadUrl(imageUrl, e.statusCode, e.message)
+                                } else {
+                                    downloadService.logBadUrl(imageUrl, null, e.message)
+                                }
                                 result = [success: false, alreadyStored: false]
                             }
                             if (!result) {
                                 result = [:]
                                 try {
                                     log.trace("uploadImage: detecting content type for URL: {}", imageUrl)
-                                    def contentType = detectMimeType(bytes, imageUrl)
+                                    def contentType = downloadService.detectMimeType(bytes, imageUrl)
                                     log.trace("uploadImage: storing image bytes for URL: {} with content type", imageUrl, contentType)
                                     ImageStoreResult storeResult = storeImageBytes(bytes, imageUrl, bytes.size(),
                                             contentType, uploader, true, imageSource)
@@ -1581,13 +1520,6 @@ unnest(all_urls) AS unnest_url;
         return count > 0
     }
 
-    static String detectMimeTypeFromBytes(byte[] bytes, String filename) {
-        return new MetadataExtractor().detectContentType(bytes, filename);
-    }
-
-    static String detectMimeType(ByteSource byteSource, String filename) {
-        return new MetadataExtractor().detectContentType(byteSource, filename)
-    }
 
     Image createSubimage(Image parentImage, int x, int y, int width, int height, String userId, Map metadata = [:]) {
 

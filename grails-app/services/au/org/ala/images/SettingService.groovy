@@ -70,6 +70,11 @@ class SettingService {
         getBoolSetting()
     }
 
+    @ImageServiceSetting(name = 'failedUpload.lastCheck', description = "The date/time of the last failed upload check", defaultValue = "")
+    String getFailedUploadLastCheck() {
+        return getStringSetting()
+    }
+
     void enableBatchProcessing(){
         setSettingValue( 'batch.service.processing.enabled', "true")
     }
@@ -80,6 +85,10 @@ class SettingService {
 
     void setStorageLocationDefault(Long value) {
         setSettingValue('storage.location.default', value.toString())
+    }
+
+    void setFailedUploadLastCheck(String value) {
+        setSettingValue('failedUpload.lastCheck', value)
     }
 
     @Transactional

@@ -29,6 +29,7 @@ class AdminController {
     def imageStoreService
     def authService
     def sessionFactory
+    def checkFailedUploadsJob
 
     def index() {
         redirect(action:'dashboard')
@@ -658,6 +659,19 @@ class AdminController {
         redirect(action:'tools', message: 'Tile Lookup Cache is cleared')
     }
     
+    def runCheckFailedUploadsJob() {
+        try {
+            // Trigger the job manually with forceRun parameter
+            def context = [mergedJobDataMap: [forceRun: true]]
+            checkFailedUploadsJob.execute(context)
+            flash.message = 'Failed uploads check job started manually (forced run)'
+        } catch (Exception e) {
+            log.error("Error running CheckFailedUploadsJob manually: ${e.message}", e)
+            flash.errorMessage = "Error running failed uploads check: ${e.message}"
+        }
+        redirect(action:'tools')
+    }
+
     def resetImageTiles() {
         def image = imageService.getImageFromParams(params)
         if (!image) {
