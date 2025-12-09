@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.headers.Header
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
+import org.springframework.beans.factory.annotation.Value
+
 import javax.ws.rs.Produces
 
 import javax.servlet.http.HttpServletResponse
@@ -28,6 +30,9 @@ import org.apache.commons.io.IOUtils
 class IiifController implements MetricsSupport {
 
     static responseFormats = ['json']
+
+    @Value('${images.disableCache:false}')
+    boolean disableCache = false
 
     GrailsApplication grailsApplication
     IiifImageService iiifImageService
@@ -188,15 +193,9 @@ class IiifController implements MetricsSupport {
             }
 
             enableCors()
-            response.setHeader(ImageController.HEADER_ETAG, result.etag)
-            if (result.lastModified) {
-                response.setDateHeader(ImageController.HEADER_LAST_MODIFIED, result.lastModified.time)
-            }
-            if (grailsApplication.config.getProperty('images.cache.headers', Boolean, true)) {
-                cache(shared: true, neverExpires: true)
-            }
+            applyCacheHeaders(disableCache, grailsApplication.config.getProperty('images.cache.headers', Boolean, true), result.etag, result.lastModified)
 
-            if (!checkForModified(result.etag, result.lastModified)) {
+            if (!disableCache && !checkForModified(result.etag, result.lastModified)) {
                 incrementCounter('iiif.render.notmodified', 'IIIF render not modified (304)', [format: format ?: 'unknown'])
                 response.sendError(HttpServletResponse.SC_NOT_MODIFIED)
                 return
@@ -230,6 +229,24 @@ class IiifController implements MetricsSupport {
     }
 
     // Helpers
+
+    private void applyCacheHeaders(boolean disableCache, boolean cacheHeadersEnabled, String etag, Date lastMod) {
+        if (disableCache) {
+            response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+            response.setHeader('Pragma', 'no-cache')
+            response.setDateHeader('Expires', 0)
+            return
+        }
+        if (etag) {
+            response.setHeader(ImageController.HEADER_ETAG, etag)
+        }
+        if (lastMod) {
+            response.setDateHeader(ImageController.HEADER_LAST_MODIFIED, lastMod.time)
+        }
+        if (cacheHeadersEnabled) {
+            cache(shared: true, neverExpires: true)
+        }
+    }
 
     private boolean isIiifEnabled() {
         return grailsApplication.config.getProperty('iiif.enabled', Boolean, true)

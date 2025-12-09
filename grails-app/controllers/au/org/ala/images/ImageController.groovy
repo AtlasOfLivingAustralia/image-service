@@ -90,6 +90,9 @@ class ImageController implements MetricsSupport {
     @Value('${images.cache.headers:true}')
     boolean cacheHeaders = true
 
+    @Value('${images.disableCache:false}')
+    boolean disableCache = false
+
     static AtomicLong boundaryCounter = new AtomicLong(0)
 
     def index() { }
@@ -293,6 +296,12 @@ class ImageController implements MetricsSupport {
         }
 
         if (!noRedirect && imageInfo.redirectUri) {
+            if (disableCache) {
+                // Replace any cache headers with no-cache headers
+                response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+                response.setHeader('Pragma', 'no-cache')
+                response.setDateHeader('Expires', 0)
+            }
             URI uri = imageInfo.redirectUri
             if (uri) {
                 response.status = SC_FOUND
@@ -308,19 +317,21 @@ class ImageController implements MetricsSupport {
             // the generate closure
             def etag = imageInfo.etag
             def lastMod = imageInfo.lastModified
-            def changed = checkForNotModified(etag, lastMod)
-            if (changed) {
-                if (etag) {
-                    response.setHeader(HEADER_ETAG, etag)
+            if (!disableCache) {
+                def changed = checkForNotModified(etag, lastMod)
+                if (changed) {
+                    if (etag) {
+                        response.setHeader(HEADER_ETAG, etag)
+                    }
+                    if (lastMod) {
+                        response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+                    }
+                    if (cacheHeaders) {
+                        cache(shared: true, neverExpires: true)
+                    }
+                    response.sendError(SC_NOT_MODIFIED)
+                    return
                 }
-                if (lastMod) {
-                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
-                }
-                if (cacheHeaders) {
-                    cache(shared: true, neverExpires: true)
-                }
-                response.sendError(SC_NOT_MODIFIED)
-                return
             }
 
             length = imageInfo.length
@@ -330,15 +341,7 @@ class ImageController implements MetricsSupport {
 
             if (ranges.size() > 1) {
                 def boundary = startMultipartResponse(ranges, contentType)
-                if (etag) {
-                    response.setHeader(HEADER_ETAG, etag)
-                }
-                if (lastMod) {
-                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
-                }
-                if (cacheHeaders) {
-                    cache(shared: true, neverExpires: true)
-                }
+                applyCacheHeaders(disableCache, cacheHeaders, etag, lastMod)
 
                 // Grails will provide a dummy output stream for HEAD requests but
                 // explicitly bail on HEAD methods so we don't transfer bytes out of storage
@@ -365,15 +368,7 @@ class ImageController implements MetricsSupport {
                 } else {
                     response.setHeader("Accept-Ranges", "bytes")
                 }
-                if (etag) {
-                    response.setHeader(HEADER_ETAG, etag)
-                }
-                if (lastMod) {
-                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
-                }
-                if (cacheHeaders) {
-                    cache(shared: true, neverExpires: true)
-                }
+                applyCacheHeaders(disableCache, cacheHeaders, etag, lastMod)
                 response.contentLengthLong = rangeLength
                 response.contentType = contentType
                 if (contentDisposition) {
@@ -416,6 +411,26 @@ class ImageController implements MetricsSupport {
             }
             throw e
         }
+        }
+    }
+
+    private void applyCacheHeaders(boolean disableCache, boolean cacheHeadersEnabled, String etag, Date lastMod) {
+        if (disableCache) {
+            // Replace any cache headers with no-cache headers
+            response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+            response.setHeader('Pragma', 'no-cache')
+            response.setDateHeader('Expires', 0)
+            // Do not emit ETag/Last-Modified when caching is disabled
+            return
+        }
+        if (etag) {
+            response.setHeader(HEADER_ETAG, etag)
+        }
+        if (lastMod) {
+            response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+        }
+        if (cacheHeadersEnabled) {
+            cache(shared: true, neverExpires: true)
         }
     }
 
