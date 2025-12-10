@@ -800,7 +800,7 @@ unnest(all_urls) AS unnest_url;
             // Needs a new session because we're outside the previous transaction
             // which feels a bit wrong but avoids further complications
             def failureResultSupplier = { ->
-                def image = Image.withNewSession { Image.findByContentMD5Hash(md5Hash) }
+                def image = Image.withSession { Image.findByContentMD5Hash(md5Hash) }
                 image ? new ImageStoreResult(image, true, true) : null
             } as Supplier<ImageStoreResult>
             //check for existing image using MD5 hash with retry logic for optimistic locking
