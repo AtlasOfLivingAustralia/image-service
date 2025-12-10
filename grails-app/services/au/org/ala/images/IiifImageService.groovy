@@ -20,6 +20,8 @@ import groovy.transform.TupleConstructor
 @Slf4j
 class IiifImageService {
 
+    StorageLocationService storageLocationService
+
     @Value('${image.store.lookup.cache.iiifConfig:maximumSize=10000,expireAfterAccess=30m}')
     String iiifCacheConfig = 'maximumSize=10000,expireAfterAccess=30m'
 
@@ -141,19 +143,14 @@ class IiifImageService {
         }
     }
 
-    private static ImageInfo cacheLoader(String identifier, IiifImageProcessor.Region region,
+    private ImageInfo cacheLoader(String identifier, IiifImageProcessor.Region region,
                                         IiifImageProcessor.Size size,
                                         IiifImageProcessor.Rotation rotation,
                                         IiifImageProcessor.Quality quality,
                                         IiifImageProcessor.Format format) {
-        StorageOperations operations = null
-        Image.withNewTransaction(readOnly: true) {
-            def image = Image.findByImageIdentifier(identifier, [ cache: true, fetch: [ storageLocation: 'join' ] ])
-            if (image) {
-                operations = GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
-            }
-        }
-        
+        // Try to get storage operations without DB lookup (single-storage optimization)
+        StorageOperations operations = storageLocationService.getStorageOperationsForImage(identifier)
+
         if (!operations) {
             return null // don't cache this value
         }

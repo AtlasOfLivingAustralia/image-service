@@ -65,6 +65,13 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
     }
 
     void "test upload image"() {
+        given:
+        if (useConfigStorage) {
+            setupStorageLocation(storageType)
+        } else {
+            clearStorageLocation()
+        }
+
         when:
         MultiValueMap<String, String> form = new LinkedMultiValueMap<String, String>()
         form.add("imageUrl", "https://www.ala.org.au/app/uploads/2019/05/palm-cockatoo-by-Alan-Pettigrew-1920-1200-CCBY-28072018-640x480.jpg")
@@ -76,6 +83,17 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         HttpResponse resp = rest.exchange(request, String)
         then:
         resp.status == HttpStatus.OK
+
+        cleanup:
+        if (useConfigStorage) {
+            clearStorageLocation()
+        }
+
+        where:
+        useConfigStorage | storageType
+        false            | ''
+        true             | 'default'
+        true             | 'named'
     }
 
     void "test multi upload image - bad submission"() {

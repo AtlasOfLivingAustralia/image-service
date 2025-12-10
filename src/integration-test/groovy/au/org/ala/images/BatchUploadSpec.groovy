@@ -12,6 +12,8 @@ import io.micronaut.http.HttpStatus
 import io.micronaut.http.client.BlockingHttpClient
 import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.multipart.MultipartBody
+import org.springframework.beans.factory.annotation.Autowired
+import spock.lang.Unroll
 
 import static au.org.ala.images.AvroUtils.AUDIENCE
 import static au.org.ala.images.AvroUtils.CREATED
@@ -43,8 +45,15 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
     /**
      * Test an AVRO upload with only a single record record in the AVRO file
      */
+    @Unroll
     def uploadSingleFileSingleImageAvro() {
         given:
+        if (useConfigStorage) {
+            setupStorageLocation(storageType)
+        } else {
+            clearStorageLocation()
+        }
+
         def imageUrl = 'https://www.ala.org.au/app/uploads/2019/05/palm-cockatoo-by-Alan-Pettigrew-1920-1200-CCBY-28072018-640x480.jpg'
         def imageUrls = [[[(IDENTIFIER): imageUrl, (CREATOR): 'creator', (CREATED): '2021-01-01 00:00:00']]]
         def avro = AvroUtils.generateTestArchiveWithMetadata(imageUrls, true)
@@ -73,6 +82,12 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
 
         checkBatchFileUpload(upload, TEST_DR_UID, 1)
 
+        // temp checks to validate that the setup works
+        useConfigStorage == storageOperationsRegistry.isUsingConfigBasedStorage()
+        if (storageType == 'default') {
+            useConfigStorage == storageOperationsRegistry.hasSingleStorageLocation()
+        }
+
         // Check that the image was created
         image.originalFilename == imageUrl
         image.mimeType == 'image/jpeg'
@@ -81,6 +96,16 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         image.created == '2021-01-01 00:00:00'
         image.zoomLevels > 0 // Indicates that the tiler ran
 
+        cleanup:
+        if (useConfigStorage) {
+            clearStorageLocation()
+        }
+
+        where:
+        useConfigStorage | storageType
+        false            | ''
+        true             | 'default'
+        true             | 'named'
     }
 
     /**

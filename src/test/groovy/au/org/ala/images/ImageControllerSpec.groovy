@@ -96,7 +96,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
 
         then:
         1 * controller.imageStoreService.originalImageInfo(identifier) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: image.fileSize, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: image.mimeType, extension: 'jpg', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(fileContent)) }) }
-        1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
+        1 * controller.analyticsService.sendAnalyticsFromImageId(true, image.imageIdentifier, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, fileContent)
 
         where:
@@ -126,7 +126,8 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
                 fileSize: fileContent.length * 2, // * 2 so it's larger than the thumbnail
                 mimeType: fileMimeType,
                 storageLocation: storageLocation,
-                dateUploaded: dateUploaded).save()
+                dateUploaded: dateUploaded,
+                dataResourceUid: 'dr1234').save()
         List<Range> ranges = Range.decodeRange(rangeHeader, bytes.size())
         setupGetImageRequest(image, rangeHeader, etag, lastModified)
 
@@ -135,7 +136,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
 
         then:
         1 * controller.imageStoreService.thumbnailImageInfo(image.imageIdentifier, '', _) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: bytes.length, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: bytes == fileContent ? 'image/jpeg' : 'image/png' , extension: bytes == fileContent ? 'jpg' : 'png', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
-        1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
+        1 * controller.analyticsService.sendAnalyticsFromImageId(true, image.imageIdentifier, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
         where:
@@ -163,7 +164,8 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
                 fileSize: fileContent.length * 2,  // * 2 so it's larger than the thumbnail
                 mimeType: fileMimeType,
                 storageLocation: storageLocation,
-                dateUploaded: dateUploaded).save()
+                dateUploaded: dateUploaded,
+                dataResourceUid: 'dr1234').save()
         List<Range> ranges = Range.decodeRange(rangeHeader, bytes.size())
         params.thumbnailType = type
         setupGetImageRequest(image, rangeHeader, etag, lastModified)
@@ -173,7 +175,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
 
         then:
         1 * controller.imageStoreService.thumbnailImageInfo(image.imageIdentifier, type, _) >> { new ImageInfo(exists: true, imageIdentifier: image.imageIdentifier, length: bytes.length, etag: image.contentSHA1Hash, lastModified: image.dateUploaded, contentType: bytes == fileContent ? type == 'square' ? 'image/png' : 'image/jpeg' : 'image/png' , extension: bytes == fileContent ? type == 'square' ? 'png' : 'jpg' : 'png', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
-        1 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
+        1 * controller.analyticsService.sendAnalyticsFromImageId(true, image.imageIdentifier, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
         where:
@@ -203,7 +205,8 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
                 fileSize: fileContent.length * 2, // * 2 so it's larger than the thumbnail
                 mimeType: fileMimeType,
                 storageLocation: storageLocation,
-                dateUploaded: dateUploaded).save()
+                dateUploaded: dateUploaded,
+                dataResourceUid: 'dr1234').save()
         List<Range> ranges = Range.decodeRange(rangeHeader, bytes.size())
         params.x = x
         params.y = y
@@ -215,7 +218,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
 
         then:
         1 * controller.imageStoreService.tileImageInfo(image.imageIdentifier, x, y, z, _) >> { new ImageInfo(exists: fileMimeType.startsWith('image/'), imageIdentifier: image.imageIdentifier, length: bytes.length, etag: sha1ContentHash, lastModified: dateUploaded, contentType: 'image/jpeg', extension: 'jpg', inputStreamSupplier: { r -> r.wrapInputStream(new ByteArrayInputStream(bytes)) }) }
-        0 * controller.analyticsService.sendAnalytics(true, image.dataResourceUid, 'imageview', userAgent)
+        0 * controller.analyticsService.sendAnalyticsFromImageId(true, image.imageIdentifier, 'imageview', userAgent)
         checkGetImageAssertions(image, ranges, statusCode, length, contentType, bytes)
 
         where:

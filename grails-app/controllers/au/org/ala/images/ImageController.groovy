@@ -292,7 +292,11 @@ class ImageController implements MetricsSupport {
             boolean contentDisposition = params.boolean("contentDisposition", false)
 
         if (sendAnalytics) {
-            analyticsService.sendAnalytics(imageInfo.exists, imageInfo.dataResourceUid, 'imageview', request.getHeader("User-Agent"))
+            if (imageInfo.dataResourceUid != null) {
+                analyticsService.sendAnalytics(imageInfo.exists, imageInfo.dataResourceUid, 'imageview', request.getHeader("User-Agent"))
+            } else {
+                analyticsService.sendAnalyticsFromImageId(imageInfo.exists, imageInfo.imageIdentifier, 'imageview', request.getHeader("User-Agent"))
+            }
         }
 
         if (!noRedirect && imageInfo.redirectUri) {

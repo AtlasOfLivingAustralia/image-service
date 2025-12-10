@@ -1,5 +1,6 @@
 package au.org.ala.images.utils
 
+import au.org.ala.images.StorageOperationsRegistry
 import au.org.ala.ws.security.AlaSecurityInterceptor
 import au.org.ala.ws.security.client.AlaAuthClient
 import au.org.ala.ws.security.client.AlaDirectClient
@@ -15,6 +16,7 @@ import org.pac4j.core.client.BaseClient
 import org.pac4j.core.profile.creator.ProfileCreator
 import org.pac4j.oidc.credentials.OidcCredentials
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.env.PropertySourceLoader
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
@@ -32,6 +34,10 @@ import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 abstract class ImagesIntegrationSpec extends Specification {
+
+
+    @Autowired
+    StorageOperationsRegistry storageOperationsRegistry
 
     AlaSecurityInterceptor alaSecurityInterceptor
     AlaDirectClient alaAuthClient
@@ -135,6 +141,45 @@ abstract class ImagesIntegrationSpec extends Specification {
 
     def userAgent() {
         return "image-service-integration-test/${config.getProperty('info.app.version', String, '1.0')}"
+    }
+
+    void setupStorageLocation(storageType) {
+        def configValue
+        if (storageType == 'default') {
+            // basically take the config that will have been used to create the database version and
+            // create our own config-based version
+            def root = storageOperationsRegistry.grailsApplication.config.getProperty('imageservice.imagestore.root')
+            def name = root.replace('/','_')
+            configValue = [
+                    "fs_$name": [
+                            'type': 'fs',
+                            'basePath': root
+                    ]
+            ]
+        } else if (storageType == 'named') {
+            // create two named storage locations and set one as default
+            def root = storageOperationsRegistry.grailsApplication.config.getProperty('imageservice.imagestore.root')
+            def name = root.replace('/','_')
+            configValue = [
+                    "fs_$name": [
+                            'type': 'fs',
+                            'basePath': root,
+                            'default': true
+                    ],
+                    'fs__tmp_secondary': [
+                            'type': 'fs',
+                            'basePath': '/tmp/imagestore/secondary'
+                    ]
+            ]
+
+        }
+        storageOperationsRegistry.grailsApplication.config.imageservice.storage.locations = configValue
+        storageOperationsRegistry.init()
+    }
+
+    void clearStorageLocation() {
+        storageOperationsRegistry.grailsApplication.config.imageservice.storage.locations = null
+        storageOperationsRegistry.init()
     }
 
 }

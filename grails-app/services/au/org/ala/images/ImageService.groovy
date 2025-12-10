@@ -88,6 +88,7 @@ class ImageService implements MetricsSupport {
     def settingService
     def collectoryService
     def downloadService
+    def storageLocationService
 
     final static List<String> SUPPORTED_UPDATE_FIELDS = [
         "audience",
@@ -240,7 +241,7 @@ unnest(all_urls) AS unnest_url;
         if (imageUrl) {
             try {
                 def image = Image.byOriginalFileOrAlternateFilename(imageUrl) // findByOriginalFilename(imageUrl)
-                if (image && image.stored()) {
+                if (image && imageStoreService.isImageStored(image)) {
                     scheduleMetadataUpdate(image.imageIdentifier, metadata)
                     return new ImageStoreResult(image, true, image.alternateFilename?.contains(imageUrl) ?: false)
                 }
@@ -866,19 +867,14 @@ unnest(all_urls) AS unnest_url;
             }
 
             if (!result) {
-                Long defaultStorageLocationID
-                StorageOperations operations
-                Image.withTransaction { // this should be readonly but the settingService may create the setting if it does not exist
-                    defaultStorageLocationID = settingService.getStorageLocationDefault()
-                    operations = StorageLocation.get(defaultStorageLocationID)?.asStandaloneStorageOperations()
-                }
-                log.trace("storeImageBytes: obtained StorageLocation: {} for originalFilename: {}", defaultStorageLocationID, originalFilename)
+                def defaultStorage = storageLocationService.getDefaultStorageOperationsId()
+                log.trace("storeImageBytes: obtained StorageLocation: {} for originalFilename: {}", defaultStorage, originalFilename)
 
                 log.trace("storeImageBytes: storing new image for originalFilename: {}", originalFilename)
                 def sha1Hash = bytes.hash(Hashing.sha1()).asBytes().encodeAsHex() //DigestUtils.digest(DigestUtils.getDigest('SHA-1'), bytes.openStream()).encodeAsHex()
                 log.trace("storeImageBytes: calculated SHA1 hash: {} for originalFilename: {}", sha1Hash, originalFilename)
 
-                def imgDesc = imageStoreService.storeImage(bytes, operations, contentType, originalFilename)
+                def imgDesc = imageStoreService.storeImage(bytes, defaultStorage.operations, contentType, originalFilename)
                 log.trace("storeImageBytes: imageStoreService.storeImage returned imgDesc: {} for originalFilename: {}", imgDesc, originalFilename)
 
                 // Create the image record, and set the various attributes
@@ -915,7 +911,18 @@ unnest(all_urls) AS unnest_url;
                 setMetadataOnImage(metadata, image)
 
                 result = Image.withTransaction {
-                    image.storageLocation = StorageLocation.get(defaultStorageLocationID)
+                    switch (defaultStorage) {
+                        case StorageLocationService.ConfigDefaultStorageOperationsId:
+                            log.trace("storeImageBytes: setting storageLocationName to {} for originalFilename: {}", defaultStorage.name, originalFilename)
+                            image.storageLocationName = defaultStorage.name
+                            break
+                        case StorageLocationService.DatabaseDefaultStorageOperationsId:
+                            log.trace("storeImageBytes: setting storageLocation to id {} for originalFilename: {}", defaultStorage.id, originalFilename)
+                            image.storageLocation = StorageLocation.get(defaultStorage.id)
+                            break
+                        default:
+                            log.error("Unknown storage operations type '{}' for default location '{}'", defaultStorage.class.name, defaultStorage)
+                    }
                     try {
                         log.trace("storeImageBytes: saving new image record for originalFilename: {}", originalFilename)
                         //try to match licence
@@ -1398,7 +1405,7 @@ unnest(all_urls) AS unnest_url;
     def deleteImagePurge(Image image) {
         if (image && image.dateDeleted) {
             deleteRelatedArtefacts(image)
-            if (!image.deleteStored()) {
+            if (!imageStoreService.deleteStored(image)) {
                 log.warn("Unable to delete stored data for ${image.imageIdentifier}")
             }
             // Remove from storage location
@@ -1946,7 +1953,7 @@ unnest(all_urls) AS unnest_url;
             if (UUID_PATTERN.matcher(params.imageId).matches()){
                 return params.imageId
             }
-            if (params.id) {
+            if (params.imageId) {
                 def identifer = Image.withNewTransaction(readOnly: true) {
                     Image.findById(params.int("imageId"), [ cache: true ])?.imageIdentifier
                 }

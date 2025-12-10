@@ -2,6 +2,7 @@ package au.org.ala.images
 
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
+import grails.core.GrailsApplication
 import org.springframework.context.annotation.Bean
 
 import java.util.concurrent.ExecutorService
@@ -15,5 +16,10 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     ExecutorService analyticsExecutor() {
         return Executors.newSingleThreadExecutor()
+    }
+
+    @Bean
+    StorageOperationsRegistry storageOperationsRegistry() {
+        return new StorageOperationsRegistry(this.grailsApplication)
     }
 }
