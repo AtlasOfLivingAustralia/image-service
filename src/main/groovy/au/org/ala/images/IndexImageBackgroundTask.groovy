@@ -4,6 +4,7 @@ import com.opencsv.CSVReaderBuilder
 import com.opencsv.RFC4180ParserBuilder
 import grails.gorm.transactions.Transactional
 import groovy.util.logging.Slf4j
+import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 
 //import org.apache.log4j.Logger
 
@@ -23,9 +24,12 @@ class IndexImageBackgroundTask extends BackgroundTask {
         def imageInstance
         Image.withTransaction {
             imageInstance = Image.findById(_imageId, [fetch: [recognisedLicense: 'eager']])
-            def licenseName = imageInstance?.recognisedLicense?.name
-            def acronym = imageInstance?.recognisedLicense?.acronym
-            log.trace("Indexing image id: ${_imageId}, license: ${acronym}:${licenseName}")
+            if (imageInstance) {
+                GrailsHibernateUtil.unwrapIfProxy(imageInstance.recognisedLicense)
+                def licenseName = imageInstance.recognisedLicense?.name
+                def acronym = imageInstance.recognisedLicense?.acronym
+                log.trace("Indexing image id: ${_imageId}, license: ${acronym}:${licenseName}")
+            }
         }
         if (imageInstance) {
             _elasticSearchService.indexImage(imageInstance)
