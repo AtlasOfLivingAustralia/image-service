@@ -534,7 +534,7 @@ class ImageStoreService implements MetricsSupport {
                         withTransaction {
                             def updates = Image.executeUpdate("update Image set zoomLevels = :zoomLevels where imageIdentifier = :imageIdentifier and zoomLevels != :zoomLevels", [zoomLevels: results.zoomLevels, imageIdentifier: imageIdentifier])
                             if (updates < 1) {
-                                log.warn("Failed to update zoom levels for image ${imageIdentifier}")
+                                log.debug("Zoom levels were already ${results.zoomLevels} for ${imageIdentifier}")
                             }
                         }
                     }
