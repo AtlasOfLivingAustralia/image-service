@@ -213,6 +213,7 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
                         [(IDENTIFIER): 'https://www.ala.org.au/app/uploads/2020/07/jun202.1-1920x910.png?test2', (AUDIENCE): 'audience3']
                 ]
         ]
+        def audienceToImageUrls = imageUrls.collectEntries { [(it[0][AUDIENCE]): it[0][IDENTIFIER]] }
         def avro = AvroUtils.generateTestArchiveWithMetadata(imageUrls, false)
 
         when:
@@ -231,7 +232,7 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         // Poll until the image tiler has run on the last image in the batch upload
         def upload = findBatchFileUpload(response.batchID, start)
         start = System.currentTimeSeconds()
-        def originalImage = findImage(imageUrls[0][0][(IDENTIFIER)], true, start)
+        def originalImage = findImage(imageUrls.collect { it[0][IDENTIFIER] }, true, start)
 
         then:
         checkCommonResponse(uploadResponse, response, imageUrls, TEST_DR_UID)
@@ -242,19 +243,24 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         originalImage != null
         originalImage.mimeType == 'image/png'
         originalImage.dateDeleted == null
-        originalImage.audience == 'audience'
+        originalImage.audience in audienceToImageUrls.keySet() // The order in which these are processed is not guaranteed
+        def foundUrl = originalImage.originalFilename
+        def foundAudience = originalImage.audience
+        def expectedAlternateFilenames = audienceToImageUrls.findAll { it.key != foundAudience }.values() as Set
         originalImage.zoomLevels > 0 // Indicates that the tiler ran
         originalImage.alternateFilename != null
-        originalImage.alternateFilename.size() == 2
-        originalImage.alternateFilename as Set == [imageUrls[1][0][(IDENTIFIER)], imageUrls[2][0][(IDENTIFIER)]] as Set
+        originalImage.alternateFilename.size() == expectedAlternateFilenames.size()
+        originalImage.alternateFilename as Set == expectedAlternateFilenames
 
         when: "uploading a duplicate image again, the duplicate is detected before it is downloaded again"
+
+        def alternateImageUrls = imageUrls.findAll { it[0][AUDIENCE] != foundAudience } as List<List<?>>
 
         uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "batch/upload")
                 .contentType("multipart/form-data")
                 .body(MultipartBody.builder()
                         .addPart("dataResourceUid", TEST_DR_UID)
-                        .addPart('archive', avro)
+                        .addPart('archive', AvroUtils.generateTestArchiveWithMetadata(alternateImageUrls, false))
                         .build()), String)
 
         response = new JsonSlurper().parseText(uploadResponse.body())
@@ -264,10 +270,11 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         // Poll until the image tiler has run on the last image in the batch upload
         upload = findBatchFileUpload(response.batchID, start)
 
-        originalImage = findImage(imageUrls[0][0][(IDENTIFIER)], true, start)
+        // Refresh the original image, we can check it's audience was updated by duplicate URL detection
+        originalImage.refresh()
 
         then:
-        checkCommonResponse(uploadResponse, response, imageUrls, TEST_DR_UID)
+        checkCommonResponse(uploadResponse, response, alternateImageUrls, TEST_DR_UID)
 
         checkBatchFileUpload(upload, TEST_DR_UID, 3)
 
@@ -275,11 +282,47 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         originalImage != null
         originalImage.mimeType == 'image/png'
         originalImage.dateDeleted == null
-        originalImage.audience == 'audience'
+        originalImage.audience in alternateImageUrls.collect { it[0][AUDIENCE] } // The order in which these are processed is not guaranteed but it won't be the original audience
         originalImage.zoomLevels > 0 // Indicates that the tiler ran
         originalImage.alternateFilename != null
-        originalImage.alternateFilename.size() == 2 // Check the number of alternate filenames has not increased.
-        originalImage.alternateFilename as Set == [imageUrls[1][0][(IDENTIFIER)], imageUrls[2][0][(IDENTIFIER)]] as Set
+        originalImage.alternateFilename.size() == expectedAlternateFilenames.size() // Check the number of alternate filenames has not increased.
+        originalImage.alternateFilename as Set == expectedAlternateFilenames
+
+        when: "uploading the originalfilename duplicate image again, the duplicate is detected before it is downloaded again and the audience is updated once more"
+
+        def originalUrls = imageUrls.findAll { it[0][AUDIENCE] == foundAudience } as List<List<?>>
+
+        uploadResponse = rest.exchange(HttpRequest.create(HttpMethod.POST, "batch/upload")
+                .contentType("multipart/form-data")
+                .body(MultipartBody.builder()
+                        .addPart("dataResourceUid", TEST_DR_UID)
+                        .addPart('archive', AvroUtils.generateTestArchiveWithMetadata(originalUrls, false))
+                        .build()), String)
+
+        response = new JsonSlurper().parseText(uploadResponse.body())
+
+        // wait for batch files and images to be created
+        start = System.currentTimeSeconds()
+        // Poll until the image tiler has run on the last image in the batch upload
+        upload = findBatchFileUpload(response.batchID, start)
+
+        // Refresh the original image, we can check it's audience was updated by duplicate URL detection
+        originalImage.refresh()
+
+        then:
+        checkCommonResponse(uploadResponse, response, originalUrls, TEST_DR_UID)
+
+        checkBatchFileUpload(upload, TEST_DR_UID, 3)
+
+        // One duplicate created per additional image
+        originalImage != null
+        originalImage.mimeType == 'image/png'
+        originalImage.dateDeleted == null
+        originalImage.audience in originalUrls.collect { it[0][AUDIENCE] } // We've updated to the original audience again
+        originalImage.zoomLevels > 0 // Indicates that the tiler ran
+        originalImage.alternateFilename != null
+        originalImage.alternateFilename.size() == expectedAlternateFilenames.size() // Check the number of alternate filenames has not increased.
+        originalImage.alternateFilename as Set == expectedAlternateFilenames
 
     }
 
@@ -398,6 +441,14 @@ class BatchUploadSpec extends ImagesIntegrationSpec {
         return upload
     }
 
+    private Image findImage(List<String> originalFilenames, boolean checkZoomLevel, int startTimeSeconds) {
+        def image = Image.findByOriginalFilenameInList(originalFilenames)
+        while ((image == null || (checkZoomLevel && image?.zoomLevels == 0)) && since(startTimeSeconds) <= TIMEOUT_SECONDS) {
+            Thread.sleep(500)
+            image = image == null ? Image.findByOriginalFilenameInList(originalFilenames) : image.refresh()
+        }
+        return image
+    }
     private Image findImage(String originalFilename, boolean checkZoomLevel, int startTimeSeconds) {
         def image = Image.findByOriginalFilename(originalFilename)
         while ((image == null || (checkZoomLevel && image?.zoomLevels == 0)) && since(startTimeSeconds) <= TIMEOUT_SECONDS) {
