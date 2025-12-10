@@ -95,6 +95,9 @@ class ImageStoreService implements MetricsSupport {
     @Value('${tiling.concurrency.timeout:30}')
     int tileConcurrencyTimeout = 30
 
+    @Value('${images.disableCache:false}')
+    boolean disableCache = false
+
     private Semaphore thumbnailSemaphore
     private Semaphore tilingSemaphore
 
@@ -608,7 +611,7 @@ class ImageStoreService implements MetricsSupport {
         if (refresh) {
             thumbnailCache.invalidate(key)
         }
-        return thumbnailCache.get(key, loader) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
+        return (disableCache ? loader.call(key) : thumbnailCache.get(key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
     }
 
     private ImageInfo ensureThumbnailExistsCacheLoader(String dataResourceUid, StorageOperations operations, Pair<String, String> pair) {
@@ -699,7 +702,7 @@ class ImageStoreService implements MetricsSupport {
         }
         // First check the origin tile for the zoom level, if it doesn't exist then we can generate
         // the whole set of tiles for the level
-        def originInfo = tileCache.get(originKey, loader) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
+        def originInfo = (disableCache ? loader.call(originKey) : tileCache.get(originKey, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
 
         // then if the origin was requested, return the origin info
         // or if the origin doesn't exist then any tile for the given zoom level won't exist either
@@ -709,7 +712,7 @@ class ImageStoreService implements MetricsSupport {
             return originInfo
         } else {
             // otherwise now we get the info for the tile that was actually requested and cache it
-            def tileInfo = tileCache.get(key, loader) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
+            def tileInfo = (disableCache ? loader.call(key) : tileCache.get(key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
             tileInfo.dataResourceUid = dataResourceUid
             return tileInfo
         }

@@ -417,6 +417,11 @@ purgeCompletedAgeInDays: 3
 # URLs for images (to avoid re-downloading the images)
 imageServiceUrls: ["http://dev.ala.org.au:8080","https://images.ala.org.au"]
 
+images:
+  # When true, disable all HTTP caching for image responses and bypass
+  # in-memory Caffeine caches for thumbnails and tiles. Default: false
+  disableCache: false
+
 # External links
 collectory:
     baseURL: "https://collections.ala.org.au"
