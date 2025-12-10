@@ -867,8 +867,13 @@ unnest(all_urls) AS unnest_url;
             }
 
             if (!result) {
-                def defaultStorage = storageLocationService.getDefaultStorageOperationsId()
-                log.trace("storeImageBytes: obtained StorageLocation: {} for originalFilename: {}", defaultStorage, originalFilename)
+                def defaultStorages = storageLocationService.getDefaultStorageOperationsId()
+                log.trace("storeImageBytes: obtained StorageLocations: {} for originalFilename: {}", defaultStorages, originalFilename)
+
+                if (!defaultStorages) {
+                    throw new IllegalStateException("No default storage locations configured - cannot store image")
+                }
+                def defaultStorage = defaultStorages[0]
 
                 log.trace("storeImageBytes: storing new image for originalFilename: {}", originalFilename)
                 def sha1Hash = bytes.hash(Hashing.sha1()).asBytes().encodeAsHex() //DigestUtils.digest(DigestUtils.getDigest('SHA-1'), bytes.openStream()).encodeAsHex()
@@ -911,17 +916,8 @@ unnest(all_urls) AS unnest_url;
                 setMetadataOnImage(metadata, image)
 
                 result = Image.withTransaction {
-                    switch (defaultStorage) {
-                        case StorageLocationService.ConfigDefaultStorageOperationsId:
-                            log.trace("storeImageBytes: setting storageLocationName to {} for originalFilename: {}", defaultStorage.name, originalFilename)
-                            image.storageLocationName = defaultStorage.name
-                            break
-                        case StorageLocationService.DatabaseDefaultStorageOperationsId:
-                            log.trace("storeImageBytes: setting storageLocation to id {} for originalFilename: {}", defaultStorage.id, originalFilename)
-                            image.storageLocation = StorageLocation.get(defaultStorage.id)
-                            break
-                        default:
-                            log.error("Unknown storage operations type '{}' for default location '{}'", defaultStorage.class.name, defaultStorage)
+                    for (storage in defaultStorages) {
+                        storage.applyToImage(image)
                     }
                     try {
                         log.trace("storeImageBytes: saving new image record for originalFilename: {}", originalFilename)

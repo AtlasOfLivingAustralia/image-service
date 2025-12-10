@@ -46,6 +46,7 @@ class StorageLocationService {
                 }
                 storageLocation = new S3StorageLocation(region: json.region, bucket: json.bucket, prefix: json.prefix ?: '',
                         accessKey: json.accessKey, secretKey: json.secretKey,
+                        containerCredentials: [true, 'true', 'on'].contains(json.containerCredentials),
                         publicRead: [true, 'true', 'on'].contains(json.publicRead),
                         privateAcl: [true, 'true', 'on'].contains(json.privateAcl),
                         redirect: [true, 'true', 'on'].contains(json.redirect))
@@ -169,7 +170,9 @@ class StorageLocationService {
             if (image?.storageLocation) {
                 return GrailsHibernateUtil.unwrapIfProxy(image.storageLocation).asStandaloneStorageOperations()
             }
-            return null
+
+            log.warn("Image {} can't resolve a storage location, falling back to default!", imageIdentifierArg)
+            return getDefaultStorageOperations()
         }
     }
 
@@ -193,14 +196,28 @@ class StorageLocationService {
         return null
     }
 
+    /**
+     * Get storage operations for a specific image entity.
+     * Even though we already have the Image entity, we will still try to avoid DB hits if possible.
+     *
+     * @param image
+     * @return
+     */
     StorageOperations getStorageOperationsForImage(Image image) {
         String imageIdentifierArg = image?.imageIdentifier
+
+        StorageOperations ops = getStorageOperationsWithoutDbLookup()
+        if (ops) {
+            log.trace("Using single-storage config for image {}", imageIdentifierArg)
+            return ops
+        }
+
         if (storageOperationsRegistry.isUsingConfigBasedStorage()) {
 
             def storageLocationName = image.storageLocationName
 
             if (storageLocationName) {
-                def ops = storageOperationsRegistry.getByName(storageLocationName as String)
+                ops = storageOperationsRegistry.getByName(storageLocationName as String)
                 if (ops) {
                     log.trace("Found storage operations for image {} using name: {}", imageIdentifierArg, storageLocationName)
                     return ops
@@ -234,34 +251,53 @@ class StorageLocationService {
         }
     }
 
+    /**
+     * For backwards compatibility, get all possible default storage operations identifiers.
+     * This includes both config-based default and database default.
+     * The order is config-based first, then database-based.
+     * @return The list of default storage operations identifiers.
+     */
     @NotTransactional
-    DefaultStorageOperationsId getDefaultStorageOperationsId() {
+    List<DefaultStorageOperationsId> getDefaultStorageOperationsId() {
+        def result = []
         StorageOperations ops
         if (storageOperationsRegistry.usingConfigBasedStorage) {
             ops = storageOperationsRegistry.getDefault()
             if (ops) {
-                return new ConfigDefaultStorageOperationsId(name: storageOperationsRegistry.defaultName, operations: ops)
+                result += new ConfigDefaultStorageOperationsId(name: storageOperationsRegistry.defaultName, operations: ops)
             }
         }
-        return Image.withTransaction { // this should be readonly but the settingService may create the setting if it does not exist
+        Image.withTransaction { // this should be readonly but the settingService may create the setting if it does not exist
             def defaultStorageLocationID = settingService.getStorageLocationDefault()
-            def operations = StorageLocation.get(defaultStorageLocationID)?.asStandaloneStorageOperations()
-            return new DatabaseDefaultStorageOperationsId(id: defaultStorageLocationID, operations: operations)
+            if (defaultStorageLocationID && defaultStorageLocationID > 0) { // if this is set to 0 or a negative value then there is no default in the DB
+                def operations = StorageLocation.get(defaultStorageLocationID)?.asStandaloneStorageOperations()
+                result += new DatabaseDefaultStorageOperationsId(id: defaultStorageLocationID, operations: operations)
+            }
         }
+        return result
     }
 
     @ToString
-    static class DefaultStorageOperationsId {
+    static abstract class DefaultStorageOperationsId {
         StorageOperations operations
+        abstract void applyToImage(Image image)
     }
 
     @ToString(includeSuper=true)
     static class ConfigDefaultStorageOperationsId extends DefaultStorageOperationsId {
         String name
+        @Override
+        void applyToImage(Image image) {
+            image.storageLocationName = name
+        }
     }
     @ToString(includeSuper=true)
     static class DatabaseDefaultStorageOperationsId extends DefaultStorageOperationsId {
         Long id
+        @Override
+        void applyToImage(Image image) {
+            image.storageLocation = StorageLocation.get(id)
+        }
     }
 
     /**

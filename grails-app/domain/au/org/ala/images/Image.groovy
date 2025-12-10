@@ -172,11 +172,12 @@ class Image implements AsyncEntity<Image> {
                 log.error("Image {} could not find storage operations for location name '{}' during '{}'", id, storageLocationName, operation)
             }
         }
-        if (!storageLocation) {
-            throw new IllegalStateException("Cannot retrieve image data for $imageIdentifier because it has no associated storage location")
-        }
         if (!ops) {
             ops = GrailsHibernateUtil.unwrapIfProxy(storageLocation)
+        }
+        if (!ops) {
+            log.error("Image {} could not find storage operations during '{}', falling back to default", id, operation)
+            ops = Holders.applicationContext.getBean(StorageLocationService).getDefaultStorageOperations()
         }
         return ops
     }

@@ -21,6 +21,7 @@ import grails.web.mapping.LinkGenerator
 import groovy.transform.Immutable
 import groovy.util.logging.Slf4j
 import net.lingala.zip4j.ZipFile
+import net.lingala.zip4j.io.inputstream.ZipInputStream
 import net.lingala.zip4j.model.FileHeader
 import org.apache.commons.io.FileUtils
 import org.apache.commons.lang3.exception.ExceptionUtils
@@ -241,13 +242,12 @@ class ImageStoreService implements MetricsSupport {
     // Replacements for Image.x() methods that call into the storage operations
 
     byte[] retrieveImageBytes(Image image) {
-        return storageLocationService.getStorageOperationsForImage(image).retrieve(imageIdentifier)
+        return storageLocationService.getStorageOperationsForImage(image).retrieve(image.imageIdentifier)
     }
 
 //    @Transactional(readOnly = true)
     InputStream retrieveImageInputStream(String imageIdentifier) {
         return storageLocationService.getStorageOperationsForImage(imageIdentifier).originalInputStream(imageIdentifier, null)
-//        return Image.findByImageIdentifier(imageIdentifier, [ cache: true, fetch: [ storageLocation: 'join'] ] ).originalInputStream()
     }
 
     InputStream retrieveImageInputStream(Image image) {
@@ -266,13 +266,13 @@ class ImageStoreService implements MetricsSupport {
         storageLocationService.getStorageOperationsForImage(image).deleteStored(image.imageIdentifier)
     }
 
-    void storeTileZipInputStream(Image image, String fileName, String contentType, long length, InputStream inputStream) {
+    void storeTileZipInputStream(Image image, String fileName, String contentType, long length, ZipInputStream inputStream) {
         def ops = storageLocationService.getStorageOperationsForImage(image)
         ops.storeTileZipInputStream(image.imageIdentifier, fileName, contentType, length, inputStream)
     }
 
 
-    void migrateTo(Image image, StorageLocation sl) {
+    void migrateTo(Image image, StorageLocation destination) {
         storageLocationService.getStorageOperationsForImage(image).migrateTo(image.imageIdentifier, image.mimeType, destination)
     }
 
