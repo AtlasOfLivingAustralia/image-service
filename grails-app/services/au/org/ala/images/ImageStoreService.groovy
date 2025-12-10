@@ -880,8 +880,9 @@ class ImageStoreService implements MetricsSupport {
                 // Only check mimeType if the thumbnail operation indicates it might not be an image
                 incrementCounter('imagestore.info.thumbnail.lookup.nodbhit', 'Thumbnail info lookups without DB hit', [type: type ?: 'default'])
 
+                ImageInfo info
                 try {
-                    def info = ensureThumbnailExists(imageIdentifier, null, operations, type, refresh)
+                    info = ensureThumbnailExists(imageIdentifier, null, operations, type, refresh)
                     if (info && info.exists) {
                         incrementCounter('imagestore.info.thumbnail.found', 'Thumbnail found', [type: type ?: 'default'])
                         return info
@@ -907,25 +908,8 @@ class ImageStoreService implements MetricsSupport {
                     incrementCounter('imagestore.info.thumbnail.placeholder', 'Placeholder thumbnail used (fast-fail)', [mimeType: mimeType.split('/')[0]])
                     log.debug("Fast-fail: {} is {}, serving placeholder instead of thumbnail", imageIdentifier, mimeType)
 
-                    def resource
-                    if (mimeType.startsWith('audio/')) {
-                        resource = (type == 'large' || type == 'thumbnail_large') ? audioLargeThumbnail : audioThumbnail
-                    } else {
-                        resource = (type == 'large' || type == 'thumbnail_large') ? documentLargeThumbnail : documentThumbnail
-                    }
-
-                    return new ImageInfo(
-                            exists: true,
-                            imageIdentifier: imageIdentifier,
-                            dataResourceUid: null,
-                            length: resource.contentLength(),
-                            lastModified: new Date(resource.lastModified()),
-                            contentType: 'image/png',
-                            extension: 'png',
-                            inputStreamSupplier: { range -> range.wrapInputStream(resource.inputStream) },
-                            shouldExist: true
-                    )
-                } else { // isImage == true && !info.exists
+                    return nonImageThumbnailImageInfo(mimeType, type, imageIdentifier)
+                } else if (info != null) { // isImage == true && !info.exists
                     log.debug("Confirmed {} is an image but thumbnail of type {} does not exist in storage", imageIdentifier, type)
                     incrementCounter('imagestore.info.thumbnail.notfound', 'Thumbnail not found', [type: type ?: 'default'])
                     return info
@@ -958,38 +942,33 @@ class ImageStoreService implements MetricsSupport {
                     }
                 } else {
                     incrementCounter('imagestore.info.thumbnail.placeholder', 'Placeholder thumbnail used', [mimeType: mimeType.split('/')[0]])
-                    def resource
-                    if (mimeType.startsWith('audio/')) {
-                        if (type == 'large' || type == 'thumbnail_large') {
-                            resource = audioLargeThumbnail
-                        } else {
-                            resource = audioThumbnail
-                        }
-                    } else {
-                        if (type == 'large' || type == 'thumbnail_large') {
-                            resource = documentLargeThumbnail
-                        } else {
-                            resource = documentThumbnail
-                        }
-                    }
-
-                    return new ImageInfo(
-                            exists: true,
-                            imageIdentifier: imageIdentifier,
-                            dataResourceUid: dataResourceUid,
-                            length: resource.contentLength(),
-                            lastModified: new Date(resource.lastModified()),
-                            contentType: 'image/png',
-                            extension: 'png',
-                            inputStreamSupplier: { range -> range.wrapInputStream(resource.inputStream) },
-                            shouldExist: true
-                    )
-
+                    return nonImageThumbnailImageInfo(mimeType, type, imageIdentifier)
                 }
             }
             incrementCounter('imagestore.info.thumbnail.notfound', 'Thumbnail not found - image not found', [type: type ?: 'default'])
             return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/jpeg')
         }
+    }
+
+    private ImageInfo nonImageThumbnailImageInfo(String mimeType, String type, String imageIdentifier, String dataResourceUid = null) {
+        def resource
+        if (mimeType.startsWith('audio/')) {
+            resource = (type == 'large' || type == 'thumbnail_large') ? audioLargeThumbnail : audioThumbnail
+        } else {
+            resource = (type == 'large' || type == 'thumbnail_large') ? documentLargeThumbnail : documentThumbnail
+        }
+
+        return new ImageInfo(
+                exists: true,
+                imageIdentifier: imageIdentifier,
+                dataResourceUid: dataResourceUid,
+                length: resource.contentLength(),
+                lastModified: new Date(resource.lastModified()),
+                contentType: 'image/png',
+                extension: 'png',
+                inputStreamSupplier: { range -> range.wrapInputStream(resource.inputStream) },
+                shouldExist: true
+        )
     }
 
     @NotTransactional
