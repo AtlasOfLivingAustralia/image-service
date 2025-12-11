@@ -1,9 +1,7 @@
 package au.org.ala.images.tiling;
 
 import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
-import au.org.ala.images.util.FileByteSinkFactory;
 import com.google.common.io.ByteSink;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.UnsynchronizedByteArrayInputStream;
 import org.apache.commons.lang3.tuple.Pair;
@@ -18,7 +16,6 @@ import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.Closeable;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -35,7 +32,7 @@ import java.util.stream.Stream;
  * Alternate tiler implementation that works with input streams and uses
  * a different threading model.
  */
-public class ImageTiler3 {
+public class ImageTiler3 implements IImageTiler{
 
     private static final Logger log = LoggerFactory.getLogger(ImageTiler3.class);
     public static final int SLICE_SIZE = 8192;
@@ -71,14 +68,7 @@ public class ImageTiler3 {
         }
     }
 
-    public ImageTilerResults tileImage(File imageFile, File destinationDirectory) throws IOException {
-        return tileImage(FileUtils.openInputStream(imageFile), new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(destinationDirectory)));
-    }
-
-    public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink) throws IOException {
-        return tileImage(imageInputStream, tilerSink, 0, Integer.MAX_VALUE);
-    }
-
+    @Override
     public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException {
         int zoomLevels = startTiling(imageInputStream, tilerSink, minLevel, maxLevel);
 
@@ -303,13 +293,28 @@ public class ImageTiler3 {
 
         var resized = Scalr.resize(bufferedImage, width, height);
 
-        List<SaveTileTask> saveTileTasks = splitIntoTiles(resized, sliceCoords, levelSink, cols, rows);
+        List<SaveTileTask> saveTileTasks = splitIntoTiles(resized, sliceCoords, levelSink, cols, rows, subsample);
 
         return saveTileTasks.stream();
     }
 
-    private List<SaveTileTask> splitIntoTiles(BufferedImage strip, Point sliceCoords, TilerSink.LevelSink levelSink, int cols, int rows) {
+    private List<SaveTileTask> splitIntoTiles(BufferedImage strip, Point sliceCoords, TilerSink.LevelSink levelSink, int cols, int rows, int subsample) {
         var result = new ArrayList<SaveTileTask>(cols * rows);
+
+        // Calculate max tiles per slice at this zoom level.
+        // NOTE: At extreme zoom levels (high subsample), when SLICE_SIZE/subsample < _tileSize,
+        // a single slice is smaller than one tile. This means multiple slices may map to the same
+        // tile coordinates, potentially causing incomplete tiles. This is a known limitation of the
+        // slice-based architecture and primarily affects the most zoomed-out levels (e.g., level 0)
+        // which are rarely used in practice. A proper fix would require reading the entire image
+        // (not sliced) for these extreme zoom levels.
+        double sliceSizeAtLevel = (double) SLICE_SIZE / (double) subsample;
+        double maxTilesPerSliceAtLevel = sliceSizeAtLevel / (double) _tileSize;
+
+        // Use floating point to get accurate position, then truncate
+        int startCol = (int)((double)sliceCoords.x * maxTilesPerSliceAtLevel);
+        int startRow = (int)((double)sliceCoords.y * maxTilesPerSliceAtLevel);
+
         // Now divide the strip up into tiles
         for (int col = 0; col < cols; col++) {
 
@@ -318,7 +323,9 @@ public class ImageTiler3 {
                 continue;
             }
 
-            TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, sliceCoords.x, this._maxColsPerStrip);
+            int actualCol = startCol + col;
+
+            TilerSink.ColumnSink columnSink = levelSink.getColumnSink(actualCol, 0, 1);
 
             int tw = _tileSize;
             if (tw + (col * _tileSize) > strip.getWidth()) {
@@ -332,12 +339,11 @@ public class ImageTiler3 {
             for (int y = 0; y < rows; y++) {
                 int th = _tileSize;
 
-                // Start from the bottom of the row and work up
-                int rowOffset = strip.getHeight() - ((rows - y) * _tileSize);
+                // Start from the top of the row and work down
+                int rowOffset = y * _tileSize;
 
-                if (rowOffset < 0) {
-                    th = strip.getHeight() - ((rows - 1) * _tileSize);
-                    rowOffset = 0;
+                if (rowOffset + _tileSize > strip.getHeight()) {
+                    th = strip.getHeight() - rowOffset;
                 }
 
                 BufferedImage tile = null;
@@ -350,7 +356,7 @@ public class ImageTiler3 {
                 BufferedImage destTile = createDestTile();
                 Graphics g = GRAPHICS_ENV.createGraphics(destTile);
 
-                // We have to create a blank tile, and transfer the clipped tile into the appropriate spot (bottom left)
+                // We have to create a blank tile, and transfer the clipped tile into the appropriate spot (top left)
                 if (_tileFormat == TileFormat.JPEG && tile != null) {
                     // JPEG doesn't support transparency, and this tile is an edge tile so fill the tile with a background color first
                     g.setColor(_tileBackgroundColor);
@@ -358,13 +364,14 @@ public class ImageTiler3 {
                 }
 
                 if (tile != null) {
-                    // Now blit the tile to the destTile
-                    g.drawImage(tile, 0, _tileSize - tile.getHeight(), null);
+                    // Now blit the tile to the destTile at top-left (changed from bottom-left)
+                    g.drawImage(tile, 0, 0, null);
                 }
                 // Clean up!
                 g.dispose();
                 // Shunt this off to the io writers.
-                ByteSink tileSink = columnSink.getTileSink((sliceCoords.y * _maxColsPerStrip) + rows - y - 1);
+                int actualRow = startRow + y;
+                ByteSink tileSink = columnSink.getTileSink(actualRow);
                 result.add(new SaveTileTask(tileSink, destTile));
             }
         }

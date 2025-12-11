@@ -25,7 +25,7 @@ import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
-public class ImageTiler {
+public class ImageTiler implements IImageTiler {
 
     private static final Logger log = LoggerFactory.getLogger(ImageTiler.class);
 
@@ -60,14 +60,7 @@ public class ImageTiler {
         }
     }
 
-    public ImageTilerResults tileImage(File imageFile, File destinationDirectory) throws IOException, InterruptedException {
-        return tileImage(FileUtils.openInputStream(imageFile), new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(destinationDirectory)));
-    }
-
-    public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink) throws IOException, InterruptedException {
-        return tileImage(imageInputStream, tilerSink, 0, Integer.MAX_VALUE);
-    }
-
+    @Override
     public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException, InterruptedException {
 
         if (minLevel < 0 || maxLevel < 0 || minLevel > maxLevel) {
