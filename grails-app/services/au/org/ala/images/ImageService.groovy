@@ -2342,31 +2342,31 @@ unnest(all_urls) AS unnest_url;
         }
 
         try (ByteArrayInputStream bais = new ByteArrayInputStream(imageData)) {
-            BufferedImage originalImage = ImageIO.read(bais);
+            BufferedImage originalImage = ImageIO.read(bais)
 
-            int originalWidth = originalImage.getWidth();
-            int originalHeight = originalImage.getHeight();
+            int originalWidth = originalImage.getWidth()
+            int originalHeight = originalImage.getHeight()
 
             if (originalWidth > maxWidth) {
-                int newWidth = maxWidth;
-                int newHeight = (newWidth * originalHeight) / originalWidth;
+                int newWidth = maxWidth
+                int newHeight = Math.round((newWidth * originalHeight) / (float) originalWidth)
 
-                BufferedImage resizedImage = Scalr.resize(originalImage, Scalr.Method.QUALITY, newWidth, newHeight);
+                BufferedImage resizedImage = Scalr.resize(originalImage, Scalr.Method.QUALITY, newWidth, newHeight)
 
                 try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-                    ImageIO.write(resizedImage, contentType.split("/")[1], baos);
-                    return baos.toByteArray();
+                    ImageIO.write(resizedImage, contentType.split("/")[1], baos)
+                    return baos.toByteArray()
                 }
             }
 
-            return imageData;
+            return imageData
         } catch (Exception e) {
-            log.error("Error resizing image", e);
-            return imageData;
+            log.error("Error resizing image", e)
+            return imageData
         }
     }
 
-    private boolean shouldResize(String contentType) {
+    private static boolean shouldResize(String contentType) {
         return contentType.startsWith("image/")
     }
 
