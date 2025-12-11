@@ -1,59 +1,104 @@
 package au.org.ala.images
 
 import au.org.ala.images.metadata.MetadataExtractor
+import au.org.ala.images.metrics.MetricsSupport
+import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.thumb.ThumbnailingResult
 import au.org.ala.images.tiling.TileFormat
+import com.google.common.hash.Hashing
+import com.google.common.io.ByteSource
+import com.google.common.io.Files
+import com.google.common.util.concurrent.Striped
 import com.opencsv.CSVParserBuilder
 import com.opencsv.CSVWriterBuilder
 import com.opencsv.RFC4180ParserBuilder
+import grails.gorm.transactions.NotTransactional
 import grails.gorm.transactions.Transactional
 import grails.orm.HibernateCriteriaBuilder
+import grails.web.servlet.mvc.GrailsParameterMap
+import groovy.transform.NamedVariant
 import groovy.transform.Synchronized
+import groovy.transform.stc.ClosureParams
+import groovy.transform.stc.SimpleType
+import groovy.util.logging.Slf4j
+import groovyx.gpars.AsyncException
 import groovyx.gpars.GParsPool
+import jsr166y.ForkJoinPool
 import okhttp3.HttpUrl
+import org.apache.avro.SchemaBuilder
+import org.apache.avro.file.DataFileWriter
+import org.apache.avro.generic.GenericDatumWriter
+import org.apache.avro.generic.GenericRecord
+import org.apache.avro.generic.GenericRecordBuilder
+import org.apache.avro.io.DatumWriter
 import org.apache.commons.codec.binary.Base64
 import org.apache.commons.imaging.Imaging
 import org.apache.commons.imaging.common.ImageMetadata
 import org.apache.commons.imaging.formats.jpeg.JpegImageMetadata
 import org.apache.commons.imaging.formats.tiff.TiffField
-import org.apache.commons.imaging.formats.tiff.constants.TiffConstants
+import org.apache.commons.imaging.formats.tiff.constants.ExifTagConstants
 import org.apache.commons.imaging.formats.tiff.taginfos.TagInfo
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
-import org.apache.commons.lang.StringUtils
+import org.apache.commons.lang3.RandomUtils
+import org.apache.commons.lang3.StringUtils
 import org.apache.tika.mime.MimeType
 import org.apache.tika.mime.MimeTypes
+import org.codehaus.groovy.runtime.StackTraceUtils
 import org.hibernate.FlushMode
 import org.hibernate.ScrollMode
+import org.hibernate.StaleStateException
 import org.imgscalr.Scalr
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.orm.hibernate5.HibernateOptimisticLockingFailureException
+import org.springframework.transaction.TransactionStatus
 import org.springframework.web.multipart.MultipartFile
 
 import java.awt.image.BufferedImage
+import javax.annotation.PostConstruct
+import javax.annotation.PreDestroy
 import javax.imageio.ImageIO
+import java.sql.Connection
+import org.springframework.orm.hibernate5.HibernateOptimisticLockingFailureException
+import org.springframework.transaction.TransactionStatus
+import org.springframework.web.multipart.MultipartFile
+
+import javax.annotation.PostConstruct
+import javax.annotation.PreDestroy
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
+import java.sql.ResultSetMetaData
 import java.sql.SQLException
+import java.sql.Timestamp
+import java.sql.Types
 import java.text.SimpleDateFormat
+import java.time.Duration
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.locks.Lock
+import java.util.function.Supplier
 
-import static grails.web.http.HttpHeaders.USER_AGENT
+@Slf4j
+class ImageService implements MetricsSupport {
 
-class ImageService {
+    static final String EXPORT_IMAGES_SQL = """SELECT * FROM export_images;"""
+    static final String EXPORT_MAPPING_SQL = """SELECT * FROM export_mapping;"""
+
+    static final String DEFAULT_DATE_FORMAT = "dd-MMM-yyyy";
+    static final String DEFAULT_TIMESTAMP_FORMAT = "dd-MMM-yyyy HH:mm:ss";
 
     def dataSource
     def imageStoreService
     def tagService
     def grailsApplication
-    def logService
     def auditService
     def sessionFactory
     def imageService
     def elasticSearchService
     def settingService
     def collectoryService
+    def downloadService
+    def storageLocationService
 
     final static List<String> SUPPORTED_UPDATE_FIELDS = [
         "audience",
@@ -72,33 +117,71 @@ class ImageService {
     ]
 
     // missing \p{Unassigned}\p{Surrogate]\p{Control} from regex as Unicode character classes unsupported in PG.
+    // TODO use jooq to generate these
     final EXPORT_DATASET_SQL = '''
 SELECT
-    i.image_identifier as "imageID",
-    NULLIF(regexp_replace(i.original_filename, '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "identifier",
-    NULLIF(regexp_replace(i.audience,          '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "audience",
-    NULLIF(regexp_replace(i.contributor,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "contributor",
-    NULLIF(regexp_replace(i.created,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "created",
-    NULLIF(regexp_replace(i.creator,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "creator",
-    NULLIF(regexp_replace(i.description,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "description",
-    NULLIF(regexp_replace(i.mime_type,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "format",
-    NULLIF(regexp_replace(i.license,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "license",
-    NULLIF(regexp_replace(i.publisher,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "publisher",
-    NULLIF(regexp_replace(i.dc_references,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "references",
-    NULLIF(regexp_replace(i.rights_holder,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "rightsHolder",
-    NULLIF(regexp_replace(i.source,            '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "source",
-    NULLIF(regexp_replace(i.title,             '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "title",
-    NULLIF(regexp_replace(i.type,              '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '')  AS  "type"
-FROM image i
-WHERE data_resource_uid = ?
+  image_identifier AS "imageID",
+  NULLIF(regexp_replace(regexp_replace(unnest_url, '://[^/@]+@', '://', 'g'),        '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "identifier",
+  NULLIF(regexp_replace(audience,          '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "audience",
+  NULLIF(regexp_replace(contributor,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "contributor",
+  NULLIF(regexp_replace(created,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "created",
+  NULLIF(regexp_replace(creator,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "creator",
+  NULLIF(regexp_replace(description,       '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "description",
+  NULLIF(regexp_replace(mime_type,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "format",
+  NULLIF(regexp_replace(license,           '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "license",
+  NULLIF(regexp_replace(publisher,         '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "publisher",
+  NULLIF(regexp_replace(dc_references,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "references",
+  NULLIF(regexp_replace(rights_holder,     '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "rightsHolder",
+  NULLIF(regexp_replace(source,            '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "source",
+  NULLIF(regexp_replace(title,             '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "title",
+  NULLIF(regexp_replace(type,              '[\\x00-\\x1F\\x7F-\\x9F]',  '', 'g'), '') AS "type"
+FROM (
+  SELECT
+    i.image_identifier,
+    i.audience,
+    i.contributor,
+    i.created,
+    i.creator,
+    i.description,
+    i.mime_type,
+    i.license,
+    i.publisher,
+    i.dc_references,
+    i.rights_holder,
+    i.source,
+    i.title,
+    i.type,
+    CASE
+      WHEN i.alternate_filename IS NOT NULL THEN
+        ARRAY_APPEND(i.alternate_filename, i.original_filename)
+      ELSE
+        ARRAY[i.original_filename]
+    END AS all_urls
+  FROM image i
+  WHERE i.data_resource_uid = ? AND i.date_deleted IS NULL
+) AS subquery,
+unnest(subquery.all_urls) AS unnest_url;
 '''
 
     final EXPORT_DATASET_MAPPING_SQL = '''
 SELECT
-    image_identifier as "imageID",
-    original_filename as "url"
-    FROM image i
-    WHERE data_resource_uid = ?
+  image_identifier AS "imageID",
+  regexp_replace(unnest_url, '://[^/@]+@', '://', 'g') AS "url"
+FROM (
+  SELECT
+    image_identifier,
+    CASE
+      WHEN alternate_filename IS NOT NULL THEN
+        ARRAY_APPEND(alternate_filename, original_filename)
+      ELSE
+        ARRAY[original_filename]
+    END AS all_urls
+  FROM
+    image
+  WHERE
+    data_resource_uid = ? AND date_deleted IS NULL
+) AS subquery,
+unnest(all_urls) AS unnest_url;
     '''
 
     private static Queue<BackgroundTask> _backgroundQueue = new ConcurrentLinkedQueue<BackgroundTask>()
@@ -106,38 +189,50 @@ SELECT
 
     private static int BACKGROUND_TASKS_BATCH_SIZE = 100
 
-    @Value('${http.default.readTimeoutMs:120000}')
-    int readTimeoutMs = 120000 // 2 minutes
-
-    @Value('${http.default.connectTimeoutMs:120000}')
-    int connectTimeoutMs = 120000 // 2 minutes
-
-    @Value('${http.default.user-agent:}')
-    String userAgent
-
     @Value('${batch.purge.fetch.size:100}')
     int purgeFetchSize = 100
 
-    @Value('${skin.orgNameShort:ALA}')
-    String orgNameShort
+    @Value('${batch.optimisticLocking.maxRetries:3}')
+    int maxLockingRetries = 3
 
-    @Value('${info.app.name:image-service}')
-    String appName
+    @Value('${batch.optimisticLocking.maxSleepMs:2000}')
+    int maxLockingSleepMs = 2000
 
-    @Value('${info.app.version:NaN}')
-    String version
+    @Value('${batch.optimisticLocking.stripes:250}')
+    int optimisticLockingStripes = 250
 
     @Value('${imageservice.images.maxWidth:-1}')
     int maxImageWidth = -1 // -1 to disable resizing
 
     Map imagePropertyMap = null
 
+    private Striped<Lock> imageUrlLocks// = Striped.lock(256)
+    private Striped<Lock> imageIdLocks// = Striped.lock(256)
+    private Striped<Lock> md5HashLocks// = Striped.lock(256)
+
+    @PostConstruct
+    def initStripes() {
+        imageUrlLocks = Striped.lock(optimisticLockingStripes)
+        imageIdLocks = Striped.lock(optimisticLockingStripes)
+        md5HashLocks = Striped.lock(optimisticLockingStripes)
+    }
+
+    @PostConstruct
+    def initImagePropertyMap() {
+        if (!imagePropertyMap) {
+            def properties = new Image().getProperties().keySet()
+            imagePropertyMap = [:]
+            properties.each { imagePropertyMap.put(it.toLowerCase(), it) }
+        }
+    }
+
     ImageStoreResult storeImage(MultipartFile imageFile, String uploader, Map metadata = [:]) {
 
         if (imageFile) {
             // Store the image
             def originalFilename = imageFile.originalFilename
-            def bytes = imageFile?.bytes
+//            def bytes = imageFile?.bytes
+            def bytes = ByteSource.wrap(imageFile.inputStream.bytes)
             def result = storeImageBytes(bytes, originalFilename, imageFile.size, imageFile.contentType, uploader, false, metadata)
             auditService.log(result.image,"Image stored from multipart file ${originalFilename}", uploader ?: "<unknown>")
             return result
@@ -154,24 +249,18 @@ SELECT
         fw.close()
     }
 
-    private String userAgent() {
-        def userAgent = this.userAgent
-        if (!userAgent) {
-            userAgent = "$orgNameShort-$appName/$version"
-        }
-        return userAgent
-    }
 
     ImageStoreResult storeImageFromUrl(String imageUrl, String uploader, Map metadata = [:]) {
         if (imageUrl) {
             try {
                 def image = Image.byOriginalFileOrAlternateFilename(imageUrl) // findByOriginalFilename(imageUrl)
-                if (image && image.stored()) {
+                if (image && imageStoreService.isImageStored(image)) {
                     scheduleMetadataUpdate(image.imageIdentifier, metadata)
                     return new ImageStoreResult(image, true, image.alternateFilename?.contains(imageUrl) ?: false)
                 }
-                def url = new URL(imageUrl)
-                def bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs, requestProperties: [(USER_AGENT): userAgent()])
+                def uri = new URI(imageUrl)
+
+                def response = downloadService.createHttpResponse(uri, imageUrl)
 
                 def contentType = null
 
@@ -189,7 +278,7 @@ SELECT
                 //detect from dc:format field
                 if(contentType == null && metadata.format){
                     try {
-                        MimeType mimeType =  new MimeTypes().forName(metadata.format)
+                        MimeType mimeType = new MimeTypes().forName(metadata.format)
                         metadata.extension = mimeType.getExtension()
                         contentType = mimeType.toString()
                     } catch (Exception e){
@@ -197,12 +286,27 @@ SELECT
                     }
                 }
 
-                //detect from file
-                if (contentType == null){
-                    contentType = detectMimeTypeFromBytes(bytes, imageUrl)
+                def urlContentType = response.getContentType()
+                if (!contentType && urlContentType) {
+                    try {
+                        MimeType mimeType = new MimeTypes().forName(urlContentType)
+                        metadata.extension = mimeType.getExtension()
+                        contentType = mimeType.toString()
+                    } catch (Exception e){
+                        log.debug("Un-parseable mime type supplied: " + metadata.format)
+                    }
                 }
 
-                def result = storeImageBytes(bytes, imageUrl, bytes.length, contentType, uploader, true, metadata)
+                def result
+                try (ByteSource byteSource = downloadService.createByteSourceFromHttpResponse(response, metadata.extension, imageUrl)) {
+                    //detect from file
+                    if (contentType == null){
+                        contentType = downloadService.detectMimeType(byteSource, imageUrl)
+                    }
+
+                    result = storeImageBytes(byteSource, imageUrl, byteSource.size(), contentType, uploader, true, metadata)
+                }
+
                 auditService.log(result.image, "Image downloaded from ${imageUrl}", uploader ?: "<unknown>")
                 return result
             } catch (Exception ex) {
@@ -212,10 +316,33 @@ SELECT
         return null
     }
 
+
     def getImageUrl(Map<String, String> imageSource){
         if (imageSource.sourceUrl) return imageSource.sourceUrl
         if (imageSource.imageUrl) return imageSource.imageUrl
         imageSource.identifier
+    }
+
+    /**
+     * Find an existing Image for a supplied URL and optional dataResourceUid.
+     */
+    private Image findExistingImageByUrlAndDataResourceUid(String imageUrl, String dataResourceUid) {
+        Image image = null
+        if (!imageUrl) return null
+
+        // Try to resolve via image-service style URL (no need for extra work if this hits)
+        image = findImageInImageServiceUrl(imageUrl)
+
+        // Fallbacks for non image-service URLs
+        if (!image) {
+            if (imageUrl.startsWith("http")) {
+                image = Image.byOriginalFileOrAlternateFilename(imageUrl)
+            } else {
+                image = Image.findByOriginalFilenameAndDataResourceUid(imageUrl, dataResourceUid, [ cache: false ])
+            }
+        }
+
+        return image
     }
 
     /**
@@ -232,12 +359,22 @@ SELECT
             'original',
             'thumbnail',
             'thumbnail_large',
+            'thumbnail_xlarge',
             'thumbnail_square',
             'thumbnail_square_black',
             'thumbnail_square_white',
             'thumbnail_square_darkGrey',
-            'thumbnail_square_darkGray'
+            'thumbnail_square_darkGray',
+            'thumbnail_centre_crop',
+            'thumbnail_centre_crop_large',
     ] as Set
+
+    boolean validateThumbnailType(String thumbnailType) {
+        if (thumbnailType.startsWith('thumbnail')) {
+            return IMAGE_SERVICE_URL_SUFFIXES.contains(thumbnailType)
+        }
+        return IMAGE_SERVICE_URL_SUFFIXES.contains('thumbnail' + (thumbnailType ? '_' + thumbnailType : ''))
+    }
 
     String findImageIdInImageServiceUrl(String imageUrl) {
         // is it as image service URL?
@@ -283,37 +420,38 @@ SELECT
 
                     def imageUrl = getImageUrl(imageSource) as String
                     if (imageUrl) {
-                        Image image = null
-
-                        image = findImageInImageServiceUrl(imageUrl)
-
-                        // Its not an image service URL, check DB
-                        // For full URLs, we can treat these as unique identifiers
-                        // For filenames (non URLs), use the filename and dataResourceUid to unique identify
-                        if (!image){
-                            if (imageUrl.startsWith("http")){
-                                image = Image.byOriginalFileOrAlternateFilename(imageUrl) // findByOriginalFilename(imageUrl)
-                            } else {
-                                image = Image.findByOriginalFilenameAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
-                            }
-                        }
+                        Image image = findExistingImageByUrlAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
 
                         if (!image) {
                             def result = [success: false, alreadyStored: false]
                             try {
-                                def url = new URL(imageUrl)
-                                def bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs, requestProperties: [(USER_AGENT): userAgent()])
-                                def contentType = detectMimeTypeFromBytes(bytes, imageUrl)
-                                ImageStoreResult storeResult = storeImageBytes(bytes, imageUrl, bytes.length,
-                                        contentType, uploader, true, imageSource)
+                                def uri = new URI(imageUrl)
+//                                def bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs, requestProperties: [(USER_AGENT): userAgent()])
+                                def contentType
+                                ImageStoreResult storeResult
+                                try (def bytes = downloadService.createByteSourceFromUrl(uri, null, imageUrl)) {
+                                    contentType = downloadService.detectMimeType(bytes, imageUrl)
+                                    storeResult = storeImageBytes(bytes, imageUrl, bytes.size(),
+                                            contentType, uploader, true, imageSource)
+                                }
                                 result.imageId = storeResult.image.imageIdentifier
                                 result.image = storeResult.image
                                 result.success = true
                                 result.alreadyStored = storeResult.alreadyStored
                                 result.metadataUpdated = false
-                            } catch (Exception ex) {
+                            } catch (HttpImageUploadException e) {
+                                log.warn("Unable to load image from URL: {}. Logging as failed URL, HTTP status: {}, Message: {}", imageUrl, e.statusCode, e.message)
+                                downloadService.logBadUrl(imageUrl, e.statusCode, e.message)
+                                result.message = ex.message
+                            } catch(Exception ex) {
                                 //log to batch update error file
-                                log.error("Problem storing image - " + ex.getMessage(), ex)
+                                if (log.isDebugEnabled()) {
+                                    log.error("Problem storing image - " + ex.getMessage(), ex)
+                                } else {
+                                    log.error("Problem storing image - " + ex.getMessage())
+
+                                }
+                                downloadService.logBadUrl(imageUrl, null, ex.message)
                                 result.message = ex.message
                             }
                             results[imageUrl] = result
@@ -352,96 +490,245 @@ SELECT
         results
     }
 
-    def logBadUrl(String url){
-        new FailedUpload(url: url).save()
-    }
+    /*
+     * Helper methods for uploadImage
+     */
+    private static final String METRIC_UPLOAD = 'image.upload'
 
-    boolean isBadUrl(String url){
-        FailedUpload.findByUrl(url) != null
-    }
+    private Map preLockLookup(String imageUrl, String dataResourceUid) {
+        String imageIdForLock = null
+        Map result = null
+        // Pre-lock lightweight lookup to see if there is already an Image we can lock on
+        try {
+            imageIdForLock = Image.withTransaction(readOnly: true) {
+                Image preExisting = findExistingImageByUrlAndDataResourceUid(imageUrl, dataResourceUid)
 
-    @Transactional
-    Map uploadImage(Map imageSource, String uploader){
-
-        def imageUrl = getImageUrl(imageSource) as String
-
-        if (imageUrl) {
-
-            Image image = null
-
-            image = findImageInImageServiceUrl(imageUrl)
-
-            // Its not an image service URL, check DB
-            // For full URLs, we can treat these as unique identifiers
-            // For filenames (non URLs), use the filename and dataResourceUid to unique identify
-            if (!image){
-                if (imageUrl.startsWith("http")){
-                    image = Image.byOriginalFileOrAlternateFilename(imageUrl) // findByOriginalFilename(imageUrl)
-                } else {
-                    image = Image.findByOriginalFilenameAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
-                }
-            }
-
-            if (!image && isBadUrl(imageUrl)){
-                if (log.isDebugEnabled()) {
+                // Fail fast before locking here if this is a bad URL and we have already tried loading it before
+                if (!preExisting && downloadService.isBadUrl(imageUrl)) {
                     log.debug("We have already attempted to load {} without success. Skipping.", imageUrl)
+                    incrementCounter('image.upload.skipped', 'Images skipped due to bad URL')
+                    result = resultFailure(alreadyStored: false)
                 }
-                return [success: false, alreadyStored: false]
+
+                return preExisting?.imageIdentifier
             }
+        } catch (Throwable t) {
+            log.debug("uploadImage: pre-lock lookup failed (will fallback to URL lock) for {}: {}", imageUrl, t.message)
+        }
+        // Couldn't find a pre-existing image by URL, try to extract imageId from image-service style URL
+        // and lock on it anyway
+        if (!imageIdForLock && isImageServiceUrl(imageUrl)) {
+            imageIdForLock = findImageIdInImageServiceUrl(imageUrl)
+        }
+        return [imageIdForLock: imageIdForLock, earlyResult: result]
+    }
 
-            if (!image) {
-                def result = [success: false, alreadyStored: false]
-                def bytes
-                try {
-                    def url = new URL(imageUrl)
-                    bytes = url.getBytes(connectTimeout: connectTimeoutMs, readTimeout: readTimeoutMs, requestProperties: [(USER_AGENT): userAgent()])
-                } catch (Exception e){
-                    log.error("Unable to load image from URL: {}. Logging as failed URL", imageUrl)
-                    logBadUrl(imageUrl)
-                    return result
-                }
-                try {
-                    def contentType = detectMimeTypeFromBytes(bytes, imageUrl)
-                    ImageStoreResult storeResult = storeImageBytes(bytes, imageUrl, bytes.length, contentType, uploader, true, imageSource)
-                    result.imageId = storeResult.image.imageIdentifier
-                    result.image = storeResult.image
-                    result.success = true
-                    result.alreadyStored = storeResult.alreadyStored
-                    result.isDuplicate = storeResult.isDuplicate
-                    result.metadataUpdated = false
-                } catch (Exception ex) {
-                    //log to batch update error file
-                    log.error("Problem storing image - " + ex.getMessage(), ex)
-                    result.message = ex.message
-                    result.success = false
-                }
-                result
-            } else {
+    private Lock acquireLock(String imageIdForLock, String imageUrl) {
+        Lock lock
+        if (imageIdForLock) {
+            log.trace("uploadImage: acquiring lock for imageId: {} (derived from URL: {})", imageIdForLock, imageUrl)
+            lock = imageIdLocks.get(imageIdForLock)
+        } else {
+            log.trace("uploadImage: acquiring lock for imageUrl: {}", imageUrl)
+            lock = imageUrlLocks.get(imageUrl)
+        }
+        log.trace("uploadImage: got lock: {}", lock)
+        return lock
+    }
 
-                def metadataUpdated = false
+    private <T> T withOptimisticRetry(Closure<T> action) {
+        withOptimisticRetry("unknown context", action)
+    }
+    private <T> T withOptimisticRetry(String context, Closure<T> action) {
+        withOptimisticRetry(context, null, false, action)
+    }
 
-                SUPPORTED_UPDATE_FIELDS.each { updateField ->
-                    if (image[updateField] != imageSource[updateField]){
-                        image[updateField] = imageSource[updateField]
-                        metadataUpdated = true
+    private <T> T withOptimisticRetry(String context, Supplier<T> failureResultSupplier, Closure<T> action) {
+        withOptimisticRetry(context, failureResultSupplier, false, action)
+    }
+
+    private <T> T withOptimisticRetry(String context, Supplier<T> failureResultSupplier, boolean allowNullResult, Closure<T> action) {
+        context = context ?: ""
+        int maxRetries = maxLockingRetries
+        int retryCount = 0
+        while (retryCount < maxRetries) {
+            try {
+                return action.call()
+            } catch (HibernateOptimisticLockingFailureException | StaleStateException ex) {
+                retryCount++
+                if (retryCount >= maxRetries) {
+                    log.error("Failed {} after {} retries due to optimistic locking failure", context, maxRetries)
+                    if (failureResultSupplier) {
+                        def result = failureResultSupplier.get()
+                        if (result != null) return result
+                        if (allowNullResult) return null
                     }
+                    throw ex
+                } else {
+                    def sleepTime = RandomUtils.nextInt(0, maxLockingSleepMs)
+                    log.warn("Optimistic locking failure {}, retry {}/{}", context, retryCount, maxRetries)
+                    log.trace("Sleeping for {} ms before retrying", sleepTime)
+                    Thread.sleep(sleepTime) // Brief exponential backoff
                 }
+            }
+        }
+        return null
+    }
 
+    private Map updateExistingImage(String imageUrl, Map imageSource) {
+        return Image.withTransaction { TransactionStatus status ->
+            log.trace("uploadImage: inside Image.withTransaction for imageUrl: {}", imageUrl)
+            // TODO should I use the imageIdForLock to load the image directly here instead of searching again?
+            def image = findExistingImageByUrlAndDataResourceUid(imageUrl, imageSource.dataResourceUid)
+            log.trace("uploadImage: after DB lookup, image: {} for imageUrl: {}", image, imageUrl)
+
+            if (image) {
+                log.trace("uploadImage: found existing image: {} for imageUrl: {}", image, imageUrl)
+                def metadataUpdated = applySupportedMetadata(image, imageSource)
+
+                log.trace("uploadImage: metadataUpdated={} for imageUrl: {}", metadataUpdated, imageUrl)
                 if (metadataUpdated){
-                    image.save()
+                    if (image.isDirty()) {
+                        image.save()
+                        status.flush()
+                    } else {
+                        log.trace("uploadImage: metadataUpdated but image not dirty, no save required for imageUrl: {}", imageUrl)
+                    }
+                } else {
+                    status.setRollbackOnly()
                 }
+                log.trace("uploadImage: completed metadata update for imageUrl: {}", imageUrl)
 
+                incrementCounter('image.upload.duplicate', 'Duplicate image uploads')
                 //update metadata if required
-                 [success: true,
-                     imageId: image.imageIdentifier,
-                     image: image,
-                     alreadyStored: true,
-                     metadataUpdated: metadataUpdated,
-                     isDuplicate: image.alternateFilename?.contains(imageUrl) ?: false
+                log.trace("uploadImage: returning existing image for imageUrl: {}", imageUrl)
+                return [success: true,
+                        imageId: image.imageIdentifier,
+                        image: image,
+                        alreadyStored: true,
+                        metadataUpdated: metadataUpdated,
+                        isDuplicate: image.alternateFilename?.contains(imageUrl) ?: false
                 ]
             }
-        }  else {
-            [success: false]
+            log.trace("uploadImage: no existing image found for imageUrl: {}", imageUrl)
+            return null // new image
+        }
+    }
+
+    private boolean applySupportedMetadata(Image image, Map imageSource) {
+        def metadataUpdated = false
+
+        SUPPORTED_UPDATE_FIELDS.each { updateField ->
+            def propertyName = hasImageCaseFriendlyProperty(image, updateField)
+            if (propertyName) {
+                if (image[propertyName] != imageSource[updateField]){
+                    log.trace("uploadImage: updating field: {} from value: {} to value: {} for image: {}", propertyName, imageSource[updateField], image.imageIdentifier)
+                    image[propertyName] = imageSource[updateField]
+                    metadataUpdated = true
+                }
+            } else {
+                log.warn("uploadImage: image does not have property: {} for image: {}", updateField, image.imageIdentifier)
+            }
+        }
+        return metadataUpdated
+    }
+
+    private Map downloadAndStore(String imageUrl, String uploader, Map imageSource) {
+        def result = null
+        def bytes
+        try {
+            log.trace("uploadImage: loading image bytes from URL: {}", imageUrl)
+            def uri = new URI(imageUrl)
+            bytes = downloadService.createByteSourceFromUrl(uri, null, imageUrl)
+            log.trace("uploadImage: loaded image bytes from URL: {}", imageUrl)
+        } catch (Exception e) {
+            log.error("Unable to load image from URL: {}. Logging as failed URL, Exception: {}", imageUrl, e.message)
+            if (e instanceof HttpImageUploadException) {
+                downloadService.logBadUrl(imageUrl, e.statusCode, e.message)
+            } else {
+                downloadService.logBadUrl(imageUrl, null, e.message)
+            }
+            result = resultFailure(alreadyStored: false)
+        }
+        if (!result) {
+            try {
+                log.trace("uploadImage: detecting content type for URL: {}", imageUrl)
+                def contentType = downloadService.detectMimeType(bytes, imageUrl)
+                log.trace("uploadImage: storing image bytes for URL: {} with content type {}", imageUrl, contentType)
+                ImageStoreResult storeResult = storeImageBytes(bytes, imageUrl, bytes.size(),
+                        contentType, uploader, true, imageSource)
+                log.trace("uploadImage: stored image bytes for URL: {}", imageUrl)
+                result = resultSuccess(storeResult, false)
+            } catch (Exception ex) {
+                //log to batch update error file
+                log.error("Problem storing image - ", ex)
+                result = resultFailure(message: ex.message)
+                recordError('uploadImage', [error: ex.class.simpleName])
+            } finally {
+                bytes?.close()
+            }
+        }
+        return result
+    }
+
+    private Map resultSuccess(ImageStoreResult r, boolean metadataUpdated=false) {
+        def result = [success: true,
+                      imageId: r.image.imageIdentifier,
+                      image: r.image,
+                      alreadyStored: r.alreadyStored,
+                      isDuplicate: r.isDuplicate,
+                      metadataUpdated: metadataUpdated
+        ]
+        return result
+    }
+
+    @NamedVariant
+    private Map resultFailure(String message = null, Boolean alreadyStored = null) {
+        def result = [success: false]
+        if (message) {
+            result.message = message
+        }
+        if (alreadyStored != null) {
+            result.alreadyStored = alreadyStored
+        }
+        return result
+    }
+
+    @NotTransactional // transactions managed in method
+    Map uploadImage(Map imageSource, String uploader) {
+        log.trace("uploadImage: called with imageSource: {}", imageSource)
+        return recordTime(METRIC_UPLOAD, 'Time to upload and process an image') {
+            try {
+                def imageUrl = getImageUrl(imageSource) as String
+                if (!imageUrl) return resultFailure()
+
+                def pre = preLockLookup(imageUrl, imageSource.dataResourceUid) // returns (imageIdForLock, earlyResult?)
+                if (pre.earlyResult) return pre.earlyResult
+
+                def result = null
+                Lock lock = acquireLock(pre.imageIdForLock, imageUrl)
+                lock.lock()
+                try {
+                    result = withOptimisticRetry("updating metadata for $imageUrl") {
+                        updateExistingImage(imageUrl, imageSource)
+                    }
+                    if (!result) {
+                        // New image, download and store
+                        result = downloadAndStore(imageUrl, uploader, imageSource)
+                    }
+                } finally {
+                    lock.unlock()
+                }
+                if (result?.success) {
+                    log.trace("uploadImage: successful upload for imageUrl: {}", imageUrl)
+                    recordSuccess('uploadImage', [alreadyStored: result.alreadyStored?.toString() ?: 'false'])
+                }
+                log.trace("uploadImage: returning result for imageUrl: {}: {}", imageUrl, result)
+                return result
+            } catch (Exception e) {
+                recordError('uploadImage', [error: e.class.simpleName])
+                throw e
+            }
         }
     }
 
@@ -494,12 +781,11 @@ SELECT
         }
     }
 
-    private final ReentrantLock lock = new ReentrantLock();
 
     /**
      * Store the bytes for an image.
      *
-     * @param bytes
+     * @param bytes Should be a byte source that is relatively cheap to open as it will be opened multiple times
      * @param originalFilename
      * @param filesize
      * @param contentType
@@ -508,104 +794,169 @@ SELECT
      * @param metadata
      * @return
      */
-    ImageStoreResult storeImageBytes(byte[] bytes, String originalFilename, long filesize, String contentType,
-                          String uploaderId, boolean createDuplicates, Map metadata = [:]) {
+    @NotTransactional // transactions managed in method
+    ImageStoreResult storeImageBytes(ByteSource bytes, String originalFilename, long filesize, String contentType,
+                                     String uploaderId, boolean createDuplicates, Map metadata = [:]) {
+        log.trace("storeImageBytes: called with originalFilename: {}, filesize: {}, contentType: {}, uploaderId: {}, createDuplicates: {}, metadata: {}", originalFilename, filesize, contentType, uploaderId, createDuplicates, metadata)
+        ImageStoreResult result
 
+        def md5Hash = bytes.hash(Hashing.md5()).asBytes().encodeAsHex() // DigestUtils.digest(DigestUtils.getDigest('MD5'), bytes.openStream())
+        log.trace("storeImageBytes: calculated MD5 hash: {} for originalFilename: {}", md5Hash, originalFilename)
+
+        // Use striped lock to prevent concurrent processing of the same md5Hash
+        def lock = md5HashLocks.get(md5Hash)
+        lock.lock()
         try {
-            lock.lock()
-
             if (maxImageWidth != -1) {
-                bytes = resizeImageIfNeeded(bytes, contentType, maxImageWidth)
-                filesize = (long) bytes.length
+                bytes = resizeImageIfNeeded(bytes.openStream().bytes, contentType, maxImageWidth) as ByteSource
+                filesize = (long) bytes.size()
             }
 
-            def md5Hash = bytes.encodeAsMD5()
-
-            //check for existing image using MD5 hash
-            def image = Image.findByContentMD5Hash(md5Hash)
             def preExisting = false
             def isDuplicate = false
-            if (!image) {
-                def sha1Hash = bytes.encodeAsSHA1()
+            // On final retry failure, just return that it's a duplicate without updating
+            // Needs a new session because we're outside the previous transaction
+            // which feels a bit wrong but avoids further complications
+            def failureResultSupplier = { ->
+                def image = Image.withSession { Image.findByContentMD5Hash(md5Hash) }
+                image ? new ImageStoreResult(image, true, true) : null
+            } as Supplier<ImageStoreResult>
+            //check for existing image using MD5 hash with retry logic for optimistic locking
+            result = withOptimisticRetry("updating image $originalFilename", failureResultSupplier) {
+                def transactionResult = Image.withNewSession { Image.withNewTransaction { TransactionStatus status ->
+                    log.trace("storeImageBytes: inside Image.withTransaction for originalFilename: {}", originalFilename)
+                    def image = recordTime("image.lookup.md5", "Time to lookup image by MD5 hash") {
+                        Image.findByContentMD5Hash(md5Hash, [ cache: false ])?.refresh()
+                    }
+                    log.trace("storeImageBytes: lookup by MD5 hash returned image: {} for originalFilename: {} ", image, originalFilename)
 
-                Long defaultStorageLocationID = settingService.getStorageLocationDefault()
+                    preExisting = image != null
+                    if (image) {
+                        boolean updated = false
+                        if (image.dateDeleted) {
+                            log.warn("Deleted Image ${image.originalFilename} has been re-uploaded.  Will undelete.")
+                            image.dateDeleted = null //reset date deleted if image resubmitted...
+                            updated = true
+                        }
+                        if (createDuplicates && image.originalFilename != originalFilename) {
+                            log.info("Existing image found at different URL ${image.originalFilename} to ${originalFilename}. Will add duplicate.")
 
-                StorageLocation sl = StorageLocation.get(defaultStorageLocationID)
+                            // we have seen this image before, but the URL has changed at source
+                            // so lets update it so that subsequent loads dont need
+                            // to re-download this image
+                            if (image.alternateFilename == null) {
+                                image.alternateFilename = []
+                                updated = true
+                            }
+                            if (!image.alternateFilename.contains(originalFilename)) {
+                                image.alternateFilename += originalFilename
+                                updated = true
+                            }
+                            isDuplicate = true
+                        } else if (!createDuplicates && image.originalFilename != originalFilename) {
+                            log.warn("Got a pre-existing image to store {} but it already exists at {}", originalFilename, image.imageIdentifier)
+                        } else {
+                            log.info("Image already exists for ${originalFilename}.")
+                        }
 
-                def imgDesc = imageStoreService.storeImage(bytes, sl, contentType)
+                        try {
+                            if (updated) {
+                                image = image.save(failOnError: true)
+                                status.flush()
+                                log.trace("storeImageBytes: updated existing image record for originalFilename: {}", originalFilename)
+                            }
+                        } catch (Exception ex) {
+                            if (ex instanceof HibernateOptimisticLockingFailureException || ex instanceof StaleStateException) {
+                                throw ex //rethrow to be handled by outer retry logic
+                            } else {
+                                // other exception saving image
+                                log.error("Problem updating image {}  -", originalFilename, ex)
+                            }
+                        }
+
+                        return new ImageStoreResult(image, preExisting, isDuplicate)
+                    } else {
+                        // no existing image found,
+                        return null
+                    }
+                } }// transaction -> session
+                log.trace("storeImageBytes: completed Image.withTransaction for originalFilename: {} with result {}", originalFilename, transactionResult)
+                return transactionResult
+            }
+
+            if (!result) {
+                def defaultStorages = storageLocationService.getDefaultStorageOperationsId()
+                log.trace("storeImageBytes: obtained StorageLocations: {} for originalFilename: {}", defaultStorages, originalFilename)
+
+                if (!defaultStorages) {
+                    throw new IllegalStateException("No default storage locations configured - cannot store image")
+                }
+                def defaultStorage = defaultStorages[0]
+
+                log.trace("storeImageBytes: storing new image for originalFilename: {}", originalFilename)
+                def sha1Hash = bytes.hash(Hashing.sha1()).asBytes().encodeAsHex() //DigestUtils.digest(DigestUtils.getDigest('SHA-1'), bytes.openStream()).encodeAsHex()
+                log.trace("storeImageBytes: calculated SHA1 hash: {} for originalFilename: {}", sha1Hash, originalFilename)
+
+                def imgDesc = imageStoreService.storeImage(bytes, defaultStorage.operations, contentType, originalFilename)
+                log.trace("storeImageBytes: imageStoreService.storeImage returned imgDesc: {} for originalFilename: {}", imgDesc, originalFilename)
 
                 // Create the image record, and set the various attributes
-                image = new Image(
+                Image image = new Image(
                         imageIdentifier: imgDesc.imageIdentifier,
                         contentMD5Hash: md5Hash,
                         contentSHA1Hash: sha1Hash,
-                        uploader: uploaderId,
-                        storageLocation: sl
+                        uploader: uploaderId
                 )
 
                 if (metadata.extension) {
                     image.extension = metadata.extension
                 } else {
                     // this is known to be problematic
-                    def extension =  FilenameUtils.getExtension(originalFilename) ?: 'jpg'
-                    if (extension && extension.contains("?")){
-                        def cleanedExtension = extension.substring(0, extension.indexOf("?"))
-                        if (cleanedExtension && cleanedExtension.length() > 0){
-                            extension  = cleanedExtension
-                        }
+                    def extension = 'jpg'
+                    def filename = ImageUtils.getFilename(originalFilename)
+                    if (filename) {
+                        extension = FilenameUtils.getExtension(filename) ?: 'jpg'
                     }
+                    log.trace("storeImageBytes: determined extension: {} for originalFilename: {}", extension, originalFilename)
                     image.extension = extension
                 }
 
                 image.height = imgDesc.height
                 image.width = imgDesc.width
-                image.fileSize = filesize
+                image.zoomLevels = imgDesc.zoomLevels
+                image.fileSize = bytes.size()
                 image.mimeType = contentType
                 image.dateUploaded = new Date()
                 image.originalFilename = originalFilename
-                image.dateTaken = getImageTakenDate(bytes) ?: image.dateUploaded
-            } else if (image.dateDeleted) {
-                log.warn("Deleted Image has been re-uploaded.  Will undelete.")
-                image.dateDeleted = null //reset date deleted if image resubmitted...
-                preExisting = true
-            } else if (createDuplicates && image.originalFilename != originalFilename) {
-                log.warn("Existing image found at different URL ${image.originalFilename} to ${originalFilename}. Will add duplicate.")
+                image.dateTaken = contentType.toLowerCase().startsWith('image') ? getImageTakenDate(bytes, originalFilename) ?: image.dateUploaded : image.dateUploaded
 
-                // we have seen this image before, but the URL has changed at source
-                // so lets update it so that subsequent loads dont need
-                // to re-download this image
-                if (image.alternateFilename == null) {
-                    image.alternateFilename = []
-                }
-                if (!image.alternateFilename.contains(originalFilename)) {
-                    image.alternateFilename += originalFilename
-                }
-                preExisting = true
-                isDuplicate = true
-            } else {
-                log.warn("Got a pre-existing image to store {} but it already exists at {}", originalFilename, image.imageIdentifier)
-                preExisting = true
-            }
-
-            if (!preExisting) {
                 //update metadata stored in the `image` table
                 setMetadataOnImage(metadata, image)
-                //try to match licence
-                updateLicence(image)
+
+                result = Image.withTransaction {
+                    for (storage in defaultStorages) {
+                        storage.applyToImage(image)
+                    }
+                    try {
+                        log.trace("storeImageBytes: saving new image record for originalFilename: {}", originalFilename)
+                        //try to match licence
+                        updateLicence(image)
+                        image = image.save(failOnError: true)
+                        log.trace("storeImageBytes: saved new image record ({}:{}) for originalFilename: {}", image.id, image.imageIdentifier, originalFilename)
+                    } catch (Exception ex) {
+                        log.error("Problem saving image {}  -", originalFilename, ex)
+                    }
+                    return new ImageStoreResult(image, preExisting, isDuplicate)
+                }
             }
 
-            try {
-                image.save(flush: true, failOnError: true)
-            } catch (Exception ex){
-                log.error("Problem ${preExisting ? 'updating' : 'saving'} image ${originalFilename}  - " + ex.getMessage(), ex)
-            }
-
-            new ImageStoreResult(image, preExisting, isDuplicate)
         } catch (Exception ex) {
             log.error("Problem storing image ${originalFilename} - " + ex.getMessage())
         } finally {
             lock.unlock()
         }
+        log.trace("storeImageBytes: returning result: {} for originalFilename: {}", result, originalFilename)
+        return result
     }
 
     private Map<Object, Object> setMetadataOnImage(Map metadata, image) {
@@ -619,17 +970,12 @@ SELECT
         }
     }
 
-    def hasImageCaseFriendlyProperty(Image image, String propertyName){
-        if (!imagePropertyMap) {
-            def properties = image.getProperties().keySet()
-            imagePropertyMap = [:]
-            properties.each { imagePropertyMap.put(it.toLowerCase(), it) }
-        }
+    def hasImageCaseFriendlyProperty(Image image, String propertyName) {
         imagePropertyMap.get(propertyName.toLowerCase())
     }
 
     def schedulePostIngestTasks(Long imageId, String identifier, String fileName, String uploaderId){
-        scheduleArtifactGeneration(imageId, uploaderId)
+//        scheduleArtifactGeneration(imageId, uploaderId)
         scheduleImageIndex(imageId)
         scheduleImageMetadataPersist(imageId,identifier, fileName,  MetaDataSourceType.Embedded, uploaderId)
     }
@@ -666,6 +1012,18 @@ SELECT
         return imageStoreService.getImageThumbLargeUrl(imageIdentifier)
     }
 
+    String getImageThumbXLargeUrl(String imageIdentifier) {
+        return imageStoreService.getImageThumbXLargeUrl(imageIdentifier)
+    }
+
+    String getImageCentreCropLargeThumbUrl(String imageIdentifier) {
+        return imageStoreService.getImageThumbCentreCropLargeUrl(imageIdentifier)
+    }
+
+    String getImageCentreCropThumbUrl(String imageIdentifier) {
+        return imageStoreService.getImageThumbCentreCropUrl(imageIdentifier)
+    }
+
     String getImageSquareThumbUrl(String imageIdentifier, String backgroundColor = null) {
         return imageStoreService.getImageSquareThumbUrl(imageIdentifier, backgroundColor)
     }
@@ -673,7 +1031,7 @@ SELECT
     List<String> getAllThumbnailUrls(String imageIdentifier) {
         def results = []
         def image = Image.findByImageIdentifier(imageIdentifier, [ cache: true])
-        if (image) {
+        if (image) { // TODO we should be able to give all thumbnail URLs here as they are generated on demand.
             def thumbs = ImageThumbnail.findAllByImage(image)
             thumbs?.each { thumb ->
                 results << imageStoreService.getThumbUrlByName(imageIdentifier, thumb.name)
@@ -731,33 +1089,51 @@ SELECT
         log.info("Licence refresh complete")
     }
 
-    private static Date getImageTakenDate(byte[] bytes) {
+    private static Date getImageTakenDate(ByteSource bytes, String originalFilename) {
+        log.trace('getImageTakenDate {}', originalFilename)
+        def filename = ImageUtils.getFilename(originalFilename)
+        log.debug("getImageTakenDate {} got filename {}", originalFilename, filename)
         try {
-            ImageMetadata metadata = Imaging.getMetadata(bytes)
+            ImageMetadata metadata = Imaging.getMetadata(bytes.openStream(), filename)
+            log.trace('getImageTakenDate {} got metadata ', filename)
             if (metadata && metadata instanceof JpegImageMetadata) {
                 JpegImageMetadata jpegMetadata = metadata
 
-                def date = getImageTagValue(jpegMetadata,TiffConstants.EXIF_TAG_DATE_TIME_ORIGINAL)
+                def date = getImageTagValue(jpegMetadata, ExifTagConstants.EXIF_TAG_DATE_TIME_ORIGINAL)
+                log.trace('getImageTakenDate {} got image tag value {}', filename, date)
                 if (date) {
                     def sdf = new SimpleDateFormat("yyyy:MM:dd hh:mm:ss")
                     return sdf.parse(date.toString())
                 }
+            } else {
+                log.trace('getImageTakenDate {} found metadata of type {}', filename, metadata?.class?.name)
             }
         } catch (Exception ex) {
+            log.trace('getImageTakenDate {} error', filename, ex)
             return null
         }
     }
 
     private static Object getImageTagValue(JpegImageMetadata jpegMetadata, TagInfo tagInfo) {
-        TiffField field = jpegMetadata.findEXIFValue(tagInfo);
+        log.trace('getImageTagValue {}', tagInfo)
+        TiffField field = jpegMetadata.findExifValue(tagInfo)
         if (field) {
+            log.trace('getImageTagValue {}, found field {}', tagInfo, field)
             return field.value
+        } else {
+            log.trace('getImageTagValue {}, no field found', tagInfo)
         }
+        return null
     }
 
     static Map<String, Object> getImageMetadataFromBytes(byte[] bytes, String filename) {
         def extractor = new MetadataExtractor()
         return extractor.readMetadata(bytes, filename)
+    }
+
+    static Map<String, Object> getImageMetadataFromBytes(InputStream inputStream, String filename) {
+        def extractor = new MetadataExtractor()
+        return extractor.readMetadata(inputStream, filename)
     }
 
     def scheduleArtifactGeneration(long imageId, String userId) {
@@ -803,6 +1179,32 @@ SELECT
         return task.batchId
     }
 
+    private volatile ForkJoinPool pool
+    private final def $lock = new Object[0]
+
+    private def getBackgroundTasksPool(int batchThreads) {
+        if (!pool) {
+            synchronized ($lock) {
+                if (!pool) {
+                    pool = new ForkJoinPool(
+                            batchThreads,
+                            ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                            uncaughtExceptionHandler,
+                            false
+                    )
+                }
+            }
+        }
+        return pool
+    }
+
+    @PreDestroy
+    def shutdownPool() {
+        if (pool) {
+            pool.shutdown()
+        }
+    }
+
     void processBackgroundTasks() {
         int taskCount = 0
         BackgroundTask task = null
@@ -819,15 +1221,20 @@ SELECT
         }
 
         try {
-            GParsPool.withPool(batchThreads, uncaughtExceptionHandler) {
+            GParsPool.withExistingPool(getBackgroundTasksPool(batchThreads)) {
                 GParsPool.executeAsyncAndWait(theseTasks)
             }
-        } catch (e) {
+        } catch (AsyncException e) {
+            log.error("Errors executing background tasks ({})", e.concurrentExceptions.size())
+            e.concurrentExceptions.each {
+                log.error("Background task error", StackTraceUtils.sanitize(it))
+            }
+        } catch (Exception e) {
             log.error("Exception executing background tasks in batch", e)
         }
     }
 
-    private static Thread.UncaughtExceptionHandler uncaughtExceptionHandler = new Thread.UncaughtExceptionHandler() {
+    private final static Thread.UncaughtExceptionHandler uncaughtExceptionHandler = new Thread.UncaughtExceptionHandler() {
         void uncaughtException(Thread t, Throwable e) {
             ImageService.log.error("Error processing background thread ${t.name}:", e)
         }
@@ -1014,7 +1421,7 @@ SELECT
     def deleteImagePurge(Image image) {
         if (image && image.dateDeleted) {
             deleteRelatedArtefacts(image)
-            if (!image.deleteStored()) {
+            if (!imageStoreService.deleteStored(image)) {
                 log.warn("Unable to delete stored data for ${image.imageIdentifier}")
             }
             // Remove from storage location
@@ -1049,8 +1456,8 @@ SELECT
             def fieldDefinitions = ImportFieldDefinition.list()
 
             // Create the image domain object
-            def bytes = file.getBytes()
-            def mimeType = detectMimeTypeFromBytes(bytes, file.name)
+            def bytes = Files.asByteSource(file)
+            def mimeType = detectMimeType(bytes, file.name)
             image = storeImageBytes(bytes, file.name, file.length(),mimeType, userId, false).image
 
             auditService.log(image, "Imported from ${file.absolutePath}", userId)
@@ -1065,7 +1472,7 @@ SELECT
                     setMetaDataItem(image, MetaDataSourceType.SystemDefined, fieldDef.fieldName, ImportFieldValueExtractor.extractValue(fieldDef, file))
                 }
             }
-            generateImageThumbnails(image)
+//            generateImageThumbnails(image)
 
             image.save(flush: true, failOnError: true)
         }
@@ -1078,7 +1485,7 @@ SELECT
             // schedule an index
             scheduleImageIndex(image.id)
             // also we should do the thumb generation (we'll defer tiles until after the load, as it will slow everything down)
-            scheduleTileGeneration(image.id, userId)
+//            scheduleTileGeneration(image.id, userId)
         }
         return image
     }
@@ -1136,7 +1543,7 @@ SELECT
             }
             return true
         } else {
-            logService.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
+            log.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
         }
 
         return false
@@ -1180,7 +1587,7 @@ SELECT
 
                 auditService.log(image, "Metadata item ${key} set to '${value?.take(25)}' (truncated) (${source})", userId)
             } else {
-                logService.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
+                log.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
             }
         }
         image.save()
@@ -1202,9 +1609,6 @@ SELECT
         return count > 0
     }
 
-    static String detectMimeTypeFromBytes(byte[] bytes, String filename) {
-        return new MetadataExtractor().detectContentType(bytes, filename);
-    }
 
     Image createSubimage(Image parentImage, int x, int y, int width, int height, String userId, Map metadata = [:]) {
 
@@ -1219,7 +1623,7 @@ SELECT
         if (results.bytes) {
             int subimageIndex = Subimage.countByParentImage(parentImage) + 1
             def filename = "${parentImage.originalFilename}_subimage_${subimageIndex}"
-            def subimage = storeImageBytes(results.bytes,filename, results.bytes.length, results.contentType, userId, false, metadata).image
+            def subimage = storeImageBytes(ByteSource.wrap(results.bytes),filename, results.bytes.length, results.contentType, userId, false, metadata).image
 
             def subimageRect = new Subimage(parentImage: parentImage, subimage: subimage, x: x, y: y, height: height, width: width)
             subimage.parent = parentImage
@@ -1228,7 +1632,7 @@ SELECT
             auditService.log(parentImage, "Subimage created ${subimage.imageIdentifier}", userId)
             auditService.log(subimage, "Subimage created from parent image ${parentImage.imageIdentifier}", userId)
 
-            scheduleArtifactGeneration(subimage.id, userId)
+//            scheduleArtifactGeneration(subimage.id, userId)
             scheduleImageIndex(subimage.id)
 
             return subimage
@@ -1385,24 +1789,105 @@ SELECT
      * @return
      */
     def getImageFromParams(params) {
-        def image = Image.findById(params.int("id"))
+        def id = params.int("id")
+        def image = null
+        if (id != null) {
+            image = Image.findById(id, [ cache:true ])
+        }
+//        def image = Image.findById(params.int("id"))
         if (!image) {
             String guid = params.id // maybe the id is a guid?
             if (!guid) {
                 guid = params.imageId
             }
 
-            image = Image.findByImageIdentifier(guid, [ cache: true])
+            if (guid) {
+                image = Image.findByImageIdentifier(guid, [ cache: true])
+            }
         }
         return image
     }
 
+    def searchResultsToImageInfoList(List<Map<String,Object>> searchResults, Boolean includeTags = false, Boolean includeMetadata = false) {
+        def results = searchResults?.collect { image ->
+            searchResultToImageInfo(image, includeTags, includeMetadata)
+        }
+        return results
+    }
+    
+    def imageListToImageInfoList(List<Image> images, Boolean includeTags = false, Boolean includeMetadata = false) {
+        def results = images?.collect { image ->
+            def map = [:]
+            addImageInfoToMap(image, map, includeTags, includeMetadata)
+            map
+        }
+        return results
+    }
 
+    def searchResultToImageInfo(Map<String,Object> searchResult, Boolean includeTags = false, Boolean includeMetadata = false) {
+        // harmonise potential original filename keys but otherwise passthrough the ES result unchanged
+        if (searchResult.containsKey('originalfilename')) {
+            searchResult.originalFilename = UrlUtils.stripCredentials(searchResult.remove('originalfilename'))
+        }
+        if (searchResult.containsKey('originalFileName')) {
+            searchResult.originalFilename = UrlUtils.stripCredentials(searchResult.remove('originalFileName'))
+        }
+        if (searchResult.containsKey('originalFilename')) {
+            searchResult.originalFilename = UrlUtils.stripCredentials(searchResult['originalFilename'])
+        }
+        return searchResult
+//        def map = [:]
+//        map.imageIdentifier = searchResult.imageIdentifier
+//        map.mimeType = searchResult.format
+//        map.originalFileName = UrlUtils.maskCredentials(searchResult.originalfilename ?: searchResult.originalFilename, false)
+//        map.sizeInBytes = searchResult.fileSize
+//        map.rights = searchResult.rights ?: ''
+//        map.rightsHolder = searchResult.rightsHolder ?: ''
+//        map.dateUploaded = searchResult.dateUploaded ?: null
+//        map.dateTaken = searchResult.dateTaken ?: null
+//        if (map.mimeType && map.mimeType.startsWith('image')){
+//            map.imageUrl = getImageUrl(searchResult.imageIdentifier)
+//            map.tileUrlPattern = "${getImageTilesUrlPattern(searchResult.imageIdentifier)}"
+//            map.mmPerPixel = searchResult.mmPerPixel ?: ''
+//            map.height = searchResult.height
+//            map.width = searchResult.width
+//            map.tileZoomLevels = searchResult.zoomLevels ?: 0
+//        }
+//        map.description = searchResult.description ?: ''
+//        map.title = searchResult.title ?: ''
+//        map.type = searchResult.type ?: ''
+//        map.audience = searchResult.audience ?: ''
+//        map.references = searchResult.references ?: ''
+//        map.publisher = searchResult.publisher ?: ''
+//        map.contributor = searchResult.contributor ?: ''
+//        map.created = searchResult.created ?: ''
+//        map.source = searchResult.source ?: ''
+//        map.creator = searchResult.creator ?: ''
+//        map.license = searchResult.license ?: ''
+//        if (searchResult.recognisedLicense) {
+//            map.recognisedLicence = [
+//                    'acronym' : searchResult.recognisedLicense.acronym,
+//                    'name' : searchResult.recognisedLicense.name,
+//                    'url' : searchResult.recognisedLicense.url,
+//                    'imageUrl' : searchResult.recognisedLicense.imageUrl
+//            ]
+//        } else {
+//            map.recognisedLicence = null
+//        }
+//        map.dataResourceUid = searchResult.dataResourceUid ?: ''
+//        map.occurrenceID = searchResult.occurrenceId ?: ''
+//
+//        if (collectoryService) {
+//            collectoryService.addMetadataForResource(map)
+//        }
+//        return map
+    }
+    
     def addImageInfoToMap(Image image, Map results, Boolean includeTags, Boolean includeMetadata) {
 
         results.imageIdentifier = image.imageIdentifier
         results.mimeType = image.mimeType
-        results.originalFileName = image.originalFilename
+        results.originalFileName = UrlUtils.stripCredentials(image.originalFilename)
         results.sizeInBytes = image.fileSize
         results.rights = image.rights ?: ''
         results.rightsHolder = image.rightsHolder ?: ''
@@ -1463,28 +1948,33 @@ SELECT
 
     def UUID_PATTERN = ~/\b[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}\b/
 
-    def getImageGUIDFromParams(params) {
+    @NotTransactional // will start a new transaction if required
+    def getImageGUIDFromParams(GrailsParameterMap params) {
 
-        if(params.id){
+        if (params.id) {
             //if it a GUID, avoid database trip if possible....
             if (UUID_PATTERN.matcher(params.id).matches()){
                 return params.id
             }
-            if(params.id ){
-                def image = Image.findById(params.int("id"))
-                if(image) {
-                    return image.imageIdentifier
+            if (params.id ) {
+                def identifer = Image.withNewTransaction(readOnly: true) {
+                     Image.findById(params.int("id"), [ cache: true ])?.imageIdentifier
+                }
+                if (identifer) {
+                    return identifer
                 }
             }
-        } else if(params.imageId){
+        } else if (params.imageId) {
             //if it a GUID, avoid database trip if possible....
             if (UUID_PATTERN.matcher(params.imageId).matches()){
                 return params.imageId
             }
-            if(params.id ){
-                def image = Image.findById(params.int("imageId"))
-                if (image) {
-                    return image.imageIdentifier
+            if (params.imageId) {
+                def identifer = Image.withNewTransaction(readOnly: true) {
+                    Image.findById(params.int("imageId"), [ cache: true ])?.imageIdentifier
+                }
+                if (identifer) {
+                    return identifer
                 }
             }
         }
@@ -1498,7 +1988,11 @@ SELECT
      * @return
      */
     def exportCSV(OutputStream outputStream) {
-        eachRowToCSV(outputStream.newWriter('UTF-8'), """SELECT * FROM export_images;""")
+        eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_IMAGES_SQL)
+    }
+
+    def exportAvro(OutputStream outputStream) {
+        eachRowToAvro(outputStream, EXPORT_IMAGES_SQL)
     }
 
     /**
@@ -1508,7 +2002,11 @@ SELECT
      * @return
      */
     def exportMappingCSV(OutputStream outputStream) {
-        eachRowToCSV(outputStream.newWriter('UTF-8'), """SELECT * FROM export_mapping;""")
+        eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_MAPPING_SQL)
+    }
+
+    def exportMappingAvro(OutputStream outputStream) {
+        eachRowToAvro(outputStream, EXPORT_MAPPING_SQL)
     }
 
     /**
@@ -1521,8 +2019,16 @@ SELECT
         eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_DATASET_MAPPING_SQL, [datasetID], ',', '\\')
     }
 
+    def exportDatasetMappingAvro(String datasetID, OutputStream outputStream) {
+        eachRowToAvro(outputStream, EXPORT_DATASET_MAPPING_SQL, [datasetID])
+    }
+
     def exportDatasetCSV(String datasetID, OutputStream outputStream) {
         eachRowToCSV(outputStream.newWriter('UTF-8'), EXPORT_DATASET_SQL, [datasetID])
+    }
+
+    def exportDatasetAvro(String datasetID, OutputStream outputStream) {
+        eachRowToAvro(outputStream, EXPORT_DATASET_SQL, [datasetID])
     }
 
     /**
@@ -1551,6 +2057,202 @@ SELECT
                             .build())
                 .build()
 
+        eachRowTo(sql, params) { rs ->
+            csvWriter.writeAll(rs, true)
+        }
+        writer.flush()
+    }
+
+    /**
+     * Pass the results of the SQL query through a function that turns the query result metadata into an AVRO schema
+     * and then each row in the result set becomes a record in the resulting file.  The AVRO file is written to the
+     * given OutputStream but the OutputStream is not closed.
+     *
+     * @param outputStream The output stream to write the AVRO file to
+     * @param sql The SQL query to run
+     * @param params The parameters for the SQL query
+     */
+    private def eachRowToAvro(OutputStream outputStream, String sql, List<Object> params = []) {
+        DataFileWriter<GenericRecord> dataFileWriter = null
+
+        eachRowTo(sql, params) {rs ->
+            def schema = avroSchema(rs)
+
+            DatumWriter<GenericRecord> avroWriter = new GenericDatumWriter<GenericRecord>(schema)
+            dataFileWriter = new DataFileWriter<GenericRecord>(avroWriter)
+            dataFileWriter.create(schema, outputStream)
+
+            ResultSetMetaData metadata = rs.getMetaData()
+            while (rs.next()) {
+                def rb = new GenericRecordBuilder(schema)
+                for (int i = 1; i <= metadata.getColumnCount(); i++) {
+                    def label = metadata.getColumnLabel(i)
+                    def value = getColumnValue(rs, metadata.getColumnType(i), i, DEFAULT_DATE_FORMAT, DEFAULT_TIMESTAMP_FORMAT)
+                    rb.set(label, value)
+                }
+                dataFileWriter.append(rb.build())
+            }
+        }
+        dataFileWriter?.flush()
+    }
+
+    /**
+     * Helper function that turns the metadata from a ResultSet into an AVRO schema
+     * @param rs The SQL result set
+     * @return The AVRO schema for the result set
+     */
+    private def avroSchema(ResultSet rs) {
+        ResultSetMetaData metadata = rs.getMetaData()
+        def schemaAssembler = SchemaBuilder.builder()
+                .record("record")
+                .fields()
+        for (int i = 1; i <= metadata.getColumnCount(); i++) {
+            String label = metadata.getColumnLabel(i)
+            int type = metadata.getColumnType(i)
+            switch (type) {
+                case Types.BOOLEAN:
+                    schemaAssembler.optionalBoolean(label)
+                    break;
+                case Types.DECIMAL:
+                case Types.REAL:
+                case Types.NUMERIC:
+                case Types.DOUBLE:
+                    schemaAssembler.optionalDouble(label)
+                    break;
+                case Types.FLOAT:
+                    schemaAssembler.optionalFloat(label)
+                    break
+                case Types.BIGINT:
+                    schemaAssembler.optionalLong(label)
+                    break
+                case Types.INTEGER:
+                case Types.TINYINT:
+                case Types.SMALLINT:
+                    schemaAssembler.optionalInt(label)
+                    break
+                case Types.BLOB:
+                    schemaAssembler.optionalBytes(label)
+                    break
+                case Types.DATE:
+                case Types.TIME:
+                case Types.TIMESTAMP:
+                case Types.NCLOB:
+                case Types.CLOB:
+                case Types.NVARCHAR:
+                case Types.NCHAR:
+                case Types.LONGNVARCHAR:
+                case Types.LONGVARCHAR:
+                case Types.VARCHAR:
+                case Types.CHAR:
+                default:
+                    // This takes care of Types.BIT, Types.JAVA_OBJECT, and anything
+                    // unknown.
+                    schemaAssembler.optionalString(label)
+            }
+        }
+
+        return schemaAssembler.endRecord()
+    }
+
+    /**
+     * Helper function that turns a column value into the appropriate type for the AVRO record.
+     * @param rs The result set
+     * @param colType The Java Result Set Type for the given colIndex
+     * @param colIndex The column index in the current row in the Result Set
+     * @param dateFormatString The date format string for any Dates
+     * @param timestampFormatString The timestamp format string for any Timestamps
+     * @return A primitive object that can be written to an AVRO record
+     */
+    private Object getColumnValue(ResultSet rs, int colType, int colIndex, String dateFormatString, String timestampFormatString) {
+
+        def value
+
+        switch (colType) {
+            case Types.BOOLEAN:
+                value = rs.getBoolean(colIndex);
+                break
+            case Types.DECIMAL:
+            case Types.REAL:
+            case Types.NUMERIC:
+                BigDecimal d = rs.getBigDecimal(colIndex)
+                value = d.doubleValue()
+                break
+            case Types.DOUBLE:
+                value = rs.getDouble(colIndex)
+                break
+            case Types.FLOAT:
+                value = rs.getFloat(colIndex)
+                break
+            case Types.BIGINT:
+                value = rs.getLong(colIndex)
+                break
+            case Types.INTEGER:
+            case Types.TINYINT:
+            case Types.SMALLINT:
+                value = rs.getInt(colIndex)
+                break
+            case Types.BLOB:
+                value = rs.getBlob(colIndex).binaryStream.bytes
+                break
+            case Types.DATE:
+                value = handleDate(rs.getDate(colIndex), dateFormatString);
+                break
+            case Types.TIME:
+                def time = rs.getTime(colIndex)
+                value = time ? Objects.toString(time) : null
+                break
+            case Types.TIMESTAMP:
+                value = handleTimestamp(rs.getTimestamp(colIndex), timestampFormatString);
+                break
+            case Types.NCLOB:
+                value = rs.getNClob(colIndex)?.characterStream?.text
+                break
+            case Types.CLOB:
+                value = rs.getClob(colIndex)?.characterStream?.text
+                break
+            case Types.NVARCHAR:
+            case Types.NCHAR:
+            case Types.LONGNVARCHAR:
+            case Types.LONGVARCHAR:
+            case Types.VARCHAR:
+            case Types.CHAR:
+                value = rs.getString(colIndex)
+                break
+            default:
+                // This takes care of Types.BIT, Types.JAVA_OBJECT, and anything
+                // unknown.
+                // TODO Array types?
+                def obj = rs.getObject(colIndex)
+                value = obj ? Objects.toString(obj) : null
+        }
+
+
+        if (rs.wasNull() || value == null) {
+            value = null
+        }
+
+        return value
+    }
+
+    private String handleDate(java.sql.Date date, String dateFormatString) throws SQLException {
+        SimpleDateFormat df = new SimpleDateFormat(dateFormatString)
+        return date == null ? null : df.format(date)
+    }
+
+    protected String handleTimestamp(Timestamp timestamp, String timestampFormatString) {
+        SimpleDateFormat timeFormat = new SimpleDateFormat(timestampFormatString);
+        return timestamp == null ? null : timeFormat.format(timestamp);
+    }
+
+    /**
+     * Runs a SQL query and then runs the passed in closure with the ResultSet for the closure.
+     *
+     * @param sql The SQL query
+     * @param params The parameters for the query
+     * @param c The cloure to receive a single java.sql.ResultSet as a parameter
+     */
+    private def eachRowTo(String sql, List<Object> params,
+                          @ClosureParams(value = SimpleType, options= 'java.sql.ResultSet' ) Closure c) {
         Connection conn = null
         PreparedStatement st = null
         ResultSet rs = null
@@ -1569,7 +2271,7 @@ SELECT
             }
             rs = st.executeQuery()
 
-            csvWriter.writeAll(rs, true)
+            c(rs)
         } catch (SQLException e) {
             log.warn("Failed to execute: $sql because: ${e.message}")
             throw e
@@ -1596,7 +2298,6 @@ SELECT
                 log.debug("Caught exception closing connection: ${e.message} - continuing");
             }
         }
-        writer.flush()
     }
 
 
