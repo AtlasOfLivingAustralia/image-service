@@ -91,6 +91,21 @@ class AnalyticsService {
         }
     }
 
+    @NotTransactional
+    def sendAnalyticsFromImageId(boolean exists, String imageIdentifierArg, String eventCategory, String userAgent) {
+        _sendAnalytics(exists, eventCategory, userAgent) {
+            String druid = Image.withTransaction(readOnly: true) {
+                Image.where {
+                    imageIdentifier == imageIdentifierArg
+                }.projections {
+                    property('dataResourceUid')
+                }.get()
+            }
+            return druid
+        }
+    }
+
+
     /**
      * POST event data to google analytics.
      *
@@ -101,21 +116,27 @@ class AnalyticsService {
      */
     @NotTransactional
     def sendAnalytics(boolean exists, String dataResourceUid, String eventCategory, String userAgent) {
+        _sendAnalytics(exists, eventCategory, userAgent, { dataResourceUid })
+    }
+
+    private _sendAnalytics(boolean exists, String eventCategory, String userAgent, Closure<String> dataResourceUidProvider) {
         final analyticsId = grailsApplication.config.getProperty('analytics.ID')
         if (exists && analyticsId) {
             final queryURL =  grailsApplication.config.getProperty('analytics.URL')
-            final requestBody = [
-                    'v': 1,
-                    'tid': analyticsId,
-                    'cid': UUID.randomUUID().toString(),  //anonymous client ID
-                    't': 'event',
-                    'ec': eventCategory, // event category
-                    'ea': dataResourceUid, //event value
-                    'ua' : userAgent
-            ]
 
             analyticsExecutor.execute {
                 try {
+                    final requestBody = [
+                            'v': 1,
+                            'tid': analyticsId,
+                            'cid': UUID.randomUUID().toString(),  //anonymous client ID
+                            't': 'event',
+                            'ec': eventCategory, // event category
+                            'ea': dataResourceUidProvider.call(), //event value
+                            'ua' : userAgent
+                    ]
+
+
                     HttpURLConnection connection = (HttpURLConnection) queryURL.toString().toURL().openConnection()
                     connection.requestMethod = 'POST'
                     connection.setRequestProperty('Content-Type', 'application/x-www-form-urlencoded')
@@ -136,6 +157,7 @@ class AnalyticsService {
             }
         }
     }
+
 
     private String toFormBody(Map<String, Serializable> form) {
         form.collect { k,v -> URLEncoder.encode(k, "UTF-8")+'='+URLEncoder.encode(v, "UTF-8") }.join('&')

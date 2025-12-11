@@ -49,7 +49,7 @@ class AdminController {
         } else {
             def subimages = Subimage.findAllByParentImage(image)*.subimage
 
-            def sizeOnDisk = image.consumedSpace()
+            def sizeOnDisk = imageStoreService.consumedSpace(image)
 
             //accessible from cookie
             def userId = authService.userId

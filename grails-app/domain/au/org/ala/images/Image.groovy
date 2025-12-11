@@ -1,6 +1,9 @@
 package au.org.ala.images
 
+import au.org.ala.images.storage.StorageOperations
 import grails.gorm.async.AsyncEntity
+import grails.util.Holders
+import org.codehaus.groovy.runtime.StackTraceUtils
 
 //import net.kaleidos.hibernate.usertype.ArrayType
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
@@ -79,6 +82,7 @@ class Image implements AsyncEntity<Image> {
     Integer squareThumbSize
     @SearchableProperty(description="alternate filenames / URLs that this image has been found under")
     String[] alternateFilename = []
+    String storageLocationName
 
     static belongsTo = [ storageLocation: StorageLocation ]
     static hasMany = [keywords:ImageKeyword, metadata: ImageMetaDataItem, tags: ImageTag, outSourcedJobs: OutsourcedJob]
@@ -125,6 +129,13 @@ class Image implements AsyncEntity<Image> {
         dateDeleted  nullable: true
         occurrenceId nullable: true
         alternateFilename nullable: true
+
+        storageLocation nullable: true
+        storageLocationName nullable: true
+
+        storageLocationName(nullable: true, validator: { val, obj ->
+            return (val || obj.storageLocation != null)
+        })
     }
 
     static mapping = {
@@ -135,6 +146,7 @@ class Image implements AsyncEntity<Image> {
         dataResourceUid index: 'image_dataResourceUid_Idx'
         originalFilename index: 'image_originalfilename_idx'
         alternateFilename type: ArrayType, params: [type: String], index: 'image_alternatefilename_idx'
+        storageLocationName index: 'idx_image_storage_location_name'
 
         description length: 8096
         references column: "dc_references",  length: 1024
@@ -148,68 +160,106 @@ class Image implements AsyncEntity<Image> {
         storageLocation cache: true
     }
 
+    private StorageOperations findOps(String operation = 'unknown') {
+        def ops = null
+        if (storageLocationName) {
+            // dodgy access to the application context.
+            if (log.isDebugEnabled()) {
+                log.debug('Image {} retrieved storage location by name via deprecated method {}.', id, operation)
+            }
+            ops = Holders.applicationContext.getBean(StorageOperationsRegistry).getByName(storageLocationName)
+            if (!ops) {
+                log.error("Image {} could not find storage operations for location name '{}' during '{}'", id, storageLocationName, operation)
+            }
+        }
+        if (!ops) {
+            ops = GrailsHibernateUtil.unwrapIfProxy(storageLocation)
+        }
+        if (!ops) {
+            log.error("Image {} could not find storage operations during '{}', falling back to default", id, operation)
+            ops = Holders.applicationContext.getBean(StorageLocationService).getDefaultStorageOperations()
+        }
+        return ops
+    }
+
+    @Deprecated
     byte[] retrieve() {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).retrieve(this.imageIdentifier)
+        findOps('retrieve').retrieve(this.imageIdentifier)
     }
 
+    @Deprecated
     boolean stored() {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).stored(this.imageIdentifier)
+        findOps('stored').stored(this.imageIdentifier)
     }
 
+    @Deprecated
     long consumedSpace() {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).consumedSpace(this.imageIdentifier)
+        findOps('consumedSpace').consumedSpace(this.imageIdentifier)
     }
 
+    @Deprecated
     boolean deleteStored() {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).deleteStored(this.imageIdentifier)
+        findOps('deleteStored').deleteStored(this.imageIdentifier)
     }
 
+    @Deprecated
     InputStream originalInputStream() throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).originalInputStream(this.imageIdentifier, Range.emptyRange(this.fileSize))
+        findOps('originalInputStream').originalInputStream(this.imageIdentifier, Range.emptyRange(this.fileSize))
     }
 
+    @Deprecated
     InputStream originalInputStream(Range range) throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).originalInputStream(this.imageIdentifier, range)
+        findOps('originalInputStream').originalInputStream(this.imageIdentifier, range)
     }
 
+    @Deprecated
     InputStream thumbnailInputStream(Range range) throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).thumbnailInputStream(this.imageIdentifier, range)
+        findOps('thumbnailInputStream').thumbnailInputStream(this.imageIdentifier, range)
     }
 
+    @Deprecated
     InputStream thumbnailTypeInputStream(String type, Range range) throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).thumbnailTypeInputStream(this.imageIdentifier, type, range)
+        findOps('thumbnailTypeInputStream').thumbnailTypeInputStream(this.imageIdentifier, type, range)
     }
 
+    @Deprecated
     InputStream tileInputStream(Range range, int x, int y, int z) throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).tileInputStream(this.imageIdentifier, x, y, z, range)
+        findOps('tileInputStream').tileInputStream(this.imageIdentifier, x, y, z, range)
     }
 
+    @Deprecated
     long originalStoredLength() throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).originalStoredLength(this.imageIdentifier)
+        findOps('originalStoredLength').originalStoredLength(this.imageIdentifier)
     }
 
+    @Deprecated
     long thumbnailStoredLength() throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).thumbnailStoredLength(this.imageIdentifier)
+        findOps('thumbnailStoredLength').thumbnailStoredLength(this.imageIdentifier)
     }
 
+    @Deprecated
     long thumbnailTypeStoredLength(String type) throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).thumbnailTypeStoredLength(this.imageIdentifier, type)
+        findOps('thumbnailTypeStoredLength').thumbnailTypeStoredLength(this.imageIdentifier, type)
     }
 
+    @Deprecated
     long tileStoredLength(int x, int y, int z) throws FileNotFoundException {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).tileStoredLength(this.imageIdentifier, x, y, z)
+        findOps('tileStoredLength').tileStoredLength(this.imageIdentifier, x, y, z)
     }
 
+    @Deprecated
     boolean thumbnailExists(String type) {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).thumbnailExists(this.imageIdentifier, type)
+        findOps('thumbnailExists').thumbnailExists(this.imageIdentifier, type)
     }
 
+    @Deprecated
     boolean tileExists(int x, int y, int z) {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).tileExists(this.imageIdentifier, x, y, z)
+        findOps('tileExists').tileExists(this.imageIdentifier, x, y, z)
     }
 
+    @Deprecated
     void migrateTo(StorageLocation destination) {
-        GrailsHibernateUtil.unwrapIfProxy(storageLocation).migrateTo(this.imageIdentifier, this.mimeType, destination)
+        findOps('migrateTo').migrateTo(this.imageIdentifier, this.mimeType, destination)
     }
 
     static Image byOriginalFileOrAlternateFilename(String filename) {

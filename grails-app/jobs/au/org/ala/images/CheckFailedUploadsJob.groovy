@@ -1,9 +1,11 @@
 package au.org.ala.images
 
 import groovy.util.logging.Slf4j
+import org.hibernate.ScrollableResults
 import org.springframework.beans.factory.annotation.Value
 
 import java.text.DateFormat
+import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -80,14 +82,14 @@ class CheckFailedUploadsJob {
         
         try {
             // Get failed uploads that aren't too old
-            def failedUploads = FailedUpload.createCriteria().scroll {
+            ScrollableResults failedUploads = FailedUpload.createCriteria().scroll {
                 ge('dateCreated', cutoffDate)
                 order('dateCreated', 'asc')  // Check oldest first
             }
 
             try {
                 while (failedUploads.next()) {
-                    def failedUpload = scrollableResults.get(0) as FailedUpload
+                    def failedUpload = failedUploads.get(0) as FailedUpload
                     checked++
 
                     try {
