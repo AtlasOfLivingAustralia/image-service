@@ -40,8 +40,14 @@ import grails.web.servlet.mvc.GrailsParameterMap
 import org.apache.http.HttpHost
 import org.apache.http.message.BasicHeader
 import org.elasticsearch.client.RestClient
+import org.apache.http.conn.ssl.NoopHostnameVerifier
+import org.springframework.beans.factory.annotation.Value
 
 import javax.annotation.PreDestroy
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
+import java.security.SecureRandom
 import java.util.regex.Pattern
 import javax.annotation.PostConstruct
 import java.util.zip.ZipEntry
@@ -51,6 +57,9 @@ class ElasticSearchService implements MetricsSupport {
 
     GrailsApplication grailsApplication
     def imageStoreService
+
+    @Value('${elasticsearch.tls.disableTrust:false}')
+    boolean disableTLSTrustVerification
 
     static String UNRECOGNISED_LICENCE =  "unrecognised_licence"
     static String NOT_SUPPLIED = "not_supplied"
@@ -80,12 +89,27 @@ class ElasticSearchService implements MetricsSupport {
         }
 
         def restClient = RestClient.builder(*hosts)
-                .setHttpClientConfigCallback {
+                .setHttpClientConfigCallback { httpClientBuilder ->
                     if (credentialsProvider) {
-                        it.setDefaultCredentialsProvider(credentialsProvider)
+                        httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider)
                     }
+
+                    if (disableTLSTrustVerification) {
+                        SSLContext sslContext = SSLContext.getInstance("TLS")
+                        sslContext.init(null, [
+                            new X509TrustManager() {
+                                @Override void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                                @Override void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                                @Override java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0] }
+                            }
+                        ] as TrustManager[], new SecureRandom())
+                        httpClientBuilder
+                                .setSSLContext(sslContext)
+                                .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                    }
+
                     // Hacks for elasticsearch-java client compatibility with older/newer ES versions
-                    it.setDefaultHeaders(defaultHeaders)
+                    httpClientBuilder.setDefaultHeaders(defaultHeaders)
                       .addInterceptorLast((HttpResponseInterceptor) (response, context) -> {
                           if (!response.containsHeader("X-Elastic-Product")) response.addHeader("X-Elastic-Product", "Elasticsearch")
                       })
