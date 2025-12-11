@@ -1,6 +1,9 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.FileByteSinkFactory;
+
 import java.io.File;
+import java.io.FileInputStream;
 import java.time.Duration;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
@@ -29,11 +32,12 @@ public class LocalTiler {
 //        var workPool = Executors.newVirtualThreadPerTaskExecutor();
 
         ImageTilerConfig config = new ImageTilerConfig(ioPool, workPool);
-//        ImageTiler3 tiler = new ImageTiler3(config);
-        ImageTiler tiler = new ImageTiler(config);
-        try {
+        IImageTiler tiler = new ImageTiler4(config);
+//        ImageTiler tiler = new ImageTiler(config);
+        try (FileInputStream fis = new FileInputStream(f)) {
+            var sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(dest));
             long start = System.nanoTime();
-            ImageTilerResults results = tiler.tileImage(f, dest);
+            ImageTilerResults results = tiler.tileImage(fis, sink);
             if (results.getZoomLevels() == 0) {
                 System.out.println("Tiling failed!");
             } else {
