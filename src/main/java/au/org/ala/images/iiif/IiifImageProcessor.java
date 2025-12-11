@@ -2,6 +2,7 @@ package au.org.ala.images.iiif;
 
 import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
 import com.google.common.io.ByteSource;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,17 +57,20 @@ public class IiifImageProcessor {
         try (InputStream is = imageBytes.openBufferedStream()) {
             ImageInputStream iis = ImageIO.createImageInputStream(is);
             if (iis == null) {
+                IOUtils.consume(is);
                 throw new IOException("No ImageInputStream could be created for source image");
             }
 
             Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
             if (!readers.hasNext()) {
+                IOUtils.consume(is);
                 throw new IOException("No compatible ImageReader for source image");
             }
 
             // Use selection strategy to prefer TwelveMonkeys readers
             ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
             if (reader == null) {
+                IOUtils.consume(is);
                 throw new IOException("No suitable ImageReader selected for source image");
             }
 

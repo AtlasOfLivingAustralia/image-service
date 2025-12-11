@@ -1,7 +1,6 @@
 package au.org.ala.images.thumb;
 
 import au.org.ala.images.util.ByteSinkFactory;
-import au.org.ala.images.util.ByteSinkFactory;
 import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
 import au.org.ala.images.util.FileByteSinkFactory;
 import au.org.ala.images.util.ImageReaderUtils;
@@ -9,6 +8,7 @@ import au.org.ala.images.util.ImageUtils;
 import com.google.common.io.ByteSink;
 import com.google.common.io.ByteSource;
 import com.twelvemonkeys.image.AffineTransformOp;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,12 +63,14 @@ public class ImageThumbnailer {
             ImageInputStream iis = ImageIO.createImageInputStream(is);
             if (iis == null) {
                 log.error("Failed to create ImageInputStream");
+                IOUtils.consume(is);
                 return results;
             }
 
             Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
             if (!readers.hasNext()) {
                 log.error("No image readers for image!");
+                IOUtils.consume(is);
                 return results;
             }
 
@@ -76,6 +78,7 @@ public class ImageThumbnailer {
             ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
             if (reader == null) {
                 log.error("No suitable image reader selected!");
+                IOUtils.consume(is);
                 return results;
             }
             reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading metadata
@@ -109,12 +112,14 @@ public class ImageThumbnailer {
             ImageInputStream iis = ImageIO.createImageInputStream(is);
             if (iis == null) {
                 log.error("Failed to create ImageInputStream");
+                IOUtils.consume(is);
                 return results;
             }
 
             Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
             if (!readers.hasNext()) {
                 log.error("No image readers for image!");
+                IOUtils.consume(is);
                 return results;
             }
 
@@ -122,6 +127,7 @@ public class ImageThumbnailer {
             ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
             if (reader == null) {
                 log.error("No suitable image reader selected!");
+                IOUtils.consume(is);
                 return results;
             }
             reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading orientation metadata
