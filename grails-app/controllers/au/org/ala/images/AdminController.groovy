@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.storage.S3StorageOperations
 import au.org.ala.web.AlaSecured
 import au.org.ala.web.CASRoles
 import com.opencsv.CSVReader
@@ -18,6 +19,7 @@ import java.util.regex.Pattern
 class AdminController {
 
     def imageService
+    def iiifImageService
     def settingService
     def tagService
     def elasticSearchService
@@ -27,6 +29,7 @@ class AdminController {
     def imageStoreService
     def authService
     def sessionFactory
+    def checkFailedUploadsJob
 
     def index() {
         redirect(action:'dashboard')
@@ -46,7 +49,7 @@ class AdminController {
         } else {
             def subimages = Subimage.findAllByParentImage(image)*.subimage
 
-            def sizeOnDisk = image.consumedSpace()
+            def sizeOnDisk = imageStoreService.consumedSpace(image)
 
             //accessible from cookie
             def userId = authService.userId
@@ -612,6 +615,12 @@ class AdminController {
         [results: results, query: params.q]
     }
 
+    def clearS3Cache() {
+        S3StorageOperations.clearS3ClientCache()
+        flash.message = 'S3 cache cleared'
+        redirect(action:'tools', message: 'S3 Cache is cleared')
+    }
+
     def clearCollectoryCache(){
         collectoryService.clearCache()
         flash.message = 'Collectory cache cleared'
@@ -639,6 +648,7 @@ class AdminController {
 
     def clearThumbnailLookupCache() {
         imageStoreService.clearThumbnailLookupCache()
+        iiifImageService.clearLookupCache()
         flash.message = 'Thumbnail lookup cache cleared'
         redirect(action:'tools', message: 'Thumbnail Lookup Cache is cleared')
     }
@@ -649,6 +659,19 @@ class AdminController {
         redirect(action:'tools', message: 'Tile Lookup Cache is cleared')
     }
     
+    def runCheckFailedUploadsJob() {
+        try {
+            // Trigger the job manually with forceRun parameter
+            def context = [mergedJobDataMap: [forceRun: true]]
+            checkFailedUploadsJob.execute(context)
+            flash.message = 'Failed uploads check job started manually (forced run)'
+        } catch (Exception e) {
+            log.error("Error running CheckFailedUploadsJob manually: ${e.message}", e)
+            flash.errorMessage = "Error running failed uploads check: ${e.message}"
+        }
+        redirect(action:'tools')
+    }
+
     def resetImageTiles() {
         def image = imageService.getImageFromParams(params)
         if (!image) {

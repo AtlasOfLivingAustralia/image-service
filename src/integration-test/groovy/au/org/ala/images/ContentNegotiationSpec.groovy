@@ -17,6 +17,7 @@ import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
 
 import spock.lang.Specification
+import spock.lang.Unroll
 
 import java.security.MessageDigest
 
@@ -36,12 +37,18 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
         return url.toURL()
     }
 
-    def setup() {
+    def setup2(boolean useConfigStorage = false, String storageType = '') {
+        if (useConfigStorage) {
+            setupStorageLocation(storageType)
+        } else {
+            clearStorageLocation()
+        }
         MultiValueMap<String, String> form = new LinkedMultiValueMap<String, String>()
         form.add("imageUrl", "https://upload.wikimedia.org/wikipedia/commons/e/ed/Puma_concolor_camera_trap_Arizona_2.jpg")
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
                 .contentType("application/x-www-form-urlencoded")
+                .header('User-Agent', userAgent())
                 .body(form)
         HttpResponse uploadResponse = rest.exchange(request, String)
 
@@ -63,9 +70,12 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
      * curl -X GET "https://images.ala.org.au/image/1a6dc180-96b1-45df-87da-7d0912dddd4f" -H "Accept: application/json"
      */
     void "Test accept: application/json"() {
+        setup:
+        setup2()
         when:
         def request = HttpRequest.create(HttpMethod.GET,"${baseUrl}/image/${imageId}")
             .accept(MediaType.APPLICATION_JSON_TYPE)
+            .header('User-Agent', userAgent())
         HttpResponse uploadResponse = rest.exchange(request, String)
 
         println("response received")
@@ -84,9 +94,12 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
      * curl -X GET "https://images.ala.org.au/image/ABC" -H "Accept: application/json"
      */
     void "Test accept: application/json with expected 404"() {
+        setup:
+        setup2()
         when:
         def request = HttpRequest.create(HttpMethod.GET,"${baseUrl}/image/ABC")
             .accept(MediaType.APPLICATION_JSON_TYPE)
+            .header('User-Agent', userAgent())
         HttpResponse resp = rest.exchange(request, String)
 
         then:
@@ -102,9 +115,12 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
      * curl -X GET "https://images.ala.org.au/ws/image/ABC" -H "Accept: application/json"
      */
     void "Test WS accept: application/json with expected 404"() {
+        setup:
+        setup2()
         when:
         def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/ABC")
             .accept(MediaType.APPLICATION_JSON_TYPE)
+            .header('User-Agent', userAgent())
         HttpResponse resp = rest.exchange(request, String)
 
         then:
@@ -119,11 +135,16 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
      * Testing equivalent of
      * curl -X GET "https://images.ala.org.au/image/1a6dc180-96b1-45df-87da-7d0912dddd4f" -H "Accept: image/jpeg"
      */
+    @Unroll
     void "Test accept: image/jpeg"() {
+        setup:
+        setup2(useConfigStorage, storageType)
+
         when:
 
         def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/${imageId}")
                 .accept("image/jpeg")
+                .header('User-Agent', userAgent())
 
         def resp = rest.exchange(request, byte[])
         def imageInBytes = resp.body()
@@ -138,6 +159,17 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
 
         then:
         md5Hash == md5Hash2
+
+        cleanup:
+        if (useConfigStorage) {
+            clearStorageLocation()
+        }
+
+        where:
+        useConfigStorage | storageType
+        false            | ''
+        true             | 'default'
+        true             | 'named'
     }
 
     /**
@@ -148,6 +180,7 @@ class ContentNegotiationSpec extends ImagesIntegrationSpec {
         when:
         def request = HttpRequest.create(HttpMethod.GET, "${baseUrl}/image/ABC")
                 .accept("image/jpeg")
+                .header('User-Agent', userAgent())
         rest.exchange(request, byte[])
 
         then:

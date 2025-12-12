@@ -44,6 +44,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
     void "test home page"() {
         when:
         def request = HttpRequest.create(HttpMethod.GET,"${baseUrl}")
+                .header('User-Agent', userAgent())
         HttpResponse uploadResponse = rest.exchange(request, String)
         println(uploadResponse.status)
         then:
@@ -54,6 +55,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         when:
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImagesFromUrls")
                 .contentType("application/json")
+                .header('User-Agent', userAgent())
                 .body([:])
         HttpResponse resp = rest.exchange(request, String)
         then:
@@ -63,16 +65,35 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
     }
 
     void "test upload image"() {
+        given:
+        if (useConfigStorage) {
+            setupStorageLocation(storageType)
+        } else {
+            clearStorageLocation()
+        }
+
         when:
         MultiValueMap<String, String> form = new LinkedMultiValueMap<String, String>()
         form.add("imageUrl", "https://www.ala.org.au/app/uploads/2019/05/palm-cockatoo-by-Alan-Pettigrew-1920-1200-CCBY-28072018-640x480.jpg")
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
             .contentType("application/x-www-form-urlencoded")
+            .header('User-Agent', userAgent())
             .body(form)
         HttpResponse resp = rest.exchange(request, String)
         then:
         resp.status == HttpStatus.OK
+
+        cleanup:
+        if (useConfigStorage) {
+            clearStorageLocation()
+        }
+
+        where:
+        useConfigStorage | storageType
+        false            | ''
+        true             | 'default'
+        true             | 'named'
     }
 
     void "test multi upload image - bad submission"() {
@@ -83,6 +104,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImagesFromUrls")
                 .contentType("application/json")
+                .header('User-Agent', userAgent())
                 .body([images:[[sourceURL:url1], [sourceURL: url2]]])
         HttpResponse resp = rest.exchange(request, String)
 
@@ -101,6 +123,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImagesFromUrls")
                 .contentType("application/json")
+                .header('User-Agent', userAgent())
                 .body([images:[[sourceUrl:url1], [sourceUrl: url2]]])
         HttpResponse resp = rest.exchange(request, String)
 
@@ -124,6 +147,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         form.add("imageUrl", "https://static.inaturalist.org/photos/35335345/original.jpeg?1555821308")
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
             .contentType("application/x-www-form-urlencoded")
+            .header('User-Agent', userAgent())
             .body(form)
 
         HttpResponse resp = rest.exchange(request, String)
@@ -133,6 +157,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         form2.add("imageUrl", "https://static.inaturalist.org/photos/35335341/original.jpeg?1555821307")
         def request2 = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
             .contentType("application/x-www-form-urlencoded")
+            .header('User-Agent', userAgent())
             .body(form2)
         HttpResponse resp2 = rest.exchange(request2, String)
         def jsonResponse2 = new JsonSlurper().parseText(resp2.body())
@@ -152,6 +177,7 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
 
         def request = HttpRequest.create(HttpMethod.POST,"${baseUrl}/ws/uploadImage")
                 .contentType("multipart/form-data")
+                .header('User-Agent', userAgent())
                 .body(MultipartBody.builder()
                         .addPart("image", imageFile)
                         .build())

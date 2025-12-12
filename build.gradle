@@ -9,7 +9,7 @@ plugins {
     id "application"
     id "eclipse"
     id "maven-publish"
-    id "com.gorylenko.gradle-git-properties" version "2.3.2"
+    id "com.gorylenko.gradle-git-properties" version "2.5.4"
     id "org.flywaydb.flyway" version "9.4.0"
 }
 
@@ -28,7 +28,7 @@ plugins {
 //    }
 //}
 
-version "4.0.0"
+version "4.1.0"
 
 group "au.org.ala"
 
@@ -112,6 +112,7 @@ dependencies {
     implementation "org.flywaydb:flyway-core:9.4.0"
     implementation 'org.grails.plugins:cache-headers:2.0.2'
     runtimeOnly 'org.codehaus.groovy:groovy-dateutil'
+    runtimeOnly 'org.codehaus.groovy:groovy-datetime'
     implementation 'dk.glasius:external-config:3.1.1'
 
     implementation 'org.grails.plugins:quartz:3.0.0'
@@ -119,7 +120,18 @@ dependencies {
 
     implementation group: 'org.locationtech.spatial4j', name: 'spatial4j', version: '0.7'
     implementation group: 'org.locationtech.jts', name: 'jts-core', version: '1.15.0'
-    implementation "com.amazonaws:aws-java-sdk-s3:$amazonAwsSdkVersion"
+    // AWS SDK v2
+    implementation platform("software.amazon.awssdk:bom:$awsSdk2Version")
+    implementation "software.amazon.awssdk:apache-client"
+    implementation "software.amazon.awssdk:cloudwatch-metric-publisher"
+    implementation("software.amazon.awssdk:netty-nio-client")
+    implementation "software.amazon.awssdk:s3"
+    implementation "software.amazon.awssdk:s3-transfer-manager"
+    implementation "software.amazon.awssdk:sts"
+    implementation "software.amazon.awssdk:auth"
+    implementation("software.amazon.awssdk.crt:aws-crt:0.40.1")
+    // TEMP: Keep AWS SDK v1 during migration; remove once all code/tests are v2
+//    implementation "com.amazonaws:aws-java-sdk-s3:1.12.418"
     implementation 'org.javaswift:joss:0.10.4'
     runtimeOnly 'org.postgresql:postgresql:42.7.4'
 
@@ -129,9 +141,9 @@ dependencies {
 
     implementation 'org.imgscalr:imgscalr-lib:4.2'
     implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
-    implementation 'org.apache.tika:tika-core:2.5.0'
+    implementation 'org.apache.tika:tika-core:2.9.2' // TODO need to keep this in sync with image-utils
     implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
-    implementation 'au.org.ala:image-utils:1.10.0'
+    implementation 'au.org.ala:image-utils:1.11.1'
 
     implementation 'net.lingala.zip4j:zip4j:2.11.3'
     implementation 'com.google.guava:guava:33.2.1-jre'
@@ -140,12 +152,22 @@ dependencies {
     implementation 'org.apache.avro:avro:1.11.4'
     implementation 'org.xerial.snappy:snappy-java:1.1.10.4'
 
+    // Retry library for exponential backoff
+    implementation 'dev.failsafe:failsafe:3.3.2'
+
     // Swagger
     implementation 'au.org.ala.plugins:openapi:1.1.0'
 
     // Google analytics requirement
     implementation 'com.google.api-client:google-api-client:1.33.4'
     implementation 'com.google.apis:google-api-services-analytics:v3-rev20190807-1.32.1'
+
+    // Micrometer metrics
+    implementation 'io.micrometer:micrometer-core'
+    implementation 'io.micrometer:micrometer-registry-datadog'
+    implementation 'io.micrometer:micrometer-registry-cloudwatch2'
+    implementation 'io.micrometer:micrometer-registry-statsd'
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
     // Standard grails
     implementation("org.grails:grails-core")
@@ -200,7 +222,8 @@ dependencies {
     testImplementation enforcedPlatform('io.zonky.test.postgres:embedded-postgres-binaries-bom:11.19.0')
 //    testImplementation "com.opentable.components:otj-pg-embedded:1.0.1" // required transitive dependency from the plugin.
     testImplementation 'cloud.localstack:localstack-utils:0.2.23'
-    testImplementation "com.amazonaws:aws-java-sdk:$amazonAwsSdkVersion" // full AWS SDK included in test scope for localstack config
+    // TEMP: Keep AWS SDK v1 full in tests during migration (Localstack utils may depend on it)
+    testImplementation "com.amazonaws:aws-java-sdk:1.12.418"
     testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:2.3.0'
 
 }
@@ -220,7 +243,7 @@ tasks.withType(Test) {
     systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
     systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
     testLogging {
-        showStandardStreams = true
+        showStandardStreams = Boolean.getBoolean('testLogging')
         exceptionFormat = 'full'
     }
     doFirst {
@@ -302,7 +325,7 @@ springBoot {
 //}
 
 test {
-    testLogging.showStandardStreams = true
+    testLogging.showStandardStreams = Boolean.getBoolean('testLogging')
 }
 
 //assets {

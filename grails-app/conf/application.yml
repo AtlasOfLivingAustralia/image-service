@@ -96,6 +96,50 @@ server:
     servlet:
       context-path: ''
 
+management:
+    endpoints:
+        web:
+            exposure:
+                include: health,info,metrics,prometheus
+            base-path: /actuator
+    metrics:
+        enable:
+            jvm: true
+            process: true
+            system: true
+            tomcat: true
+            logback: true
+            hikaricp: true
+        export:
+            datadog:
+                enabled: false
+                apiKey: 'changeme'
+                uri: https://api.datadoghq.com
+                step: 1m
+                descriptions: true
+                applicationKey: 'changeme'
+            cloudwatch:
+                enabled: false
+                namespace: 'ImageService'
+                region: ${AWS_REGION:ap-southeast-2}
+                step: 1m
+                batchSize: 20
+            statsd:
+              enabled: false
+              flavor: datadog
+            simple:
+                enabled: true
+                mode: step
+                step: 1m
+        tags:
+            application: 'image-service'
+            environment: 'development'
+        distribution:
+            percentiles-histogram:
+                http.server.requests: true
+                storage.operations: true
+                image.processing: true
+
 ---
 flyway:
     enabled: true
@@ -372,6 +416,11 @@ purgeCompletedAgeInDays: 3
 # The URLs to recognise as image service URL for the purposes of recognising incoming
 # URLs for images (to avoid re-downloading the images)
 imageServiceUrls: ["http://dev.ala.org.au:8080","https://images.ala.org.au"]
+
+images:
+  # When true, disable all HTTP caching for image responses and bypass
+  # in-memory Caffeine caches for thumbnails and tiles. Default: false
+  disableCache: false
 
 # External links
 collectory:

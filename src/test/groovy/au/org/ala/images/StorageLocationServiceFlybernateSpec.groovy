@@ -2,8 +2,18 @@ package au.org.ala.images
 
 import au.org.ala.images.helper.FlybernateSpec
 import grails.testing.services.ServiceUnitTest
+import org.grails.spring.beans.factory.InstanceFactoryBean
+
+import java.util.concurrent.Executor
 
 class StorageLocationServiceFlybernateSpec extends FlybernateSpec implements ServiceUnitTest<StorageLocationService> {
+
+    def setup() {
+        defineBeans {
+            analyticsExecutor(InstanceFactoryBean, [execute: { Runnable r -> r.run() } ] as Executor, Executor)
+            storageOperationsRegistry(StorageOperationsRegistry, ref('grailsApplication'))
+        }
+    }
 
     // GORM Unit testing returns an ArrayList for Criteria.scroll {}, so we run
     // this test against a real database

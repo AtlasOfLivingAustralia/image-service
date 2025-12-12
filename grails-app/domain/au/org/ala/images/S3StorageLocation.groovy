@@ -3,26 +3,6 @@ package au.org.ala.images
 import au.org.ala.images.storage.S3StorageOperations
 import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.util.ByteSinkFactory
-import com.amazonaws.AmazonClientException
-import com.amazonaws.ClientConfiguration
-import com.amazonaws.HttpMethod
-import com.amazonaws.Protocol
-import com.amazonaws.SdkClientException
-import com.amazonaws.auth.AWSStaticCredentialsProvider
-import com.amazonaws.auth.BasicAWSCredentials
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
-import com.amazonaws.client.builder.AwsClientBuilder
-import com.amazonaws.services.s3.AmazonS3
-import com.amazonaws.services.s3.AmazonS3ClientBuilder
-import com.amazonaws.services.s3.model.AmazonS3Exception
-import com.amazonaws.services.s3.model.CannedAccessControlList
-import com.amazonaws.services.s3.model.CopyObjectRequest
-import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest
-import com.amazonaws.services.s3.model.GetObjectRequest
-import com.amazonaws.services.s3.model.ObjectListing
-import com.amazonaws.services.s3.model.ObjectMetadata
-import com.amazonaws.services.s3.model.PutObjectRequest
-import com.amazonaws.services.s3.model.S3ObjectSummary
 import groovy.transform.EqualsAndHashCode
 import net.lingala.zip4j.io.inputstream.ZipInputStream
 import org.apache.commons.io.FilenameUtils
@@ -37,6 +17,10 @@ class S3StorageLocation extends StorageLocation {
     String secretKey
     boolean containerCredentials
     boolean publicRead
+    // When true, explicitly request S3 canned Private ACL on upload/updates.
+    // When false (and publicRead is also false), no ACL header is added and
+    // bucket defaults/policies apply.
+    boolean privateAcl
     boolean redirect
     String cloudfrontDomain
 
@@ -66,6 +50,7 @@ class S3StorageLocation extends StorageLocation {
                 secretKey: secretKey,
                 containerCredentials: containerCredentials,
                 publicRead: publicRead,
+                privateAcl: privateAcl,
                 redirect: redirect,
                 pathStyleAccess: pathStyleAccess,
                 hostname: hostname,

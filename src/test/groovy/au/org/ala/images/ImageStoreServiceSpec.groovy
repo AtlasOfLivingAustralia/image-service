@@ -10,12 +10,14 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
     def setup() {
         service.auditService = Mock(AuditService)
+        service.storageLocationService = Mock(StorageLocationService)
     }
 
     def "test store tiles zip"() {
         setup:
         def image = Mock(Image)
         def storageLocation = Mock(StorageLocation)
+        service.storageLocationService.getStorageOperationsForImage(image) >> storageLocation
         def uuid = UUID.randomUUID().toString()
         image.getImageIdentifier() >> uuid
         image.getStorageLocation() >> storageLocation
@@ -25,7 +27,8 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         service.storeTilesArchiveForImage(image, mpf)
 
         then:
-        1 * image.stored() >> true
+
+        1 * storageLocation.stored(uuid) >> true
         // no directories entries call storeTileZipInputStream
         0 * storageLocation.storeTileZipInputStream(uuid, '0/0/', _, 0, _)
         // file entries do call storeTileZipInputStream

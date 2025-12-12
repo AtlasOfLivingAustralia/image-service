@@ -5,13 +5,15 @@ import cloud.localstack.Localstack
 import cloud.localstack.ServiceName
 import cloud.localstack.docker.LocalstackDockerExtension
 import cloud.localstack.docker.annotation.LocalstackDockerProperties
-import com.amazonaws.ClientConfiguration
-import com.amazonaws.auth.AWSStaticCredentialsProvider
-import com.amazonaws.auth.BasicAWSCredentials
-import com.amazonaws.client.builder.AwsClientBuilder
-import com.amazonaws.services.s3.AmazonS3
-import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import org.junit.jupiter.api.extension.ExtendWith
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
+import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.CreateBucketRequest
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import spock.lang.Specification
 
 
@@ -21,17 +23,16 @@ class S3URLConnectionSpec extends Specification {
 
     def setupSpec() {
 
-        AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard().
-                withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(Localstack.INSTANCE.endpointS3, Constants.DEFAULT_REGION)).
-                withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY))).
-                withClientConfiguration(
-                        new ClientConfiguration()
-                                .withValidateAfterInactivityMillis(200))
-        builder.setPathStyleAccessEnabled(true)
-        AmazonS3 clientS3 = builder.build()
-        clientS3.createBucket('example')
-        clientS3.putObject('example', 'key', 'content')
-        clientS3.getObject('example', 'key')
+        S3Client clientS3 = S3Client.builder()
+                .endpointOverride(URI.create(Localstack.INSTANCE.endpointS3))
+                .region(Region.of(Constants.DEFAULT_REGION))
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(Constants.TEST_ACCESS_KEY, Constants.TEST_SECRET_KEY)))
+                .forcePathStyle(true)
+                .build()
+
+        clientS3.createBucket(CreateBucketRequest.builder().bucket('example').build())
+        clientS3.putObject(PutObjectRequest.builder().bucket('example').key('key').build(), RequestBody.fromString('content'))
+        clientS3.getObject(GetObjectRequest.builder().bucket('example').key('key').build())
 
         def localstack = Localstack.INSTANCE
 

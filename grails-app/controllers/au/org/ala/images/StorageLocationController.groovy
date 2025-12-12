@@ -66,7 +66,8 @@ class StorageLocationController {
         boolean updateAcls = false
 
         if (instance instanceof S3StorageLocation) {
-            updateAcls = instance.isDirty('publicRead')
+            // Trigger ACL refresh if either publicRead or privateAcl changed
+            updateAcls = instance.isDirty('publicRead') || instance.isDirty('privateAcl')
         }
 
         instance.save()

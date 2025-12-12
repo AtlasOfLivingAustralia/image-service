@@ -1,10 +1,13 @@
 package au.org.ala.images;
 
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.S3Object;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import org.apache.logging.log4j.util.Strings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +30,8 @@ public class S3URLConnection extends URLConnection {
 
     private static final Logger log = LoggerFactory.getLogger(S3URLConnection.class);
 
-    private S3Object object;
+    private S3Client client;
+    private ResponseInputStream<GetObjectResponse> object;
 
     private String endpoint;
 
@@ -68,7 +72,6 @@ public class S3URLConnection extends URLConnection {
 
     @Override
     public void connect() throws IOException {
-        AmazonS3 client;
         URI uri;
 
         try {
@@ -92,22 +95,21 @@ public class S3URLConnection extends URLConnection {
             throw new IllegalArgumentException("URL host must be in the form bucketname.s3.region-code.amazonaws.com");
         }
 
-        var builder = AmazonS3ClientBuilder.standard();
+        var builder = S3Client.builder();
         if (Strings.isNotBlank(uri.getUserInfo())) {
             var parts = uri.getUserInfo().split(":");
-            builder = builder.withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(parts[0], parts[1])));
+            builder = builder.credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(parts[0], parts[1])));
         }
         if (Strings.isNotBlank(region)) {
+            builder = builder.region(Region.of(region));
             if (Strings.isNotBlank(endpoint)) {
-                builder = builder.withEndpointConfiguration(new AmazonS3ClientBuilder.EndpointConfiguration(endpoint, region));
-            } else {
-                builder = builder.withRegion(region);
+                builder = builder.endpointOverride(URI.create(endpoint));
             }
         }
         if (pathStyleAccessEnabled) {
-            builder = builder.withPathStyleAccessEnabled(true);
+            builder = builder.serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build());
         }
-        client = builder.build();
+        this.client = builder.build();
 
 
         var key = uri.getPath();
@@ -116,7 +118,7 @@ public class S3URLConnection extends URLConnection {
         }
 
         log.trace("Connecting to s3 bucket: {} key: {}", bucket, key);
-        object = client.getObject(bucket, key);
+        object = this.client.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build());
 
 //        if (url.host.matches('s3\\.(.*\\.)?amazonaws\\.com')) {
 //            bucketname = url.path.substring(1, url.path.indexOf('/', 1))
@@ -135,6 +137,10 @@ public class S3URLConnection extends URLConnection {
             } catch (IOException e) { /* ignored */ }
             object = null;
         }
+        if (client != null) {
+            client.close();
+            client = null;
+        }
     }
 
     private void ensureConnected() {
@@ -150,43 +156,43 @@ public class S3URLConnection extends URLConnection {
     @Override
     public String getContentEncoding() {
         ensureConnected();
-        return object.getObjectMetadata().getContentEncoding();
+        return object.response().contentEncoding();
     }
 
     @Override
     public long getContentLengthLong() {
         ensureConnected();
-        return object.getObjectMetadata().getContentLength();
+        return object.response().contentLength();
     }
 
     @Override
     public String getContentType() {
         ensureConnected();
-        return object.getObjectMetadata().getContentType();
+        return object.response().contentType();
     }
 
     @Override
     public long getExpiration() {
         ensureConnected();
-        return object.getObjectMetadata().getExpirationTime().getTime();
+        return object.response().expires() != null ? object.response().expires().toEpochMilli() : 0L;
     }
 
     @Override
     public long getLastModified() {
         ensureConnected();
-        return object.getObjectMetadata().getLastModified().getTime();
+        return object.response().lastModified() != null ? object.response().lastModified().toEpochMilli() : 0L;
     }
 
     @Override
     public InputStream getInputStream() throws IOException {
         ensureConnected();
-        return object.getObjectContent();
+        return object;
     }
 
     @Override
     public String getHeaderField(String name) {
         ensureConnected();
-        return object.getObjectMetadata().getRawMetadataValue(name).toString();
+        return object.response().sdkHttpResponse().firstMatchingHeader(name).orElse(null);
     }
 
     /**

@@ -1,4 +1,4 @@
-# image-service   [![Build Status](https://travis-ci.com/AtlasOfLivingAustralia/image-service.svg?branch=master)](https://travis-ci.org/AtlasOfLivingAustralia/image-service)
+# image-service   [![Build Status](https://github.com/AtlasOfLivingAustralia/image-service/actions/workflows/ci.yml/badge.svg)](https://github.com/AtlasOfLivingAustralia/image-service/actions/workflows/ci.yml)
 
 This Grails application provides the webservices and backend for the storage of all images in the Atlas.
 It includes:
@@ -63,3 +63,22 @@ And to shutdown
 ```$xslt
 docker-compose -f elastic.yml kill
 ```
+
+### Disable caching (HTTP + in-memory)
+
+You can disable all caching for image responses and bypass the in‑memory Caffeine caches used for thumbnails and tiles by setting the following configuration property:
+
+```
+images:
+  disableCache: true
+```
+
+Effects when `images.disableCache = true`:
+
+- Controllers that serve image bytes (standard image endpoints and IIIF) will not return `304 Not Modified` responses and will replace any cache headers with the following no‑cache headers on every response:
+  - `Cache-Control: no-store, no-cache, must-revalidate`
+  - `Pragma: no-cache`
+  - `Expires: 0`
+- `ImageStoreService` will bypass the Caffeine caches for thumbnail and tile lookups; results will not be cached in memory.
+
+By default, `images.disableCache` is `false`.
