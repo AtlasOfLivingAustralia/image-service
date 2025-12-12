@@ -6,7 +6,9 @@ import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
 import au.org.ala.images.thumb.ThumbnailingResult
 import au.org.ala.images.tiling.DefaultZoomFactorStrategy
+import au.org.ala.images.tiling.IImageTiler
 import au.org.ala.images.tiling.ImageTiler3
+import au.org.ala.images.tiling.ImageTiler4
 import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.tiling.ImageTilerResults
 import au.org.ala.images.tiling.TileFormat
@@ -18,6 +20,7 @@ import com.google.common.io.ByteSource
 import grails.gorm.transactions.NotTransactional
 import grails.gorm.transactions.Transactional
 import grails.web.mapping.LinkGenerator
+import groovy.transform.CompileStatic
 import groovy.transform.Immutable
 import groovy.util.logging.Slf4j
 import net.lingala.zip4j.ZipFile
@@ -39,6 +42,8 @@ import javax.imageio.ImageReadParam
 import java.awt.Color
 import java.awt.Rectangle
 import java.awt.image.BufferedImage
+import java.lang.reflect.Constructor
+import java.lang.reflect.InvocationTargetException
 import java.nio.file.Files
 
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
@@ -102,6 +107,12 @@ class ImageStoreService implements MetricsSupport {
 
     @Value('${images.disableCache:false}')
     boolean disableCache = false
+
+    @Value('${tiling.tiler.class:}')
+    String tilerClassName
+
+    @Value('${tiling.tiler.version:V4}')
+    TilerVersion tilerVersion
 
     private Semaphore thumbnailSemaphore
     private Semaphore tilingSemaphore
@@ -549,10 +560,51 @@ class ImageStoreService implements MetricsSupport {
         }
     }
 
+    static enum TilerVersion {
+        V1,
+        V3,
+        V4,
+        CUSTOM
+    }
+
+    @CompileStatic
+    private IImageTiler createTiler(ImageTilerConfig config) {
+        switch (tilerVersion) {
+            case TilerVersion.V1:
+                log.trace("Tiler version V1 is deprecated, using V3 instead")
+                return new ImageTiler3(config)
+            case TilerVersion.V3:
+                log.trace("Using Tiler version V3")
+                return new ImageTiler3(config)
+            case TilerVersion.CUSTOM:
+                log.trace("Using custom Tiler class: ${tilerClassName}")
+                return loadCustomTiler(config)
+            case TilerVersion.V4:
+            default:
+                log.trace("Using Tiler version V4")
+                return new ImageTiler4(config)
+        }
+    }
+
+    @CompileStatic
+    private IImageTiler loadCustomTiler(ImageTilerConfig config) {
+        if (!tilerClassName) {
+            throw new IllegalStateException("Tiler version is set to CUSTOM but no tiler class name has been provided")
+        }
+        try {
+            Class tilerClass = this.class.classLoader.loadClass(tilerClassName)
+            Constructor constructor = tilerClass.getConstructor(ImageTilerConfig.class)
+            return (IImageTiler) constructor.newInstance(config)
+        } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
+            log.error("Error loading custom tiler class ${tilerClassName}: ${ExceptionUtils.getStackTrace(e)}")
+            throw new IllegalStateException("Error loading custom tiler class ${tilerClassName}: ${e.message}", e)
+        }
+    }
+
     private ImageTilerResults tileImageLevel(String imageIdentifier, StorageOperations operations, int z) {
         def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
         config.setTileBackgroundColor(new Color(221, 221, 221))
-        def tiler = new ImageTiler3(config)
+        def tiler = createTiler(config)
         return tiler.tileImage(
                 operations.originalInputStream(imageIdentifier, null),
                 new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier)),
@@ -564,7 +616,7 @@ class ImageStoreService implements MetricsSupport {
     private ImageTilerResults tileImage(String imageIdentifier, StorageOperations operations) {
         def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
         config.setTileBackgroundColor(new Color(221, 221, 221))
-        def tiler = new ImageTiler3(config)
+        def tiler = createTiler(config)
         return tiler.tileImage(
                 operations.originalInputStream(imageIdentifier, null),
                 new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier))
