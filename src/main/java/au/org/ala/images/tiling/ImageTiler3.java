@@ -204,7 +204,7 @@ public class ImageTiler3 implements IImageTiler{
             log.trace("getBufferedImages: xs: {}, ys: {}", xs, ys);
 
             for (int i = 0; i < xs; ++i) {
-                for (int j = 0; j < ys; ++j) {
+                for (int j = ys - 1; j >= 0; --j) {
                     log.trace("getBufferedImages: accepting new point ({}, {})", i, j);
                     stream.accept(new Point(i,j));
                 }
@@ -226,7 +226,7 @@ public class ImageTiler3 implements IImageTiler{
                     rectHeight = segmentSize;
                 }
                 int rectX = p.x * segmentSize;
-                int rectY = p.y * segmentSize;
+                int rectY = h - (p.y * segmentSize) - rectHeight;
                 log.trace("getBufferedImages: sourceRegion: x: {}, y: {}, rectWidth: {}, rectHeight: {}", rectX, rectY, rectWidth, rectHeight);
 //                log.debug("getBufferedImages: sourceRegion: x: {}, y: {}, rectWidth: {}, rectHeight: {}", p.x, p.y, rectWidth, rectHeight);
 
@@ -310,6 +310,7 @@ public class ImageTiler3 implements IImageTiler{
         // (not sliced) for these extreme zoom levels.
         double sliceSizeAtLevel = (double) SLICE_SIZE / (double) subsample;
         double maxTilesPerSliceAtLevel = sliceSizeAtLevel / (double) _tileSize;
+        final int stripHeight = strip.getHeight();
 
         // Use floating point to get accurate position, then truncate
         int startCol = (int)((double)sliceCoords.x * maxTilesPerSliceAtLevel);
@@ -336,15 +337,28 @@ public class ImageTiler3 implements IImageTiler{
                 tw = strip.getWidth();
             }
 
-            for (int y = 0; y < rows; y++) {
-                int th = _tileSize;
+            for (int y = rows - 1; y >= 0; y--) {
+                // row 0 = y strip height
+                // row 1 = y strip height - tile size
+                // ...
+                // row n = y strip height - (n * tile size)
+                int th;
+                int rowOffset;
+                if ((y+1) * _tileSize > stripHeight) {
+                    th = stripHeight - (y * _tileSize);
+                    rowOffset = 0;
+                } else {
+                    th = _tileSize;
+                    rowOffset = stripHeight - (y+1) * _tileSize;
+                }
+//                int th = _tileSize;
 
                 // Start from the top of the row and work down
-                int rowOffset = y * _tileSize;
+//                int rowOffset = y * _tileSize;
 
-                if (rowOffset + _tileSize > strip.getHeight()) {
-                    th = strip.getHeight() - rowOffset;
-                }
+//                if (rowOffset + _tileSize > strip.getHeight()) {
+//                    th = strip.getHeight() - rowOffset;
+//                }
 
                 BufferedImage tile = null;
                 if (tw > 0 && th > 0) {

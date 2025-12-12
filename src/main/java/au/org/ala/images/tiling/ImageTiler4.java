@@ -251,14 +251,28 @@ public class ImageTiler4 implements IImageTiler {
 
         List<SaveTileTask> tasks = new ArrayList<>(cols * rows);
 
+        int imageWidth = image.getWidth();
+        int imageHeight = image.getHeight();
+
         for (int col = 0; col < cols; col++) {
             TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, 0, 1);
 
-            for (int row = 0; row < rows; row++) {
+            for (int row = rows - 1; row >= 0; row--) {
+
+                int th;
+                int y;
+                if ((row + 1) * _tileSize > imageHeight) {
+                    y = 0;
+                    th = imageHeight - (row * _tileSize);
+                } else {
+                    y = imageHeight - (row + 1) * _tileSize;
+                    th = _tileSize;
+                }
+
                 int x = col * _tileSize;
-                int y = row * _tileSize;
-                int tw = Math.min(_tileSize, image.getWidth() - x);
-                int th = Math.min(_tileSize, image.getHeight() - y);
+//                int y = row * _tileSize;
+                int tw = Math.min(_tileSize, imageWidth - x);
+//                int th = Math.min(_tileSize, imageHeight - y);
 
                 BufferedImage tile = null;
                 if (tw > 0 && th > 0) {
@@ -274,11 +288,13 @@ public class ImageTiler4 implements IImageTiler {
                 }
 
                 if (tile != null) {
-                    g.drawImage(tile, 0, 0, null);
+                    // Align tile to bottom-left corner (partial tiles at top edge have padding at top)
+                    g.drawImage(tile, 0, _tileSize - th, null);
                 }
                 
                 g.dispose();
 
+                // Flip y-coordinate so (0,0) is at bottom-left
                 ByteSink tileSink = columnSink.getTileSink(row);
                 tasks.add(new SaveTileTask(tileSink, destTile));
             }
@@ -301,7 +317,7 @@ public class ImageTiler4 implements IImageTiler {
                 var image = pair.getRight();
                 try {
                     var intStream = IntStream.rangeClosed(minLevel, maxLevel);
-                    if (minLevel == 0 && maxLevel == Integer.MAX_VALUE) {
+                    if (minLevel == 0 && maxLevel == (pyramid.length - 1)) {
                         intStream = intStream.map(index -> maxLevel - index);
                     }
                     return intStream
@@ -413,7 +429,7 @@ public class ImageTiler4 implements IImageTiler {
         var ys = (int) Math.ceil((double) h / (double) segmentSize);
 
         for (int i = 0; i < xs; ++i) {
-            for (int j = 0; j < ys; ++j) {
+            for (int j = ys-1; j >= 0; --j) {
                 stream.accept(new Point(i, j));
             }
         }
@@ -422,9 +438,17 @@ public class ImageTiler4 implements IImageTiler {
             var params = reader.getDefaultReadParam();
 
             int rectWidth = (p.x + 1) * segmentSize > w ? w - (p.x * segmentSize) : segmentSize;
-            int rectHeight = (p.y + 1) * segmentSize > h ? h - (p.y * segmentSize) : segmentSize;
             int rectX = p.x * segmentSize;
-            int rectY = p.y * segmentSize;
+
+            int rectHeight = (p.y + 1) * segmentSize > h ? h - (p.y * segmentSize) : segmentSize;
+            int rectY = h - (p.y * segmentSize) - rectHeight;
+
+            // Safety check
+            if (rectHeight <= 0) {
+                throw new IllegalStateException(String.format(
+                    "Invalid slice dimensions: p.y=%d, h=%d, rectY=%d, rectHeight=%d, segmentSize=%d",
+                    p.y, h, rectY, rectHeight, segmentSize));
+            }
 
             params.setSourceRegion(new Rectangle(rectX, rectY, rectWidth, rectHeight));
             
@@ -471,18 +495,47 @@ public class ImageTiler4 implements IImageTiler {
 
         List<SaveTileTask> saveTileTasks = splitIntoTiles(resized, sliceCoords, levelSink, cols, rows, subsample);
 
+        if (resized != null && resized != bufferedImage) {
+            resized.flush();
+        }
+
         return saveTileTasks.stream();
     }
 
     private List<SaveTileTask> splitIntoTiles(BufferedImage strip, Point sliceCoords, TilerSink.LevelSink levelSink, int cols, int rows, int subsample) {
         var result = new ArrayList<SaveTileTask>(cols * rows);
 
+        log.debug("splitIntoTiles: sliceCoords=({},{}), subsample={}, strip={}x{}, tiles={}x{}",
+                sliceCoords.x, sliceCoords.y, subsample, strip.getWidth(), strip.getHeight(), cols, rows);
         // Calculate tile position based on actual pixel positions
-        double sliceSizeAtLevel = (double) SLICE_SIZE / (double) subsample;
-        double maxTilesPerSliceAtLevel = sliceSizeAtLevel / (double) _tileSize;
+        int startCol;
+        int startRow;
+        if (SLICE_SIZE % subsample == 0) {
+            int sliceSizeAtLevel = SLICE_SIZE / subsample;
+            if (sliceSizeAtLevel % _tileSize == 0) {
+                int maxTilesPerSliceAtLevel = sliceSizeAtLevel / _tileSize;
+                startCol = sliceCoords.x * maxTilesPerSliceAtLevel;
+                startRow = sliceCoords.y * maxTilesPerSliceAtLevel;
+            } else if (sliceSizeAtLevel < _tileSize) {
+                log.warn("slice size {} at subsample {} is smaller than tile size {}", sliceSizeAtLevel, subsample, _tileSize);
+                startCol = sliceCoords.x;
+                startRow = sliceCoords.y;
+            } else {
+                log.warn("slice size {} at subsample {} is not evenly divisible by tile size {}", sliceSizeAtLevel, subsample, _tileSize);
+                double maxTilesPerSliceAtLevel = (double)sliceSizeAtLevel / (double)_tileSize;
+                startCol = (int)((double)sliceCoords.x * maxTilesPerSliceAtLevel);
+                startRow = (int)((double)sliceCoords.y * maxTilesPerSliceAtLevel);
 
-        int startCol = (int) ((double) sliceCoords.x * maxTilesPerSliceAtLevel);
-        int startRow = (int) ((double) sliceCoords.y * maxTilesPerSliceAtLevel);
+            }
+        } else {
+            log.warn("slice size {} is not evenly divisible by subsample {}", SLICE_SIZE, subsample);
+            double sliceSizeAtLevel = (double) SLICE_SIZE / (double) subsample;
+            double maxTilesPerSliceAtLevel = sliceSizeAtLevel / (double) _tileSize;
+
+            startCol = (int) ((double) sliceCoords.x * maxTilesPerSliceAtLevel);
+            startRow = (int) ((double) sliceCoords.y * maxTilesPerSliceAtLevel);
+        }
+        final int stripHeight = strip.getHeight();
 
         for (int col = 0; col < cols; col++) {
             int stripColOffset = col * _tileSize;
@@ -495,9 +548,23 @@ public class ImageTiler4 implements IImageTiler {
 
             int tw = Math.min(_tileSize, strip.getWidth() - stripColOffset);
 
-            for (int y = 0; y < rows; y++) {
-                int rowOffset = y * _tileSize;
-                int th = Math.min(_tileSize, strip.getHeight() - rowOffset);
+            for (int y = rows - 1; y >= 0; y--) {
+                // row 0 = y strip height
+                // row 1 = y strip height - tile size
+                // ...
+                // row n = y strip height - (n * tile size)
+                int th;
+                int rowOffset;
+                if ((y+1) * _tileSize > stripHeight) {
+                    th = stripHeight - (y * _tileSize);
+                    rowOffset = 0;
+                } else {
+                    rowOffset = stripHeight - (y+1) * _tileSize;
+                    th = _tileSize;
+                }
+
+//                int rowOffset = y * _tileSize;
+//                int th = Math.min(_tileSize, strip.getHeight() - rowOffset);
 
                 BufferedImage tile = null;
                 if (tw > 0 && th > 0) {
@@ -513,7 +580,8 @@ public class ImageTiler4 implements IImageTiler {
                 }
 
                 if (tile != null) {
-                    g.drawImage(tile, 0, 0, null);
+                    // Align tile to bottom-left corner (partial tiles at top edge have padding at top)
+                    g.drawImage(tile, 0, _tileSize - th, null);
                 }
                 
                 g.dispose();

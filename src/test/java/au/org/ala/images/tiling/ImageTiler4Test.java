@@ -20,6 +20,8 @@ import static org.junit.Assert.*;
 @RunWith(JUnit4.class)
 public class ImageTiler4Test extends TestBase {
 
+    private static final int _tileSize = 256;
+
     /**
      * Test that ImageTiler4 correctly handles all zoom levels including extreme ones.
      */
@@ -77,7 +79,9 @@ public class ImageTiler4Test extends TestBase {
         File imageFile = new File(url.toURI());
 
         BufferedImage originalImage = ImageIO.read(imageFile);
-        
+        int originalWidth = originalImage.getWidth();
+        int originalHeight = originalImage.getHeight();
+
         ImageTilerConfig config = new ImageTilerConfig();
         ImageTiler4 tiler = new ImageTiler4(config);
 
@@ -85,6 +89,9 @@ public class ImageTiler4Test extends TestBase {
         try {
             ImageTilerResults results = tiler.tileImage(imageFile, tempDir.toFile());
             assertTrue(results.getSuccess());
+
+            int zoomLevels = results.getZoomLevels();
+            int subsample = (int) Math.pow(2, zoomLevels - 1);  // Level 0 has max subsample
 
             // Test level 0 specifically
             File level0Dir = new File(tempDir.toFile(), "0");
@@ -108,12 +115,29 @@ public class ImageTiler4Test extends TestBase {
             BufferedImage tileImage = ImageIO.read(tile00);
             assertNotNull("Should be able to read tile", tileImage);
 
-            // Sample pixels from different corners to verify it contains the full downscaled image
-            int subsample = 64;
-            boolean topLeftMatches = checkPixelMatch(tileImage, originalImage, 10, 10, subsample);
-            boolean topRightMatches = checkPixelMatch(tileImage, originalImage, 140, 10, subsample);
-            boolean bottomLeftMatches = checkPixelMatch(tileImage, originalImage, 10, 140, subsample);
-            boolean bottomRightMatches = checkPixelMatch(tileImage, originalImage, 140, 140, subsample);
+            // Calculate the actual content area in the tile
+            // At level 0, the image is heavily downscaled
+            int scaledHeight = (int) Math.ceil(originalHeight / (double) subsample);
+            int scaledWidth = (int) Math.ceil(originalWidth / (double) subsample);
+
+            // If scaled image is smaller than tile size, there will be padding at the top
+            int paddingTop = Math.max(0, _tileSize - scaledHeight);
+            int contentHeight = Math.min(_tileSize, scaledHeight);
+
+            println("Level 0: scaledSize=%dx%d, paddingTop=%d, contentHeight=%d",
+                    scaledWidth, scaledHeight, paddingTop, contentHeight);
+
+            // Sample pixels from different areas of the CONTENT (not the padding)
+            // Sample from the middle of the content area
+            int sampleY1 = paddingTop + (contentHeight / 4);
+            int sampleY2 = paddingTop + (3 * contentHeight / 4);
+            int sampleX1 = scaledWidth / 4;
+            int sampleX2 = 3 * scaledWidth / 4;
+
+            boolean topLeftMatches = checkPixelMatch(tileImage, originalImage, sampleX1, sampleY1, subsample, paddingTop);
+            boolean topRightMatches = checkPixelMatch(tileImage, originalImage, sampleX2, sampleY1, subsample, paddingTop);
+            boolean bottomLeftMatches = checkPixelMatch(tileImage, originalImage, sampleX1, sampleY2, subsample, paddingTop);
+            boolean bottomRightMatches = checkPixelMatch(tileImage, originalImage, sampleX2, sampleY2, subsample, paddingTop);
 
             int matchCount = (topLeftMatches ? 1 : 0) + (topRightMatches ? 1 : 0) + 
                            (bottomLeftMatches ? 1 : 0) + (bottomRightMatches ? 1 : 0);
@@ -131,20 +155,32 @@ public class ImageTiler4Test extends TestBase {
         }
     }
 
-    private boolean checkPixelMatch(BufferedImage tile, BufferedImage original, int tileX, int tileY, int subsample) {
-        if (tileX >= tile.getWidth() || tileY >= tile.getHeight()) {
+    private boolean checkPixelMatch(BufferedImage tile, BufferedImage original, int tileX, int tileY, int subsample, int paddingTop) {
+        if (tileX >= tile.getWidth() || tileY >= tile.getHeight() || tileY < paddingTop) {
+            println("  checkPixelMatch: out of bounds - tileX=%d, tileY=%d, paddingTop=%d", tileX, tileY, paddingTop);
             return false;
         }
 
+        // Account for padding: tileY includes padding at top, so subtract it to get position in scaled content
+        int contentY = tileY - paddingTop;
+
+        // Map from scaled image coordinates to original image coordinates
         int origX = tileX * subsample;
-        int origY = tileY * subsample;
+        int origY = contentY * subsample;
 
         if (origX >= original.getWidth() || origY >= original.getHeight()) {
+            println("  checkPixelMatch: original out of bounds - origX=%d, origY=%d, origWidth=%d, origHeight=%d",
+                    origX, origY, original.getWidth(), original.getHeight());
             return false;
         }
 
         Color tileColor = new Color(tile.getRGB(tileX, tileY));
         Color origColor = new Color(original.getRGB(origX, origY));
+
+        println("  checkPixelMatch: tile(%d,%d)->content(%d,%d)->orig(%d,%d): tileRGB=(%d,%d,%d) origRGB=(%d,%d,%d)",
+                tileX, tileY, tileX, contentY, origX, origY,
+                tileColor.getRed(), tileColor.getGreen(), tileColor.getBlue(),
+                origColor.getRed(), origColor.getGreen(), origColor.getBlue());
 
         int rDiff = Math.abs(tileColor.getRed() - origColor.getRed());
         int gDiff = Math.abs(tileColor.getGreen() - origColor.getGreen());

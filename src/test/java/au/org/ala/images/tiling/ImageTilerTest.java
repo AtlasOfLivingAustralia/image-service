@@ -235,11 +235,22 @@ public class ImageTilerTest extends TestBase {
             int row = Integer.parseInt(filename.substring(0, filename.lastIndexOf('.')));
 
             // Calculate the position in the original image (accounting for subsample)
+            // With bottom-left origin: row 0 is at bottom of image, row max is at top
             int srcX = col * tileSize * subsample;
-            int srcY = row * tileSize * subsample;
+
+            // Calculate how many rows of tiles we have at this zoom level
+            int scaledHeight = (int) Math.ceil(originalImage.getHeight() / (double) subsample);
+            int totalRows = (int) Math.ceil(scaledHeight / (double) tileSize);
+
+            // Flip y: tile row 0 (bottom) maps to high y values in original image (which uses top-down coords)
+            // srcY is the TOP edge of the tile's region in original image coordinates
+            int srcY = originalImage.getHeight() - ((row + 1) * tileSize * subsample);
+            if (srcY < 0) {
+                srcY = 0; // Clamp for partial tiles at top
+            }
 
             // Ensure we're within bounds of the original image
-            if (srcX >= originalImage.getWidth() || srcY >= originalImage.getHeight()) {
+            if (srcX >= originalImage.getWidth()) {
                 continue;
             }
 
@@ -248,13 +259,20 @@ public class ImageTilerTest extends TestBase {
             int sampledPixels = 0;
 
             // Sample pixels at regular intervals
-            for (int y = 0; y < tile.getHeight() && (srcY + (y * subsample)) < originalImage.getHeight(); y += 20) {
+            // Note: within the tile, y=0 is still the top, y=255 is the bottom
+            // So we need to map: tile y=0 → srcY (top of tile's region), tile y=255 → srcY + tileHeight
+            for (int y = 0; y < tile.getHeight(); y += 20) {
+                int origY = srcY + (y * subsample);
+                if (origY >= originalImage.getHeight()) {
+                    continue;
+                }
+
                 for (int x = 0; x < tile.getWidth() && (srcX + (x * subsample)) < originalImage.getWidth(); x += 20) {
                     sampledPixels++;
 
                     Color tileColor = new Color(tile.getRGB(x, y));
                     // Sample from the original image at the subsampled position
-                    Color origColor = new Color(originalImage.getRGB(srcX + (x * subsample), srcY + (y * subsample)));
+                    Color origColor = new Color(originalImage.getRGB(srcX + (x * subsample), origY));
 
                     // Compare colors with tolerance for JPEG compression and subsampling artifacts
                     int rDiff = Math.abs(tileColor.getRed() - origColor.getRed());
