@@ -351,14 +351,6 @@ public class ImageTiler3 implements IImageTiler{
                     th = _tileSize;
                     rowOffset = stripHeight - (y+1) * _tileSize;
                 }
-//                int th = _tileSize;
-
-                // Start from the top of the row and work down
-//                int rowOffset = y * _tileSize;
-
-//                if (rowOffset + _tileSize > strip.getHeight()) {
-//                    th = strip.getHeight() - rowOffset;
-//                }
 
                 BufferedImage tile = null;
                 if (tw > 0 && th > 0) {
@@ -378,8 +370,8 @@ public class ImageTiler3 implements IImageTiler{
                 }
 
                 if (tile != null) {
-                    // Now blit the tile to the destTile at top-left (changed from bottom-left)
-                    g.drawImage(tile, 0, 0, null);
+                    // Now blit the tile to the destTile at bottom-left
+                    g.drawImage(tile, 0, _tileSize - th, null);
                 }
                 // Clean up!
                 g.dispose();
