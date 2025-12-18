@@ -260,22 +260,26 @@ class DownloadService {
             }
 
             // Status is OK, proceed with downloading
-            ByteSource byteSource
-            File cacheFile
-
-            long length = response.getContentLength()
-
-            if (length > fileCacheThreshold || length == -1) {
-                extension = extension ?: FilenameUtils.getExtension(imageUrl.toURI().getPath())
-                cacheFile = createTempFile("image", extension ?: "jpg").toFile()
-                cacheFile.deleteOnExit()
-                cacheFile << response.getInputStream()
-                byteSource = new CloseableByteSource(cacheFile)
-            } else {
-                byteSource = new CloseableByteSource(response.getInputStream().bytes)
-            }
-            return byteSource
+            return createByteSourceFromInputStream(response, extension, imageUrl)
         } as CheckedSupplier<CloseableByteSource>)
+    }
+
+    CloseableByteSource createByteSourceFromInputStream(HttpResponse response, String extension, String imageUrl) {
+        ByteSource byteSource
+        File cacheFile
+
+        long length = response.getContentLength()
+
+        if (length > fileCacheThreshold || length == -1) {
+            extension = extension ?: FilenameUtils.getExtension(imageUrl.toURI().getPath())
+            cacheFile = createTempFile("image", extension ?: "jpg").toFile()
+            cacheFile.deleteOnExit()
+            cacheFile << response.getInputStream()
+            byteSource = new CloseableByteSource(cacheFile)
+        } else {
+            byteSource = new CloseableByteSource(response.getInputStream().bytes)
+        }
+        return byteSource
     }
 
     /**

@@ -426,6 +426,7 @@ unnest(all_urls) AS unnest_url;
                                 result.success = true
                                 result.alreadyStored = storeResult.alreadyStored
                                 result.metadataUpdated = false
+                                result.extractedMetadata = storeResult.extractedMetadata
                             } catch (HttpImageUploadException e) {
                                 log.warn("Unable to load image from URL: {}. Logging as failed URL, HTTP status: {}, Message: {}", imageUrl, e.statusCode, e.message)
                                 downloadService.logBadUrl(imageUrl, e.statusCode, e.message)
@@ -664,7 +665,8 @@ unnest(all_urls) AS unnest_url;
                       image: r.image,
                       alreadyStored: r.alreadyStored,
                       isDuplicate: r.isDuplicate,
-                      metadataUpdated: metadataUpdated
+                      metadataUpdated: metadataUpdated, // This flags that external metadata, eg from an AVRO upload, was used to update an existing image
+                      extractedMetadataUpdated: r.extractedMetadataUpdated // whereas this is the metadata extracted from the image itself
         ]
         return result
     }
@@ -925,17 +927,35 @@ unnest(all_urls) AS unnest_url;
                         updateLicence(image)
                         image = image.save(failOnError: true)
                         log.trace("storeImageBytes: saved new image record ({}:{}) for originalFilename: {}", image.id, image.imageIdentifier, originalFilename)
+
+                        // TODO We need to add a JSONB column to the image table, otherwise we run this in the background task only
+                        // as the size of the metadata items table can be very large and slow down this transaction
+                        // If we have extracted metadata from before optimisation, persist it now
+//                        boolean metadataPersisted = false
+//                        if (imgDesc.extractedMetadata) {
+//                            log.debug("Persisting pre-optimisation metadata for image {} with {} keys", image.id, imgDesc.extractedMetadata.size())
+//                            persistExtractedMetadata(image.id, imgDesc.extractedMetadata, MetaDataSourceType.Embedded)
+//                            metadataPersisted = true
+//                        }
+
+                        return new ImageStoreResult(image, preExisting, isDuplicate, false)
                     } catch (Exception ex) {
                         log.error("Problem saving image {}  -", originalFilename, ex)
                     }
-                    return new ImageStoreResult(image, preExisting, isDuplicate)
+                    return new ImageStoreResult(image, preExisting, isDuplicate, false)
                 }
+                // Store extracted metadata in result for background task to use
+                if (result && imgDesc?.extractedMetadata) {
+                    result.extractedMetadata = imgDesc.extractedMetadata
+                }
+
             }
 
         } finally {
             lock.unlock()
         }
         log.trace("storeImageBytes: returning result: {} for originalFilename: {}", result, originalFilename)
+
         return result
     }
 
@@ -954,10 +974,10 @@ unnest(all_urls) AS unnest_url;
         imagePropertyMap.get(propertyName.toLowerCase())
     }
 
-    def schedulePostIngestTasks(Long imageId, String identifier, String fileName, String uploaderId){
+    def schedulePostIngestTasks(Long imageId, String identifier, String fileName, String uploaderId, Map<String, Object> extractedMetadata = null) {
 //        scheduleArtifactGeneration(imageId, uploaderId)
         scheduleImageIndex(imageId)
-        scheduleImageMetadataPersist(imageId,identifier, fileName,  MetaDataSourceType.Embedded, uploaderId)
+        scheduleImageMetadataPersist(imageId, identifier, fileName, MetaDataSourceType.Embedded, uploaderId, extractedMetadata)
     }
 
     def scheduleNonImagePostIngestTasks(Long imageId){
@@ -1145,8 +1165,8 @@ unnest(all_urls) AS unnest_url;
         scheduleBackgroundTask(new IndexImageBackgroundTask(imageId, elasticSearchService))
     }
 
-    def scheduleImageMetadataPersist(long imageId, String imageIdentifier, String fileName,  MetaDataSourceType metaDataSourceType, String uploaderId){
-        scheduleBackgroundTask(new ImageMetadataPersistBackgroundTask(imageId, imageIdentifier, fileName, metaDataSourceType, uploaderId, imageService, imageStoreService))
+    def scheduleImageMetadataPersist(long imageId, String imageIdentifier, String fileName,  MetaDataSourceType metaDataSourceType, String uploaderId, Map<String, Object> extractedMetadata = null){
+        scheduleBackgroundTask(new ImageMetadataPersistBackgroundTask(imageId, imageIdentifier, fileName, metaDataSourceType, uploaderId, imageService, imageStoreService, extractedMetadata))
     }
 
     def scheduleBackgroundTask(BackgroundTask task) {
