@@ -5,11 +5,16 @@ import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.optimisation.ImageResizeTool
 import com.google.common.io.Files
 import spock.lang.Specification
+import spock.lang.TempDir
+
 import javax.imageio.ImageIO
 import java.awt.image.BufferedImage
 import au.org.ala.images.util.ImageReaderUtils
 
 class ImageOptimisationServiceSpec extends Specification {
+
+    @TempDir
+    File tempDir
 
     static class FakeExec implements CommandExecutor {
         @Override
@@ -47,7 +52,6 @@ class ImageOptimisationServiceSpec extends Specification {
         given:
         def service = new ImageOptimisationService()
         service.commandExecutor = new FakeExec()
-        File tempDir = File.createTempDir('opt', 'spec')
         // Use a file without image extension so filename fallback doesn't interfere
         File f = new File(tempDir, 'noext'); f.text = 'x' * 2000 // 2KB
 
@@ -85,7 +89,6 @@ class ImageOptimisationServiceSpec extends Specification {
         given:
         def service = new ImageOptimisationService()
         service.commandExecutor = new FakeExec()
-        File tempDir = File.createTempDir('opt', 'spec')
         File f = new File(tempDir, 'a.jpg'); f.text = 'x' * 200 // 200 bytes
 
         def config = new ImageOptimisationConfig()
@@ -122,7 +125,6 @@ class ImageOptimisationServiceSpec extends Specification {
         given:
         def service = new ImageOptimisationService()
         service.commandExecutor = new FakeExec()
-        File tempDir = File.createTempDir('opt', 'spec')
         File f = new File(tempDir, 'a.jpg'); f.text = 'x' * 2000 // 2KB
 
         def config = new ImageOptimisationConfig()
@@ -159,7 +161,6 @@ class ImageOptimisationServiceSpec extends Specification {
         given:
         def service = new ImageOptimisationService()
         service.commandExecutor = new FakeExec()
-        File tempDir = File.createTempDir('opt', 'spec')
         File f1 = new File(tempDir, 'a.jpg'); f1.text = 'x' * 1000 // 1KB
 
         def config = new ImageOptimisationConfig()
@@ -208,7 +209,6 @@ class ImageOptimisationServiceSpec extends Specification {
             @Override
             boolean isInstalled(String cmd) { return true }
         }
-        File tempDir = File.createTempDir('opt', 'spec')
         File f = new File(tempDir, 'a.jpg'); f.text = 'x' * 2000 // 2KB
 
         def config = new ImageOptimisationConfig()
@@ -263,7 +263,6 @@ class ImageOptimisationServiceSpec extends Specification {
                 return res
             }
         }
-        File tempDir = File.createTempDir('opt', 'spec')
         // Start with a PNG file larger than output
         File f = new File(tempDir, 'src.png'); f.text = 'x' * 2000 // 2KB
 
@@ -305,7 +304,6 @@ class ImageOptimisationServiceSpec extends Specification {
     def 'java tool resize downsizes image when exceeding maxWidth/maxHeight'() {
         given:
         // Create a 800x600 PNG
-        File tempDir = File.createTempDir('opt', 'spec')
         BufferedImage img = new BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB)
         File src = new File(tempDir, 'src.png')
         ImageIO.write(img, 'png', src)
@@ -353,7 +351,6 @@ class ImageOptimisationServiceSpec extends Specification {
     def 'minWidth and minHeight filters control stage execution'() {
         given:
         // Create two images: 100x100 and 300x100
-        File tempDir = File.createTempDir('opt', 'spec')
         BufferedImage a = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB)
         File small = new File(tempDir, 'small.png'); ImageIO.write(a, 'png', small)
         BufferedImage b = new BufferedImage(300, 100, BufferedImage.TYPE_INT_RGB)
@@ -399,7 +396,6 @@ class ImageOptimisationServiceSpec extends Specification {
         given:
         def service = new ImageOptimisationService()
         service.commandExecutor = new FakeExec()
-        File tempDir = File.createTempDir('opt', 'spec')
         File f = new File(tempDir, 'b.jpg'); f.text = 'x' * 2000 // 2KB
 
         def config = new ImageOptimisationConfig()
@@ -437,7 +433,6 @@ class ImageOptimisationServiceSpec extends Specification {
         given:
         def service = new ImageOptimisationService()
         service.commandExecutor = new FakeExec()
-        File tempDir = File.createTempDir('opt', 'spec')
         File f = new File(tempDir, 'c.jpg'); f.text = 'x' * 1000 // 1KB
 
         def config = new ImageOptimisationConfig()
@@ -502,7 +497,6 @@ class ImageOptimisationServiceSpec extends Specification {
         given:
         def service = new ImageOptimisationService()
         service.commandExecutor = new FakeExec()
-        File tempDir = File.createTempDir('opt', 'spec')
         File f = new File(tempDir, 'a.jpg'); f.text = 'x' * 100 // 100 bytes
         def config = baseConfig(tempDir)
         config.skipThresholdBytes = 1000 // larger than file
@@ -523,7 +517,6 @@ class ImageOptimisationServiceSpec extends Specification {
             @Override
             boolean isInstalled(String cmd) { return false }
         }
-        File tempDir = File.createTempDir('opt', 'spec')
         File f = new File(tempDir, 'a.jpg'); f.text = 'x' * 2000
         def config = baseConfig(tempDir)
         // Configure a stage that references a tool not present in config.tools
@@ -542,7 +535,6 @@ class ImageOptimisationServiceSpec extends Specification {
         given:
         def service = new ImageOptimisationService()
         service.commandExecutor = new FakeExec()
-        File tempDir = File.createTempDir('opt', 'spec')
         File f = new File(tempDir, 'a.jpg'); f.text = 'x' * 2000 // 2KB
         def config = baseConfig(tempDir)
         config.toolsets.pipe = [(ImageOptimisationConfig.ALL_FORMATS): [
