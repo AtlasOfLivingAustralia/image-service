@@ -9,9 +9,12 @@ import au.org.ala.images.tiling.DefaultZoomFactorStrategy
 import au.org.ala.images.tiling.IImageTiler
 import au.org.ala.images.tiling.ImageTiler3
 import au.org.ala.images.tiling.ImageTiler4
+import au.org.ala.images.tiling.ImageTiler5
 import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.tiling.ImageTilerResults
+import au.org.ala.images.tiling.OnDemandImageTiler
 import au.org.ala.images.tiling.TileFormat
+import au.org.ala.images.tiling.TileGenerationResult
 import au.org.ala.images.tiling.TilerSink
 import au.org.ala.images.util.ImageReaderUtils
 import com.github.benmanes.caffeine.cache.Cache
@@ -113,6 +116,9 @@ class ImageStoreService implements MetricsSupport {
 
     @Value('${tiling.tiler.version:V4}')
     TilerVersion tilerVersion
+
+    @Value('${tiling.onDemand.enabled:false}')
+    boolean onDemandTilingEnabled = false
 
     private Semaphore thumbnailSemaphore
     private Semaphore tilingSemaphore
@@ -564,6 +570,7 @@ class ImageStoreService implements MetricsSupport {
         V1,
         V3,
         V4,
+        V5,
         CUSTOM
     }
 
@@ -580,9 +587,11 @@ class ImageStoreService implements MetricsSupport {
                 log.trace("Using custom Tiler class: ${tilerClassName}")
                 return loadCustomTiler(config)
             case TilerVersion.V4:
-            default:
-                log.trace("Using Tiler version V4")
                 return new ImageTiler4(config)
+            case TilerVersion.V5:
+            default:
+                return new ImageTiler5(config)
+                log.trace("Using Tiler version V4")
         }
     }
 
@@ -802,23 +811,36 @@ class ImageStoreService implements MetricsSupport {
 
         // TODO undefined behaviour if already loading when invalidate is called.
         if (refresh) {
-            tileCache.invalidateAll([originKey, key])
+            if (onDemandTilingEnabled) {
+                tileCache.invalidate(key)
+            } else {
+                tileCache.invalidateAll([originKey, key])
+            }
         }
-        // First check the origin tile for the zoom level, if it doesn't exist then we can generate
-        // the whole set of tiles for the level
-        def originInfo = (disableCache ? loader.call(originKey) : tileCache.get(originKey, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
 
-        // then if the origin was requested, return the origin info
-        // or if the origin doesn't exist then any tile for the given zoom level won't exist either
-        // so return the non-existent origin info
-        if (x == 0 && y == 0 || !originInfo.exists) {
-            originInfo.dataResourceUid = dataResourceUid
-            return originInfo
-        } else {
-            // otherwise now we get the info for the tile that was actually requested and cache it
-            def tileInfo = (disableCache ? loader.call(key) : tileCache.get(key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
+        if (onDemandTilingEnabled) {
+            // experimental: With on-demand tiling, attempt to fetch/generate exactly the requested tile
+            def tileInfo = (disableCache ? loader.call(key) : tileCache.get(key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png')
             tileInfo.dataResourceUid = dataResourceUid
             return tileInfo
+        } else {
+            // Regular behaviour:
+            // First check the origin tile for the zoom level, if it doesn't exist then we can generate
+            // the whole set of tiles for the level
+            def originInfo = (disableCache ? loader.call(originKey) : tileCache.get(originKey, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
+
+            // then if the origin was requested, return the origin info
+            // or if the origin doesn't exist then any tile for the given zoom level won't exist either
+            // so return the non-existent origin info
+            if (x == 0 && y == 0 || !originInfo.exists) {
+                originInfo.dataResourceUid = dataResourceUid
+                return originInfo
+            } else {
+                // otherwise now we get the info for the tile that was actually requested and cache it
+                def tileInfo = (disableCache ? loader.call(key) : tileCache.get(key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
+                tileInfo.dataResourceUid = dataResourceUid
+                return tileInfo
+            }
         }
     }
 
@@ -831,12 +853,34 @@ class ImageStoreService implements MetricsSupport {
             // get the origin tile for the given zoom level
             def info = operations.tileImageInfo(imageIdentifier, x, y, zLevel)
             def exists = info.exists
-            // currently we only generate tiles when the leve's origin is requested
-            // because each level is generated in one go.
-            if (x == 0 && y == 0 && !exists && (zoomLevels < 1 || zLevel <= zoomLevels)) {
-                def results = generateTMSTiles(imageIdentifier, operations, zoomLevels, zLevel)
-                if (results.success) {
-                    info = operations.tileImageInfo(imageIdentifier, 0, 0, zLevel)
+            if (!exists && (zoomLevels < 1 || zLevel <= zoomLevels)) {
+                if (onDemandTilingEnabled) {
+                    // experimental: generate only the requested tile
+                    try {
+                        def result = generateSingleTile(imageIdentifier, operations, zLevel, x, y)
+                        if (result.success) {
+                            incrementCounter('imagestore.tile.ondemand.success', 'Successful on-demand tile generations')
+                            return operations.tileImageInfo(imageIdentifier, x, y, zLevel)
+                        } else if (result.coordinateError) {
+                            incrementCounter('imagestore.tile.ondemand.outofbounds', 'On-demand tile out-of-bounds', [reason: result.status.name()])
+                            return ImageInfo.notFound() // if the tile is out of bounds then we can cache the result
+                        } else if (result.status == TileGenerationResult.Status.NOT_AN_IMAGE || result == TileGenerationResult.Status.NO_IMAGE_READER) {
+                            return ImageInfo.notFound() // TODO need a better way to indicate this
+                        } else {
+                            incrementCounter('imagestore.tile.ondemand.failure', 'Failed on-demand tile generations', [reason: result.status.name()])
+                            return null // TODO should we cache an IO error?
+                        }
+                    } catch (Exception e) {
+                        incrementCounter('imagestore.tile.ondemand.error', 'On-demand tile generation errors', [error: e.class.simpleName])
+                        log.error("Error generating on-demand tile for image ${imageIdentifier} with co-ordinates x:${x}, y:${y}, z:${z}", e)
+                        return null
+                    }
+                } else if (x == 0 && y == 0) {
+                    // regular behavior: generate the whole level when origin is requested
+                    def results = generateTMSTiles(imageIdentifier, operations, zoomLevels, zLevel)
+                    if (results.success) {
+                        info = operations.tileImageInfo(imageIdentifier, 0, 0, zLevel)
+                    }
                 }
             }
             return info
@@ -855,6 +899,26 @@ class ImageStoreService implements MetricsSupport {
             }
 
             return null // don't cache this error
+        }
+    }
+
+    private TileGenerationResult generateSingleTile(String imageIdentifier, StorageOperations operations, int z, int x, int y) {
+        return recordTime('imagestore.tile.generate.ondemand', 'Time to generate a single TMS tile on-demand', [z: z.toString(), x: x.toString(), y: y.toString()]) {
+            if (tilingSemaphore.tryAcquire(tileConcurrencyTimeout, TimeUnit.SECONDS)) {
+                try {
+                    def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
+                    config.setTileBackgroundColor(new Color(221, 221, 221))
+                    def tiler = new OnDemandImageTiler(config)
+                    def input = operations.originalInputStream(imageIdentifier, null)
+                    def sink = new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier))
+                    return tiler.generateTile(input, sink, z, x, y)
+                } finally {
+                    tilingSemaphore.release()
+                }
+            } else {
+                incrementCounter('imagestore.tile.ondemand.timeout', 'On-demand tile generation timeouts')
+                throw new GenerateDerivativeTimeout("Could not acquire tiling semaphore to generate on-demand tile for ${imageIdentifier} in ${tileConcurrencyTimeout}s")
+            }
         }
     }
 

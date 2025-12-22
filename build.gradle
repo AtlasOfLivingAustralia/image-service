@@ -13,47 +13,9 @@ plugins {
     id "org.flywaydb.flyway" version "9.4.0"
 }
 
-//buildscript {
-//    repositories {
-//        mavenLocal()
-//        maven { url "https://nexus.ala.org.au/content/groups/public/" }
-//        maven { url "https://plugins.gradle.org/m2/" }
-//        maven { url "https://repo.grails.org/grails/core" }
-//    }
-//    dependencies {
-//        classpath "org.grails:grails-gradle-plugin:$grailsGradlePluginVersion"
-//        classpath "gradle.plugin.com.github.erdi.webdriver-binaries:webdriver-binaries-gradle-plugin:2.6"
-//        classpath "org.grails.plugins:hibernate5:7.3.0"
-//        classpath "com.bertramlabs.plugins:asset-pipeline-gradle:3.4.7"
-//    }
-//}
-
 version "4.2.0-SNAPSHOT"
 
 group "au.org.ala"
-
-//apply plugin:"eclipse"
-//apply plugin:"idea"
-//apply plugin:"war"
-//apply plugin:"org.grails.grails-web"
-//apply plugin:"com.github.erdi.webdriver-binaries"
-//apply plugin:"org.grails.grails-gsp"
-//apply plugin:"com.bertramlabs.asset-pipeline"
-//apply plugin: 'maven-publish'
-
-
-//apply from: 'https://raw.githubusercontent.com/AtlasOfLivingAustralia/travis-build-configuration/master/travis_grails_publish.gradle'
-//
-//sourceCompatibility = 1.11
-//targetCompatibility = 1.11
-
-
-//grails {
-//    exploded = true
-//    plugins {
-//        compile project(':images-client-plugin')
-//    }
-//}
 
 repositories {
     mavenLocal()
@@ -72,13 +34,6 @@ configurations {
         }
     }
 }
-
-//configurations {
-//    developmentOnly
-//    runtimeClasspath {
-//        extendsFrom developmentOnly
-//    }
-//}
 
 configurations.all {
     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
@@ -141,9 +96,10 @@ dependencies {
 
     implementation 'org.imgscalr:imgscalr-lib:4.2'
     implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
-    implementation 'org.apache.tika:tika-core:2.9.2' // TODO need to keep this in sync with image-utils
+    implementation 'org.apache.tika:tika-core:3.2.3' // TODO need to keep this in sync with image-utils
+    implementation 'org.apache.commons:commons-lang3:3.20.0'
     implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
-    implementation 'au.org.ala:image-utils:1.11.1'
+    implementation 'au.org.ala:image-utils:1.12.0-SNAPSHOT'
 
     implementation 'net.lingala.zip4j:zip4j:2.11.3'
     implementation 'com.google.guava:guava:33.2.1-jre'
@@ -280,59 +236,9 @@ springBoot {
 //    layout = 'WAR'
 }
 
-//bootRun {
-//    ignoreExitValue true
-//    jvmArgs(
-//            '-Dspring.output.ansi.enabled=always',
-//            '-noverify',
-//            '-XX:TieredStopAtLevel=1',
-//            '-Xmx1024m')
-//    sourceResources sourceSets.main
-//    String springProfilesActive = 'spring.profiles.active'
-//    systemProperty springProfilesActive, System.getProperty(springProfilesActive)
-//}
-//
-//tasks.withType(GroovyCompile) {
-//    configure(groovyOptions) {
-//        forkOptions.jvmArgs = ['-Xmx1024m']
-//    }
-//}
-//
-//tasks.withType(Test) {
-//    useJUnitPlatform()
-//}
-
-//webdriverBinaries {
-//    if (!System.getenv().containsKey('GITHUB_ACTIONS')) {
-//        chromedriver {
-//            version = '2.45.0'
-//            fallbackTo32Bit = true
-//        }
-//        geckodriver '0.30.0'
-//    }
-//}
-//
-//tasks.withType(Test) {
-//    systemProperty "geb.env", System.getProperty('geb.env')
-//    systemProperty "geb.build.reportsDir", reporting.file("geb/integrationTest")
-//    if (!System.getenv().containsKey('GITHUB_ACTIONS')) {
-//        systemProperty 'webdriver.chrome.driver', System.getProperty('webdriver.chrome.driver')
-//        systemProperty 'webdriver.gecko.driver', System.getProperty('webdriver.gecko.driver')
-//    } else {
-//        systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
-//        systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
-//    }
-//}
-
 test {
     testLogging.showStandardStreams = Boolean.getBoolean('testLogging')
 }
-
-//assets {
-//    minifyJs = true
-//    minifyCss = true
-//
-//}
 
 publishing {
     repositories {
