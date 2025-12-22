@@ -2,6 +2,7 @@ package au.org.ala.images.tiling;
 
 import au.org.ala.images.TestBase;
 import org.apache.commons.io.FileUtils;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.awt.*;
@@ -17,6 +18,7 @@ import static org.junit.Assert.*;
 /**
  * Test ImageTiler4 with very large images to identify potential issues.
  */
+@Ignore("Takes a long time and uses significant resources - run manually as needed")
 public class ImageTiler4LargeImageTest extends TestBase {
 
     /**

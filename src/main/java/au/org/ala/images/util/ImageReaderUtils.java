@@ -37,6 +37,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class ImageReaderUtils {
 
@@ -158,11 +159,39 @@ public class ImageReaderUtils {
      * disposed of afterwards.  The stream is also closed.
      *
      * @param byteSource A ByteSource for the image
+     * @param consumer  A consumer that processes the ImageReader and returns the result
+     * @return The result of the consumer function
+     */
+    public static <R> R withImageReader(ByteSource byteSource, Function<ImageReader, R> consumer) {
+        return withImageReader(byteSource, true, true, consumer);
+    }
+
+    /**
+     * Utility method to work with an ImageReader for a given ByteSource.  A stream is opened from the
+     * ByteSource and an ImageReader created.  The ImageReader is passed to the consumer for processing, and
+     * disposed of afterwards.  The stream is also closed.
+     *
+     * @param byteSource A ByteSource for the image
      * @param seekForwardOnly Whether the ImageReader is set to seek forward only
      * @param ignoreMetadata Whether the ImageReader is set to ignore metadata
      * @param consumer A consumer that processes the ImageReader
      */
     public static void withImageReader(ByteSource byteSource, boolean seekForwardOnly, boolean ignoreMetadata, Consumer<ImageReader> consumer) {
+        withImageReader(byteSource, seekForwardOnly, ignoreMetadata, r -> { consumer.accept(r); return null;});
+    }
+
+    /**
+     * Utility method to work with an ImageReader for a given ByteSource.  A stream is opened from the
+     * ByteSource and an ImageReader created.  The ImageReader is passed to the consumer for processing, and
+     * disposed of afterwards.  The stream is also closed.
+     *
+     * @param byteSource A ByteSource for the image
+     * @param seekForwardOnly Whether the ImageReader is set to seek forward only
+     * @param ignoreMetadata Whether the ImageReader is set to ignore metadata
+     * @param consumer A function that processes the ImageReader and returns the result
+     * @return The result of the consumer function
+     */
+    public static <R> R withImageReader(ByteSource byteSource, boolean seekForwardOnly, boolean ignoreMetadata, Function<ImageReader, R> consumer) {
         // Open stream once and create ImageReader
         try (InputStream is = byteSource.openBufferedStream()) {
             // Mark the buffered stream with a reasonable limit (128KB is typically enough for EXIF metadata)
@@ -192,7 +221,7 @@ public class ImageReaderUtils {
             reader.setInput(iis, seekForwardOnly, ignoreMetadata);
 
             try {
-                consumer.accept(reader);
+                return consumer.apply(reader);
             } finally {
                 reader.dispose();
             }
