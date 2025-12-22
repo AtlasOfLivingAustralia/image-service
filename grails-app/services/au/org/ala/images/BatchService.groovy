@@ -416,7 +416,8 @@ class BatchService implements MetricsSupport {
                             imageUpdateResult.image.imageIdentifier,
                             imageUpdateResult.image.originalFilename,
                             MetaDataSourceType.SystemDefined,
-                            _userId)
+                            _userId,
+                            imageUpdateResult.extractedMetadata)
                 }
             }
             log.trace("execute: Finished processing image upload for identifier ${imageSource.identifier} by user ${_userId}")

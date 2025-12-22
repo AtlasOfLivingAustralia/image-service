@@ -18,13 +18,14 @@ import au.org.ala.images.tiling.TileGenerationResult
 import au.org.ala.images.tiling.TilerSink
 import au.org.ala.images.util.ImageReaderUtils
 import com.github.benmanes.caffeine.cache.Cache
+import com.google.common.io.Files as GFiles
 import com.github.benmanes.caffeine.cache.Caffeine
 import com.google.common.io.ByteSource
 import grails.gorm.transactions.NotTransactional
-import grails.gorm.transactions.Transactional
 import grails.web.mapping.LinkGenerator
 import groovy.transform.CompileStatic
 import groovy.transform.Immutable
+import groovy.transform.NamedVariant
 import groovy.util.logging.Slf4j
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.io.inputstream.ZipInputStream
@@ -65,6 +66,7 @@ class ImageStoreService implements MetricsSupport {
     def auditService
     LinkGenerator grailsLinkGenerator
     StorageLocationService storageLocationService
+    ImageOptimisationService imageOptimisationService
 
     @Value('${placeholder.sound.thumbnail}')
     Resource audioThumbnail
@@ -231,29 +233,132 @@ class ImageStoreService implements MetricsSupport {
                 log.trace('Storing image {} with content type {}, original filename {}, content disposition {} to {}', uuid, contentType, originalFilename, contentDisposition, operations)
             }
             def imgDesc = new ImageDescriptor(imageIdentifier: uuid)
-            operations.store(uuid, imageBytes.openStream(), contentType, contentDisposition, imageBytes.sizeIfKnown().orNull())
-            def filename = ImageUtils.getFilename(originalFilename)
-            if (contentType?.toLowerCase()?.startsWith('image')) {
-                if (log.isTraceEnabled()) {
-                    log.trace('Getting image dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
+            def optimiseResult = optimiseImage(imageBytes: imageBytes, operations: operations,
+                    contentType: contentType, originalFilename:  originalFilename, contentDisposition: contentDisposition,
+                    uuid: uuid)
+            def finalByteSource = optimiseResult.byteSource
+            def finalContentType = optimiseResult.contentType
+            def cleanup = optimiseResult.cleanup
+            def extractedMetadata = optimiseResult.extractedMetadata
+
+            // Store extracted metadata in descriptor for use by caller
+            if (extractedMetadata) {
+                imgDesc.extractedMetadata = extractedMetadata
+            }
+
+            try {
+                operations.store(uuid, finalByteSource.openStream(), finalContentType, contentDisposition, imageBytes.sizeIfKnown().orNull())
+                def filename = ImageUtils.getFilename(originalFilename)
+                if (finalContentType?.toLowerCase()?.startsWith('image')) {
+                    if (log.isTraceEnabled()) {
+                        log.trace('Getting image dimensions for image {}, filename {}, content type {}', uuid, filename, finalContentType)
+                    }
+                    def dimensions = ImageReaderUtils.getImageDimensions(finalByteSource, filename)
+                    if (dimensions) {
+                        imgDesc.height = dimensions.height
+                        imgDesc.width = dimensions.width
+                        // precalculate the number of zoom levels
+                        def pyramid = new DefaultZoomFactorStrategy(TILE_SIZE).getZoomFactors(dimensions.width, dimensions.height)
+                        imgDesc.zoomLevels = pyramid.length
+                    }
+                } else {
+                    if (log.isTraceEnabled()) {
+                        log.trace('Skipping calculating dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
+                    }
                 }
-                def dimensions = ImageReaderUtils.getImageDimensions(imageBytes, filename) // TODO replace original filename with a temp filename with extension determine by content type?
-                if (dimensions) {
-                    imgDesc.height = dimensions.height
-                    imgDesc.width = dimensions.width
-                    // precalculate the number of zoom levels
-                    def pyramid = new DefaultZoomFactorStrategy(TILE_SIZE).getZoomFactors(dimensions.width, dimensions.height)
-                    imgDesc.zoomLevels = pyramid.length
+
+                incrementCounter('imagestore.store.count', 'Images stored', [contentType: finalContentType?.split('/')[0] ?: 'unknown'])
+                return imgDesc
+            } finally {
+                // clean up any optimiser files
+                cleanup()
+            }
+        }
+    }
+
+    @NamedVariant
+    private Map optimiseImage(ByteSource imageBytes, StorageOperations operations, String contentType, String originalFilename, String contentDisposition, String uuid) {
+        def optimiseEnabled = grailsApplication.config.getProperty('images.optimisation.enabled', Boolean, false)
+        def finalByteSource = imageBytes
+        def finalContentType = contentType
+        def cleanup = { -> }
+        def extractedMetadata = null
+        // Outside if scope for cleanup
+        File tmpDir
+        File toStoreFile
+        if (optimiseEnabled) {
+
+            // Always realize ByteSource to temp file so we can run optimisation pre-storage
+            tmpDir = Files.createTempDirectory("imgstore-$uuid").toFile()
+//                tmpDir = new File(System.getProperty('java.io.tmpdir'), 'imgstore-' + uuid)
+            if (!tmpDir.mkdirs() && !tmpDir.exists()) {
+                log.error("Couldn't make $tmpDir, expect further complications...")
+            }
+            String ext = ImageOptimisationService.inferExtensionForUrlOrContentType(originalFilename, contentType)
+            File realized = new File(tmpDir, 'original.' + ext)
+            realized.withOutputStream { os -> imageBytes.copyTo(os) }
+
+            toStoreFile = realized
+
+            if ((contentType?.toLowerCase()?.startsWith('image'))) {
+                // Extract metadata BEFORE optimisation to preserve EXIF data that may be stripped
+                try {
+                    realized.withInputStream { InputStream is ->
+                        extractedMetadata = ImageService.getImageMetadataFromBytes(is, originalFilename)
+                    }
+                    log.debug('Extracted metadata from original image {} before optimisation: {} keys', uuid, extractedMetadata?.size() ?: 0)
+                } catch (Throwable t) {
+                    log.warn('Metadata extraction before optimisation failed for {}: {}', uuid, t.message)
                 }
-            } else {
-                if (log.isTraceEnabled()) {
-                    log.trace('Skipping calculating dimensions for image {}, filename {}, content type {}', uuid, filename, contentType)
+
+
+                boolean keepBackup = grailsApplication.config.getProperty('images.optimisation.keepOriginalBackup', Boolean, false)
+                // Optionally store pre-optimised original as a backup alongside
+                if (keepBackup) {
+                    try {
+                        String backupName = 'original_backup.' + ext
+                        operations.storeAnywhere(uuid, new BufferedInputStream(new FileInputStream(realized)), backupName, contentType, contentDisposition, realized.length())
+                    } catch (Throwable t) {
+                        log.warn('Failed to store original backup for {}: {}', uuid, t.message)
+                    }
+                }
+
+                try {
+                    def optResult = imageOptimisationService.optimise(realized, contentType)
+                    if (optResult) {
+                        toStoreFile = optResult.optimisedFile ?: realized
+                        if (optResult.outputContentType) {
+                            finalContentType = optResult.outputContentType
+                        }
+                    }
+                } catch (Throwable t) {
+                    log.warn('Image optimisation failed for {}: {}', uuid, t.message)
                 }
             }
 
-            incrementCounter('imagestore.store.count', 'Images stored', [contentType: contentType?.split('/')[0] ?: 'unknown'])
-            return imgDesc
+            finalByteSource = GFiles.asByteSource(toStoreFile)
+
+            toStoreFile.deleteOnExit()
+            tmpDir.deleteOnExit()
+            cleanup = { ->
+                try {
+                    if (toStoreFile && toStoreFile.parentFile && toStoreFile.parentFile != tmpDir) {
+                        FileUtils.deleteQuietly(toStoreFile.parentFile)
+                    }
+                    if (tmpDir) {
+                        FileUtils.deleteQuietly(tmpDir)
+                    }
+                } catch (Throwable ignore) {}
+            }
         }
+
+        return [
+                byteSource: finalByteSource,
+                contentType: finalContentType,
+                cleanup: cleanup,
+                extractedMetadata: extractedMetadata
+        ]
+
     }
 
     // Replacements for Image.x() methods that call into the storage operations
@@ -930,7 +1035,7 @@ class ImageStoreService implements MetricsSupport {
         return recordTime('imagestore.info.original', 'Time to get original image info') {
 
             def result = originalCache.get(imageIdentifier, { key ->
-                // Try to get storage operations without DB lookup first (single-storage optimization)
+                // Try to get storage operations without DB lookup first (single-storage optimisation)
                 StorageOperations operations = storageLocationService.getStorageOperationsWithoutDbLookup()
                 if (operations) {
                     // FAST PATH: Try to get original image info from storage
@@ -986,7 +1091,7 @@ class ImageStoreService implements MetricsSupport {
             return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/jpeg')
         }
         return recordTime('imagestore.info.thumbnail', 'Time to get thumbnail image info', [type: type ?: 'default', refresh: refresh.toString()]) {
-            // Try to get storage operations without DB lookup first (single-storage optimization)
+            // Try to get storage operations without DB lookup first (single-storage optimisation)
             StorageOperations operations = storageLocationService.getStorageOperationsWithoutDbLookup()
             String dataResourceUid = null
             String mimeType = null
@@ -1093,7 +1198,7 @@ class ImageStoreService implements MetricsSupport {
             return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: false, contentType: 'image/png')
         }
         return recordTime('imagestore.info.tile', 'Time to get tile image info', [z: z.toString(), refresh: refresh.toString()]) {
-            // Try to get storage operations without DB lookup first (single-storage optimization)
+            // Try to get storage operations without DB lookup first (single-storage optimisation)
             StorageOperations operations = storageLocationService.getStorageOperationsWithoutDbLookup()
             String dataResourceUid = null
             Integer zoomLevels = null

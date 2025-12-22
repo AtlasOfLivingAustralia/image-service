@@ -16,6 +16,7 @@ class ImageMetadataPersistBackgroundTask extends BackgroundTask {
     String _uploaderId
     String _imageIdentifier
     String _originalFilename
+    Map<String, Object> _extractedMetadata
 //    private Logger log = Logger.getLogger(ImageMetadataPersistBackgroundTask.class)
 
     ImageMetadataPersistBackgroundTask(Long imageId,
@@ -24,7 +25,8 @@ class ImageMetadataPersistBackgroundTask extends BackgroundTask {
                                        MetaDataSourceType metaDataSourceType,
                                        String uploaderId,
                                        ImageService imageService,
-                                       ImageStoreService imageStoreService) {
+                                       ImageStoreService imageStoreService,
+                                       Map<String, Object> extractedMetadata) {
         _imageId = imageId
         _imageService = imageService
         _imageStoreService = imageStoreService
@@ -32,6 +34,7 @@ class ImageMetadataPersistBackgroundTask extends BackgroundTask {
         _uploaderId = uploaderId
         _imageIdentifier = imageIdentifier
         _originalFilename = originalFilename
+        _extractedMetadata = extractedMetadata
     }
 
     @Override
@@ -41,8 +44,19 @@ class ImageMetadataPersistBackgroundTask extends BackgroundTask {
         try {
             session = _imageService.sessionFactory.openSession()
             session.beginTransaction()
-            InputStream inputStream = _imageStoreService.retrieveImageInputStream(_imageIdentifier)
-            Map _metadata = _imageService.getImageMetadataFromBytes(inputStream, _originalFilename)
+
+            // Use pre-extracted metadata if available (from before image optimisation),
+            // otherwise retrieve and extract from stored image
+            Map _metadata
+            if (_extractedMetadata) {
+                log.debug("Using pre-extracted metadata for image {} (extracted before optimisation)", _imageId)
+                _metadata = _extractedMetadata
+            } else {
+                log.debug("Extracting metadata from stored image {} (may be missing data if stripped by optimisation)", _imageId)
+                InputStream inputStream = _imageStoreService.retrieveImageInputStream(_imageIdentifier)
+                _metadata = _imageService.getImageMetadataFromBytes(inputStream, _originalFilename)
+            }
+
             _metadata.each { k, v ->
                 def cleanedValue = sanitizeString(v)
                 if (cleanedValue && cleanedValue.length() < 8000) {

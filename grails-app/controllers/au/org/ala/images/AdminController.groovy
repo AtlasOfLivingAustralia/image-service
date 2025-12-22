@@ -112,7 +112,8 @@ class AdminController {
             imageService.scheduleImageIndex(storeResult.image.id)
         } else {
             if (storeResult.image) {
-                imageService.schedulePostIngestTasks(storeResult.image.id, storeResult.image.imageIdentifier, storeResult.image.originalFilename, userId)
+                // Pass pre-extracted metadata if available, otherwise background task will extract it
+                imageService.schedulePostIngestTasks(storeResult.image.id, storeResult.image.imageIdentifier, storeResult.image.originalFilename, userId, storeResult.extractedMetadata)
             } else {
                 imageService.scheduleNonImagePostIngestTasks(storeResult.image.id)
             }
