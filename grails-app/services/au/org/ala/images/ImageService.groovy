@@ -666,7 +666,7 @@ unnest(all_urls) AS unnest_url;
                       alreadyStored: r.alreadyStored,
                       isDuplicate: r.isDuplicate,
                       metadataUpdated: metadataUpdated, // This flags that external metadata, eg from an AVRO upload, was used to update an existing image
-                      extractedMetadataUpdated: r.extractedMetadataUpdated // whereas this is the metadata extracted from the image itself
+                      extractedMetadata: r.extractedMetadata // whereas this is the metadata extracted from the image itself, eg EXIF etc
         ]
         return result
     }
