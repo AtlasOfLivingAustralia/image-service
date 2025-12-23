@@ -8,9 +8,11 @@ import groovy.util.logging.Slf4j
 import org.imgscalr.Scalr
 
 import javax.imageio.ImageIO
+import javax.imageio.ImageReader
 import java.awt.image.BufferedImage
 import java.awt.Graphics2D
 import java.awt.RenderingHints
+import java.util.function.Consumer
 
 @Slf4j
 @CompileStatic
@@ -43,11 +45,11 @@ class ImageResizeTool implements ImageOptimTool {
             BufferedImage src
             int w
             int h
-            ImageReaderUtils.withImageReader(Files.asByteSource(inputFile)) { reader ->
+            ImageReaderUtils.withImageReader(Files.asByteSource(inputFile), { ImageReader reader ->
                 w = reader.getWidth(0)
                 h = reader.getHeight(0)
                 src = reader.read(0)
-            }
+            } as Consumer<ImageReader>)
 
             try {
                 if (w <= 0 || h <= 0) {

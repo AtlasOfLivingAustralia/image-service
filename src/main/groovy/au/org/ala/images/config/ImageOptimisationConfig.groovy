@@ -3,7 +3,6 @@ package au.org.ala.images.config
 import au.org.ala.images.optimisation.ImageResizeTool
 import groovy.transform.CompileStatic
 import org.springframework.boot.context.properties.ConfigurationProperties
-import org.springframework.boot.context.properties.NestedConfigurationProperty
 
 @CompileStatic
 @ConfigurationProperties(prefix = 'images.optimisation')
@@ -17,7 +16,7 @@ class ImageOptimisationConfig {
     int maxLogChars = 2000
 
     // Named pipelines for stages - Map of pipeline name to list of stages
-    @NestedConfigurationProperty
+    // Note: Loaded manually by ImageOptimisationConfigLoader due to Grails config binding limitations
     Map<String, List<Stage>> stages = [
             default: [
                     Stage.resizeLarge(),
@@ -29,7 +28,7 @@ class ImageOptimisationConfig {
 
     // Reusable named toolsets
     // Structure: Map<toolset name, Map<format or '*', List<StageStep>>>
-    @NestedConfigurationProperty
+    // Note: Loaded manually by ImageOptimisationConfigLoader due to Grails config binding limitations
     Map<String, Map<String, List<StageStep>>> toolsets = [
             resize4000: [
                     (ALL_FORMATS): [
@@ -96,7 +95,7 @@ class ImageOptimisationConfig {
     }
 
     // Tool definitions
-    @NestedConfigurationProperty
+    // Note: Loaded manually by ImageOptimisationConfigLoader due to Grails config binding limitations
     Map<String, Tool> tools = [
             // JPEG
             jpegtran: Tool.stdout('jpegtran'),

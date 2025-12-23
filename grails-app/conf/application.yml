@@ -423,7 +423,7 @@ images:
   disableCache: false
   # Image optimisation settings
   optimisation:
-    enabled: true
+    enabled: false
     tempDir: ${java.io.tmpdir}
     timeoutSecondsPerTool: 30
     skipThresholdBytes: 50_000 # 50KB default skip

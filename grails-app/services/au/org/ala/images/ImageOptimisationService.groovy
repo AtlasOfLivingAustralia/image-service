@@ -20,8 +20,10 @@ import org.apache.tika.mime.MimeType
 import org.apache.tika.mime.MimeTypes
 import org.springframework.beans.factory.annotation.Autowired
 
+import javax.imageio.ImageReader
 import java.time.Duration
 import java.util.concurrent.TimeUnit
+import java.util.function.Function
 
 import static java.nio.file.Files.*
 
@@ -537,13 +539,13 @@ class ImageOptimisationService implements MetricsSupport {
         try {
             // Quick check by extension/content type inference is already done; we can count images
             final def bytes = Files.asByteSource(file)
-            return ImageReaderUtils.withImageReader(bytes) { reader ->
+            return ImageReaderUtils.withImageReader(bytes, false, false, { ImageReader reader ->
                 try {
                     return (reader.getNumImages(true) > 1)
                 } catch (Throwable ignore) {
                     return false
                 }
-            } as boolean
+            } as Function<ImageReader, Boolean>)
         } catch (Throwable ignore) {
             return false
         }
@@ -552,7 +554,7 @@ class ImageOptimisationService implements MetricsSupport {
     protected static boolean hasAlphaPng(File file) {
         try {
             final def bytes = Files.asByteSource(file)
-            return ImageReaderUtils.withImageReader(bytes) { reader ->
+            return ImageReaderUtils.withImageReader(bytes, false, false, { ImageReader reader ->
                 try {
                     def it = reader.getImageTypes(0)
                     if (it == null) return false
@@ -565,7 +567,7 @@ class ImageOptimisationService implements MetricsSupport {
                 } catch (Throwable ignore) {
                     return false
                 }
-            } as boolean
+            } as Function<ImageReader,Boolean>)
         } catch (Throwable ignore) {
             return false
         }
