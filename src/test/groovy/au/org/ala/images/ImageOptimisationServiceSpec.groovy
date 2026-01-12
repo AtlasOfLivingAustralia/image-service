@@ -332,7 +332,7 @@ class ImageOptimisationServiceSpec extends Specification {
         ]
 
         config.tools = [
-            javaResize: Tool.java(ImageResizeTool)
+            javaResize: Tool.java(ImageResizeTool.name)
         ]
 
         service.imageOptimisationConfig = config

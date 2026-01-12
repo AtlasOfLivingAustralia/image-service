@@ -244,6 +244,7 @@ class ImageOptimisationService implements MetricsSupport {
                 }
 
                 long afterStage = current.length()
+                log.debug('Stage {} completed: size {} -> {} bytes', stageName, beforeStage, afterStage)
                 getCounter('imageopt.stage.completed', 'Stages completed', [format: format, stage: stageName])?.increment()
                 if (afterStage < beforeStage) {
                     incrementCounter('imageopt.stage.bytes_saved', 'Bytes saved per stage', [format: format, stage: stageName], (beforeStage - afterStage))
@@ -255,6 +256,7 @@ class ImageOptimisationService implements MetricsSupport {
             result.outputContentType = mimeFor(format)
             long saved = result.originalBytes - result.optimisedBytes
             if (saved > 0) {
+                log.debug('Optimisation completed: saved {} bytes ({} -> {})', saved, result.originalBytes, result.optimisedBytes)
                 incrementCounter('imageopt.total_saved', 'Total bytes saved', [format: format], saved)
             }
             return result

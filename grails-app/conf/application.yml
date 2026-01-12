@@ -485,7 +485,7 @@ images:
     toolsets:
       resize4000:
         all:
-          - tool: "convert"
+          - tool: "magick"
             lossy: true
             maxWidth: 4000 # These are for the Java Tool fallback
             maxHeight: 4000 # They're also the default values for the Java Tool but they're here for clarity
