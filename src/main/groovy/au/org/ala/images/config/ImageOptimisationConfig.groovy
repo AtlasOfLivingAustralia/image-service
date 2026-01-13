@@ -5,7 +5,7 @@ import groovy.transform.CompileStatic
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 @CompileStatic
-@ConfigurationProperties(prefix = 'images.optimisation')
+//@ConfigurationProperties(prefix = 'images.optimisation')
 class ImageOptimisationConfig {
     public static final String ALL_FORMATS = 'all'
 

@@ -59,7 +59,7 @@ class ImageOptimisationConfigLoader {
 
     @CompileDynamic
     private void loadStages(String prefix) {
-        def stagesConfig = getConfig("${prefix}.stages")
+        def stagesConfig = getConfigMap("${prefix}.stages")
         if (!stagesConfig) {
             log.debug("No stages config found, using defaults")
             return
@@ -203,7 +203,7 @@ class ImageOptimisationConfigLoader {
 
     @CompileDynamic
     private void loadToolsets(String prefix) {
-        def toolsetsConfig = getConfig("${prefix}.toolsets")
+        def toolsetsConfig = getConfigMap("${prefix}.toolsets")
         if (!toolsetsConfig) {
             log.debug("No toolsets config found, using defaults")
             return
@@ -245,7 +245,7 @@ class ImageOptimisationConfigLoader {
 
     @CompileDynamic
     private void loadTools(String prefix) {
-        def toolsConfig = getConfig("${prefix}.tools")
+        def toolsConfig = getConfigMap("${prefix}.tools")
         if (!toolsConfig) {
             log.debug("No tools config found, using defaults")
             return
@@ -294,8 +294,8 @@ class ImageOptimisationConfigLoader {
     }
 
     // Helper methods to safely get config values
-    private Object getConfig(String key) {
-        return grailsApplication.config.getProperty(key)
+    private Map getConfigMap(String key) {
+        return grailsApplication.config.getProperty(key, Map)
     }
 
     private String getConfigString(String key, String defaultValue) {

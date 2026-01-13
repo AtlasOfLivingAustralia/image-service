@@ -3,52 +3,61 @@ package au.org.ala.images.config
 import grails.config.Config
 import grails.core.GrailsApplication
 import grails.testing.spring.AutowiredTest
+import org.springframework.beans.factory.annotation.Autowired
 import spock.lang.Specification
 
 class ImageOptimisationConfigLoaderSpec extends Specification implements AutowiredTest {
+
+    @Autowired
+    ImageOptimisationConfig imageOptimisationConfig
 
     Closure doWithSpring() {{ ->
         imageOptimisationConfig(ImageOptimisationConfig)
         imageOptimisationConfigLoader(ImageOptimisationConfigLoader)
     }}
 
+    @Override
+    Closure doWithConfig() {
+        { Config config ->
+            config.images.optimisation.enabled = true
+            config.images.optimisation.tempDir = '/tmp'
+            config.images.optimisation.timeoutSecondsPerTool = 30
+            config.images.optimisation.skipThresholdBytes = 50000L
+            config.images.optimisation.maxLogChars = 2000
+            config.images.optimisation.stages.default = [
+                            [
+                                    name: 'test-stage',
+                                    filter: [
+                                            minBytes: 100000
+                                    ],
+                                    toolsRef: 'testTools',
+                                    allowLossy: true
+                            ]
+                    ]
+            config.images.optimisation.toolsets.testToolset = [
+                            jpeg: [
+                                    [
+                                            tool: 'jpegtran',
+                                            args: ['-optimize'],
+                                            lossy: false
+                                    ]
+                            ]
+                    ]
+            config.images.optimisation.tools.jpegtran = [
+                            cmd: 'jpegtran',
+                            type: 'process',
+                            stdout: true,
+                            inPlace: false
+                    ]
+            config.images.optimisation.tools.javaTool = [
+                            type: 'java',
+                            className: 'com.example.MyTool'
+                    ]
+        }
+    }
+
     void "test config loader loads stages from config"() {
-        given:
-        GrailsApplication grailsApplication = Mock(GrailsApplication)
-        Config config = Mock(Config)
-        ImageOptimisationConfig imageOptimisationConfig = new ImageOptimisationConfig()
-        ImageOptimisationConfigLoader loader = new ImageOptimisationConfigLoader()
-        loader.grailsApplication = grailsApplication
-        loader.imageOptimisationConfig = imageOptimisationConfig
-
-        // Mock the config structure
-        def stagesConfig = [
-                default: [
-                        [
-                                name: 'test-stage',
-                                filter: [
-                                        minBytes: 100000
-                                ],
-                                toolsRef: 'testTools',
-                                allowLossy: true
-                        ]
-                ]
-        ]
-
-        grailsApplication.config >> config
-        config.getProperty('images.optimisation.enabled', Boolean, true) >> true
-        config.getProperty('images.optimisation.tempDir', String, _) >> '/tmp'
-        config.getProperty('images.optimisation.timeoutSecondsPerTool', Integer, 30) >> 30
-        config.getProperty('images.optimisation.skipThresholdBytes', Long, 50_000L) >> 50_000L
-        config.getProperty('images.optimisation.maxLogChars', Integer, 2000) >> 2000
-        config.getProperty('images.optimisation.stages') >> stagesConfig
-        config.getProperty('images.optimisation.toolsets') >> null
-        config.getProperty('images.optimisation.tools') >> null
-
-        when:
-        loader.loadConfig()
-
-        then:
+        expect:
         imageOptimisationConfig.stages != null
         imageOptimisationConfig.stages['default'] != null
         imageOptimisationConfig.stages['default'].size() == 1
@@ -60,40 +69,7 @@ class ImageOptimisationConfigLoaderSpec extends Specification implements Autowir
     }
 
     void "test config loader loads toolsets from config"() {
-        given:
-        GrailsApplication grailsApplication = Mock(GrailsApplication)
-        Config config = Mock(Config)
-        ImageOptimisationConfig imageOptimisationConfig = new ImageOptimisationConfig()
-        ImageOptimisationConfigLoader loader = new ImageOptimisationConfigLoader()
-        loader.grailsApplication = grailsApplication
-        loader.imageOptimisationConfig = imageOptimisationConfig
-
-        def toolsetsConfig = [
-                testToolset: [
-                        jpeg: [
-                                [
-                                        tool: 'jpegtran',
-                                        args: ['-optimize'],
-                                        lossy: false
-                                ]
-                        ]
-                ]
-        ]
-
-        grailsApplication.config >> config
-        config.getProperty('images.optimisation.enabled', Boolean, true) >> true
-        config.getProperty('images.optimisation.tempDir', String, _) >> '/tmp'
-        config.getProperty('images.optimisation.timeoutSecondsPerTool', Integer, 30) >> 30
-        config.getProperty('images.optimisation.skipThresholdBytes', Long, 50_000L) >> 50_000L
-        config.getProperty('images.optimisation.maxLogChars', Integer, 2000) >> 2000
-        config.getProperty('images.optimisation.stages') >> null
-        config.getProperty('images.optimisation.toolsets') >> toolsetsConfig
-        config.getProperty('images.optimisation.tools') >> null
-
-        when:
-        loader.loadConfig()
-
-        then:
+        expect:
         imageOptimisationConfig.toolsets != null
         imageOptimisationConfig.toolsets['testToolset'] != null
         imageOptimisationConfig.toolsets['testToolset']['jpeg'] != null
@@ -104,41 +80,7 @@ class ImageOptimisationConfigLoaderSpec extends Specification implements Autowir
     }
 
     void "test config loader loads tools from config"() {
-        given:
-        GrailsApplication grailsApplication = Mock(GrailsApplication)
-        Config config = Mock(Config)
-        ImageOptimisationConfig imageOptimisationConfig = new ImageOptimisationConfig()
-        ImageOptimisationConfigLoader loader = new ImageOptimisationConfigLoader()
-        loader.grailsApplication = grailsApplication
-        loader.imageOptimisationConfig = imageOptimisationConfig
-
-        def toolsConfig = [
-                jpegtran: [
-                        cmd: 'jpegtran',
-                        type: 'process',
-                        stdout: true,
-                        inPlace: false
-                ],
-                javaTool: [
-                        type: 'java',
-                        className: 'com.example.MyTool'
-                ]
-        ]
-
-        grailsApplication.config >> config
-        config.getProperty('images.optimisation.enabled', Boolean, true) >> true
-        config.getProperty('images.optimisation.tempDir', String, _) >> '/tmp'
-        config.getProperty('images.optimisation.timeoutSecondsPerTool', Integer, 30) >> 30
-        config.getProperty('images.optimisation.skipThresholdBytes', Long, 50_000L) >> 50_000L
-        config.getProperty('images.optimisation.maxLogChars', Integer, 2000) >> 2000
-        config.getProperty('images.optimisation.stages') >> null
-        config.getProperty('images.optimisation.toolsets') >> null
-        config.getProperty('images.optimisation.tools') >> toolsConfig
-
-        when:
-        loader.loadConfig()
-
-        then:
+        expect:
         imageOptimisationConfig.tools != null
         imageOptimisationConfig.tools['jpegtran'] != null
         imageOptimisationConfig.tools['jpegtran'].cmd == 'jpegtran'
@@ -169,9 +111,9 @@ class ImageOptimisationConfigLoaderSpec extends Specification implements Autowir
         config.getProperty('images.optimisation.timeoutSecondsPerTool', Integer, 30) >> 30
         config.getProperty('images.optimisation.skipThresholdBytes', Long, 50_000L) >> 50_000L
         config.getProperty('images.optimisation.maxLogChars', Integer, 2000) >> 2000
-        config.getProperty('images.optimisation.stages') >> null
-        config.getProperty('images.optimisation.toolsets') >> null
-        config.getProperty('images.optimisation.tools') >> null
+        config.getProperty('images.optimisation.stages', Map) >> null
+        config.getProperty('images.optimisation.toolsets', Map) >> null
+        config.getProperty('images.optimisation.tools', Map) >> null
 
         when:
         loader.loadConfig()
