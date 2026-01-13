@@ -10,14 +10,14 @@ import org.springframework.context.annotation.Bean
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-@EnableConfigurationProperties(ImageOptimisationConfig)
+//@EnableConfigurationProperties(ImageOptimisationConfig)
 class Application extends GrailsAutoConfiguration {
     static void main(String[] args) {
         GrailsApp.run(Application, args)
     }
 
-    @Autowired
-    ImageOptimisationConfig imageOptimisationConfig
+//    @Autowired
+//    ImageOptimisationConfig imageOptimisationConfig
 
     @Bean
     ExecutorService analyticsExecutor() {
@@ -27,5 +27,13 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     StorageOperationsRegistry storageOperationsRegistry() {
         return new StorageOperationsRegistry(this.grailsApplication)
+    }
+
+    // This is a workaround, instead of using @EnableConfigurationProperties above
+    // we create the bean manually then load it using the ImageOptimisationConfigLoader
+    // (which is a @Component)
+    @Bean
+    ImageOptimisationConfig imageOptimisationConfig() {
+        return new ImageOptimisationConfig()
     }
 }
