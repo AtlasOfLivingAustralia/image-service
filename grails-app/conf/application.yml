@@ -183,6 +183,11 @@ environments:
                 registerMbeans: true
                 connectionTimeout: 5000
     test:
+        # override these values for testing because otherwise they're not set
+        info:
+          app:
+            name: 'image-service'
+            version: '4.0.0-test'
         grails:
           config:
             locations: []
@@ -203,6 +208,10 @@ environments:
             exportDir: '/tmp/image-service/exports'
             batchUpload: '/tmp/image-service/uploads'
     travis:
+      info:
+        app:
+          name: 'image-service'
+          version: '4.0.0-test'
       grails:
         config:
           locations: [ ]
@@ -223,6 +232,10 @@ environments:
           exportDir: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-exports'
           batchUpload: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-uploads'
     ghactions:
+      info:
+        app:
+          name: 'image-service'
+          version: '4.0.0-test'
       grails:
         config:
           locations: [ ]

@@ -430,7 +430,7 @@ unnest(all_urls) AS unnest_url;
                             } catch (HttpImageUploadException e) {
                                 log.warn("Unable to load image from URL: {}. Logging as failed URL, HTTP status: {}, Message: {}", imageUrl, e.statusCode, e.message)
                                 downloadService.logBadUrl(imageUrl, e.statusCode, e.message)
-                                result.message = ex.message
+                                result.message = e.message
                             } catch(Exception ex) {
                                 //log to batch update error file
                                 if (log.isDebugEnabled()) {
