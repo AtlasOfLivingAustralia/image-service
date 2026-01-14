@@ -64,6 +64,7 @@ dependencies {
     // Added dependencies
     runtimeOnly 'com.zaxxer:HikariCP:5.1.0'
     implementation 'org.grails.plugins:postgresql-extensions:7.0.0'
+//    implementation 'io.github.gpc:grails-postgresql-extensions:8.0.0'
     implementation "org.flywaydb:flyway-core:9.4.0"
     implementation 'org.grails.plugins:cache-headers:2.0.2'
     runtimeOnly 'org.codehaus.groovy:groovy-dateutil'
@@ -88,7 +89,7 @@ dependencies {
     // TEMP: Keep AWS SDK v1 during migration; remove once all code/tests are v2
 //    implementation "com.amazonaws:aws-java-sdk-s3:1.12.418"
     implementation 'org.javaswift:joss:0.10.4'
-    runtimeOnly 'org.postgresql:postgresql:42.7.4'
+    runtimeOnly 'org.postgresql:postgresql:42.7.8'
 
     implementation 'co.elastic.clients:elasticsearch-java:7.17.29'
     implementation 'org.elasticsearch.client:elasticsearch-rest-client:7.17.29'
@@ -96,6 +97,7 @@ dependencies {
 
     implementation 'org.imgscalr:imgscalr-lib:4.2'
     implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
+//    implementation platform('org.apache.tika:tika-bom:3.2.3') // TODO need to keep this in sync with image-utils
     implementation 'org.apache.tika:tika-core:3.2.3' // TODO need to keep this in sync with image-utils
     implementation 'org.apache.commons:commons-lang3:3.20.0'
     implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
@@ -124,6 +126,8 @@ dependencies {
     implementation 'io.micrometer:micrometer-registry-cloudwatch2'
     implementation 'io.micrometer:micrometer-registry-statsd'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 
     // Standard grails
     implementation("org.grails:grails-core")

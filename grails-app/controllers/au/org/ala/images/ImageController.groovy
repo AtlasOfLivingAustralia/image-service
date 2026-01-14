@@ -798,19 +798,22 @@ class ImageController implements MetricsSupport {
         def metaData = []
         def source = null
         if (imageInstance) {
+            // Use helper method that reads from JSONB with fallback to EAV table
+            def allMetadata = imageService.getImageMetadata(imageInstance)
+
             if (params.source) {
                 source = MetaDataSourceType.valueOf(params.source)
                 if (source){
-                    metaData = imageInstance.metadata?.findAll { it.source == source }
+                    metaData = allMetadata?.findAll { it.source == source }
                 } else {
-                    metaData = imageInstance.metadata
+                    metaData = allMetadata
                 }
             } else {
-                metaData = imageInstance.metadata
+                metaData = allMetadata
             }
         }
 
-        [imageInstance: imageInstance, metaData: metaData?.sort { it.name }, source: source]
+        [imageInstance: imageInstance, metaData: metaData?.sort { it.key }, source: source]
     }
 
     def coreImageMetadataTableFragment() {
@@ -834,7 +837,7 @@ class ImageController implements MetricsSupport {
 
     def createSubimageFragment() {
         def imageInstance = imageService.getImageFromParams(params)
-        def metadata = ImageMetaDataItem.findAllByImage(imageInstance)
+        def metadata = imageService.getImageMetadata(imageInstance)
         [imageInstance: imageInstance, x: params.x, y: params.y, width: params.width, height: params.height, metadata: metadata]
     }
 

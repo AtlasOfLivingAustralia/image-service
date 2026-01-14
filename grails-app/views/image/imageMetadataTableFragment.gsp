@@ -8,8 +8,8 @@
 <g:if test="${metaData}">
     <table class="table table-bordered table-condensed table-striped">
         <g:each in="${metaData}" var="md">
-            <tr metaDataKey="${md.name}">
-                <td class="property-name">${md.name}</td>
+            <tr metaDataKey="${md.key}">
+                <td class="property-name">${md.key}</td>
                 <td class="property-value"><img:renderMetaDataValue metaDataItem="${md}" />
                     <auth:ifAnyGranted roles="${CASRoles.ROLE_ADMIN}">
                         <g:if test="${source == MetaDataSourceType.UserDefined}">

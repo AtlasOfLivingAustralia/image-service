@@ -1407,8 +1407,8 @@ class WebServiceController implements MetricsSupport {
 
     @Operation(
             method = "GET",
-            summary = "Get Metadata",
-            description = "Get Metadata.",
+            summary = "Get Metadata field names",
+            description = "Get Metadata field names known to this service.",
             parameters = [
                     @Parameter(name = "source", in = QUERY, required = false, description = "Only return metadata items with this source", schema = @Schema(implementation = MetaDataSourceType)),
             ],
@@ -1421,32 +1421,17 @@ class WebServiceController implements MetricsSupport {
                             ])],
             tags = ["Image metadata"]
     )
-    @Path("/ws/getMetadataKeys")
+    @Path("/ws/metadatakeys")
     @Consumes("application/json")
     @Produces("application/json")
     def getMetadataKeys() {
 
         def source = params.source as MetaDataSourceType
-        def results
-        def c = ImageMetaDataItem.createCriteria()
 
-        if (source) {
-            results = c.list {
-                eq("source", source)
-                projections {
-                    distinct("name")
-                }
-            }
+        // Use ImageService method that queries both JSONB (migrated) and EAV (unmigrated) images
+        def results = imageService.getDistinctMetadataKeys(source)
 
-        } else {
-            results = c.list {
-                projections {
-                    distinct("name")
-                }
-            }
-        }
-
-        renderResults(results?.sort { it?.toLowerCase() }, 200, true)
+        renderResults(results, 200, true)
     }
 
     @Operation(
