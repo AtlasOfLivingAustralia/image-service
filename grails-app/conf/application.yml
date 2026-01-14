@@ -183,6 +183,11 @@ environments:
                 registerMbeans: true
                 connectionTimeout: 5000
     test:
+        # override these values for testing because otherwise they're not set
+        info:
+          app:
+            name: 'image-service'
+            version: '4.0.0-test'
         grails:
           config:
             locations: []
@@ -203,6 +208,10 @@ environments:
             exportDir: '/tmp/image-service/exports'
             batchUpload: '/tmp/image-service/uploads'
     travis:
+      info:
+        app:
+          name: 'image-service'
+          version: '4.0.0-test'
       grails:
         config:
           locations: [ ]
@@ -223,6 +232,10 @@ environments:
           exportDir: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-exports'
           batchUpload: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-uploads'
     ghactions:
+      info:
+        app:
+          name: 'image-service'
+          version: '4.0.0-test'
       grails:
         config:
           locations: [ ]
@@ -421,6 +434,260 @@ images:
   # When true, disable all HTTP caching for image responses and bypass
   # in-memory Caffeine caches for thumbnails and tiles. Default: false
   disableCache: false
+  # Image optimisation settings
+  optimisation:
+    enabled: false
+    tempDir: ${java.io.tmpdir}
+    timeoutSecondsPerTool: 30
+    skipThresholdBytes: 50_000 # 50KB default skip
+    # Max characters from a tool's stderr/stdout to include in logs/warnings
+    maxLogChars: 2000
+    stages:
+      default:
+        - name: "resize-large"
+          filter:
+            minPixels: 16_000_000
+            contentTypes:
+            - "image/"
+          toolsRef: "resize4000"
+          allowLossy: true
+        - name: "optim-pass1"
+          filter:
+            minBytes: 500_000  # Default 500KB
+            minBytesByFormat:
+              jpeg: 1_500_000  # 1.5MB for JPEG (already compressed)
+              png: 800_000     # 800KB for PNG
+              webp: 500_000    # 500KB for WebP
+              gif: 500_000     # 500KB for GIF
+          toolsRef: "optimConservative"
+          allowLossy: false
+        - name: "optim-pass2"
+          filter:
+            minBytes: 500_000  # Default 500KB
+            minBytesByFormat:
+              jpeg: 1_500_000  # 1.5MB for JPEG
+              png: 800_000     # 800KB for PNG
+              webp: 500_000    # 500KB for WebP
+              gif: 500_000     # 500KB for GIF
+          toolsRef: "optimConservative"
+          allowLossy: false
+        - name: "optim-aggressive"
+          filter:
+            minBytes: 800_000  # Default 800KB
+            minBytesByFormat:
+              jpeg: 2_000_000  # 2MB for JPEG (worth aggressive compression)
+              png: 1_000_000   # 1MB for PNG
+              webp: 800_000    # 800KB for WebP
+              gif: 800_000     # 800KB for GIF
+          toolsRef: "optimAggressive"
+          allowLossy: true
+      # Example alternate pipeline demonstrating animated/alpha and format routing purely via config
+      # alternate-pipeline:
+      #   - name: "to-webp-for-animated-gif"
+      #     filter:
+      #       contentTypes: ["image/gif"]
+      #       animated: true
+      #     toolsRef: "toWebp"
+      #     allowLossy: true
+      #   - name: "to-webp-for-alpha-png"
+      #     filter:
+      #       contentTypes: ["image/png"]
+      #       alpha: true
+      #     toolsRef: "toWebp"
+      #     allowLossy: true
+    toolsets:
+      resize4000:
+        all:
+          - tool: "magick"
+            lossy: true
+            maxWidth: 4000 # These are for the Java Tool fallback
+            maxHeight: 4000 # They're also the default values for the Java Tool but they're here for clarity
+            properties:
+              useScalr: true
+            args:
+              - "%IN%"
+              - "-resize"
+              - "4000x4000>"
+              - "%OUT%"
+      resizeScalr:
+        all:
+          - tool: "javaResize"
+            lossy: true
+            maxWidth: 2048
+            maxHeight: 2048
+            properties:
+              useScalr: true
+      jpegConvert:
+        all:
+          - tool: "convert"
+            lossy: true
+            outputFormat: "jpeg"
+            args:
+            - "%IN%"
+            - "-auto-orient"
+            - "-colorspace"
+            - "sRGB"
+            - "-strip"
+            - "-sampling-factor"
+            - "4:2:0"
+            - "-interlace"
+            - "Plane"
+            - "-quality"
+            - "82"
+            - "%OUT%"
+          - tool: "jpegtran"
+            args:
+            - "-copy"
+            - "none"
+            - "-optimize"
+            - "-progressive"
+          - tool: "jpegoptim"
+            args:
+            - "--strip-all"
+            - "--all-progressive"
+            - "--max=85"
+      # Example WebP conversion toolset
+      # toWebp:
+      #   all:
+      #     - tool: "cwebp"
+      #       lossy: true
+      #       outputFormat: "webp"
+      #       args:
+      #       - "-mt"
+      #       - "-q"
+      #       - "75"
+      #       - "%IN%"
+      #       - "-o"
+      #       - "%OUT%"
+      optimConservative:
+        jpeg:
+          - tool: "jpegtran"
+            args:
+              - "-copy"
+              - "none"
+              - "-optimize"
+              - "-progressive"
+          - tool: "jpegoptim"
+            args:
+            - "--strip-all"
+            - "--all-progressive"
+            - "--max=85"
+        png:
+          - tool: "oxipng"
+            args:
+              - "-o"
+              - "3"
+              - "--strip"
+              - "all"
+          - tool: "zopflipng"
+            args:
+              - "-y"
+              - "-m"
+        gif:
+          - tool: "gifsicle"
+            args:
+              - "-O3"
+        svg:
+          - tool: "svgo"
+            args:
+              - "--multipass"
+        webp:
+          - tool: "webpmux"
+            args:
+              - "-strip"
+              - "%IN%"
+              - "-o"
+              - "%OUT%"
+      optimAggressive:
+        jpeg:
+          - tool: "mozjpeg"
+            lossy: true
+            args:
+              - "-quality"
+              - "75"
+              - "-optimize"
+              - "-progressive"
+              - "%IN%"
+        png:
+          - tool: "pngquant"
+            lossy: true
+            args:
+              - "--quality=60-80"
+              - "--speed=1"
+              - "--force"
+              - "--output=%OUT%"
+              - "%IN%"
+        webp:
+          - tool: "cwebp"
+            lossy: true
+            args:
+              - "-mt"
+              - "-q"
+              - "75"
+              - "%IN%"
+              - "-o"
+              - "%OUT%"
+        avif:
+          - tool: "avifenc"
+            lossy: true
+            args:
+              - "-q"
+              - "28"
+              - "-s"
+              - "4"
+              - "--jobs"
+              - "0"
+              - "%IN%"
+              - "%OUT%"
+    tools:
+      jpegtran:
+        cmd: "jpegtran"
+        stdout: true  # jpegtran writes optimized output to stdout
+      jpegoptim:
+        cmd: "jpegoptim"
+        inPlace: true
+      mozjpeg:
+        cmd: "cjpeg"
+        inPlace: false
+      oxipng:
+        cmd: "oxipng"
+        inPlace: true
+        fallback: ["optipng"]
+      optipng:
+        cmd: "optipng"
+        inPlace: true
+      zopflipng:
+        cmd: "zopflipng"
+        inPlace: false
+      pngquant:
+        cmd: "pngquant"
+        inPlace: false
+      gifsicle:
+        cmd: "gifsicle"
+        inPlace: true
+      svgo:
+        cmd: "svgo"
+        inPlace: true
+      magick:
+        cmd: "magick"
+        inPlace: false
+        fallback: ["convert"]
+      convert:
+        cmd: "convert"
+        inPlace: false
+        fallback: ["javaResize"]
+      javaResize:
+        type: "java"
+        className: "au.org.ala.images.optimisation.ImageResizeTool"
+      cwebp:
+        cmd: "cwebp"
+        inPlace: false
+      webpmux:
+        cmd: "webpmux"
+        inPlace: false
+      avifenc:
+        cmd: "avifenc"
+        inPlace: false
 
 # External links
 collectory:
