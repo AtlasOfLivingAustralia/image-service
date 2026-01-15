@@ -151,6 +151,7 @@ flyway:
 hibernate:
     allow_update_outside_transaction: true # Hibernate 5 made transactions required to flush changes, set to true for backwards compat but should be set to false and bugs fixed in the future
     show_sql: false
+#    dialect: gpc.pgext.hibernate.PostgresqlExtensionsDialect
     dialect: net.kaleidos.hibernate.PostgresqlExtensionsDialect
     cache:
         queries: true
@@ -257,6 +258,7 @@ environments:
         batchUpload: '${RUNNER_TEMP}/temp-uploads'
     production:
         hibernate:
+#            dialect: gpc.pgext.hibernate.PostgresqlExtensionsDialect
             dialect: net.kaleidos.hibernate.PostgresqlExtensionsDialect
         dataSource:
             dbCreate: validate
@@ -688,6 +690,18 @@ images:
       avifenc:
         cmd: "avifenc"
         inPlace: false
+  metadata:
+    legacy:
+      persist:
+        enabled: true
+    jsonb:
+      migration:
+        enabled: true
+        batchSize: 100
+        maxBatchesPerRun: 10
+        startTime: '23:00'
+        endTime: '06:00'
+        maxLoadAverage: 6.0 # tune this for your system, eg 6 might be too high for a small ec2 instance
 
 # External links
 collectory:
