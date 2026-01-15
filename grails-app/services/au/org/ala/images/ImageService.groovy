@@ -1834,26 +1834,57 @@ unnest(all_urls) AS unnest_url;
             return [columnHeaders: ["imageUrl", "occurrenceId"], data: []]
         }
 
-        // TODO Fix this to not N+1 query when we don't have JSONB metadata
+        // Need special handling for images without JSONB metadata to avoid N+1 queries
+        def legacyMetadataImages = images.findAll { it.metadata == null }
+        def metaDataMappedByImage = [:]
+        if (legacyMetadataImages) {
+            log.debug("getHarvestTabularData found ${legacyMetadataImages.size()} images without JSONB metadata")
+            def c = ImageMetaDataItem.createCriteria()
+            // retrieve just the relevant metadata rows
+            def metaDataRows = c.list {
+                inList("image", imgGroup)
+                or {
+                    eq("source", MetaDataSourceType.SystemDefined)
+                    eq("source", MetaDataSourceType.UserDefined)
+                }
+            }
+
+            metaDataMappedByImage = metaDataRows.groupBy { it.image.id }
+        }
+
         def columnHeaders = ['imageUrl', 'occurrenceId']
         def tabularData = []
 
         images.each { image ->
             def map =  [occurrenceId: image.imageIdentifier, 'imageUrl': imageService.getImageUrl(image.imageIdentifier)]
 
-            // Get metadata using JSONB or fallback to EAV
-            def metadataList = getImageMetadata(image)
-
-            // Filter to only SystemDefined and UserDefined sources
-            metadataList.each { md ->
-                if (md.value && (md.source == MetaDataSourceType.SystemDefined || md.source == MetaDataSourceType.UserDefined)) {
-                    map[md.key] = md.value
-                    if (!columnHeaders.contains(md.key)) {
-                        columnHeaders << md.key
+            if (metaDataMappedByImage.containsKey(image.id)) {
+                // Get metadata from legacy EAV table
+                def metadataItems = metaDataMappedByImage[image.id]
+                metadataItems.each { md ->
+                    if (md.value) {
+                        map[md.name] = md.value
+                        if (!columnHeaders.contains(md.name)) {
+                            columnHeaders << md.name
+                        }
                     }
                 }
+                tabularData << map
+            } else {
+                // Get metadata using JSONB, EAV table fallback shouldn't be used now
+                def metadataList = getImageMetadata(image)
+
+                // Filter to only SystemDefined and UserDefined sources
+                metadataList.each { md ->
+                    if (md.value && (md.source == MetaDataSourceType.SystemDefined || md.source == MetaDataSourceType.UserDefined)) {
+                        map[md.key] = md.value
+                        if (!columnHeaders.contains(md.key)) {
+                            columnHeaders << md.key
+                        }
+                    }
+                }
+                tabularData << map
             }
-            tabularData << map
         }
 
         return [data: tabularData, columnHeaders: columnHeaders]
