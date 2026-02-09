@@ -88,6 +88,14 @@
         </tr>
         <tr>
             <td>
+                <button id="btnClearS3Cache" class="btn btn-default">Clear S3 Client cache</button>
+            </td>
+            <td>
+                Clear any cached S3 clients and close all connections associated with them
+            </td>
+        </tr>
+        <tr>
+            <td>
                 <button id="btnClearHibernateCache" class="btn btn-default">Clear hibernate query cache</button>
             </td>
             <td>
@@ -132,6 +140,15 @@
             </td>
             <td>
                 Delete failed upload entries based on a regular expression pattern that matches the URL.
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnRunCheckFailedUploads" class="btn btn-default">Run Failed Uploads Check</button>
+            </td>
+            <td>
+                Manually trigger the failed uploads check job to verify if previously failed URLs are now accessible.
+                This will override the time interval check and run immediately.
             </td>
         </tr>
     </table>
@@ -192,6 +209,11 @@
             window.location = "${createLink(action:'clearHibernateCache')}";
         });
 
+        $("#btnClearS3Cache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearS3Cache')}";
+        });
+
         $("#btnClearThumbnailLookupCache").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'clearThumbnailLookupCache')}";
@@ -209,6 +231,13 @@
         $("#btnClearFailedUploads").on('click', function(e) {
             e.preventDefault();
             window.location = "${createLink(action:'clearFailedUploads')}";
+        });
+
+        $("#btnRunCheckFailedUploads").on('click', function(e) {
+            e.preventDefault();
+            if (confirm('This will manually trigger the failed uploads check job. Are you sure?')) {
+                window.location = "${createLink(action:'runCheckFailedUploadsJob')}";
+            }
         });
     });
 

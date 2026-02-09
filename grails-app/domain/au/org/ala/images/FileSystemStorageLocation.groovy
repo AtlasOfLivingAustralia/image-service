@@ -9,7 +9,7 @@ class FileSystemStorageLocation extends StorageLocation {
 
     String basePath
 
-    static transients = ['storageOperations', '$storageOperations']
+    static transients = ['storageOperations', '$storageOperations', 'probeFilesForImageInfo']
 
     static constraints = {
     }

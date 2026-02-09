@@ -5,4 +5,5 @@ class ImageDescriptor {
     int height
     int width
     int zoomLevels
+    Map<String, Object> extractedMetadata // Metadata extracted before optimisation
 }

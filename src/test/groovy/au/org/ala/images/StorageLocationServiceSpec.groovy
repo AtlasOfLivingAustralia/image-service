@@ -1,16 +1,10 @@
 package au.org.ala.images
 
-import com.amazonaws.services.s3.model.ObjectListing
 import grails.testing.gorm.DataTest
 import grails.testing.services.ServiceUnitTest
-import grails.web.mapping.LinkGenerator
 import org.grails.spring.beans.factory.InstanceFactoryBean
 import org.javaswift.joss.client.factory.AuthenticationMethod
 import spock.lang.Specification
-import com.amazonaws.services.s3.AmazonS3
-import com.amazonaws.services.s3.model.CannedAccessControlList
-import com.amazonaws.services.s3.model.ObjectMetadata
-import com.amazonaws.services.s3.model.S3ObjectSummary
 
 import java.util.concurrent.Executor
 
@@ -25,6 +19,7 @@ class StorageLocationServiceSpec extends Specification implements ServiceUnitTes
     def setup() {
         defineBeans {
             analyticsExecutor(InstanceFactoryBean, [ execute: { Runnable r -> r.run() } ] as Executor, Executor)
+            storageOperationsRegistry(StorageOperationsRegistry, ref('grailsApplication'))
         }
     }
 

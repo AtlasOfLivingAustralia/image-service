@@ -19,6 +19,7 @@ class ImageStagingService {
     def settingService
     def imageService
     def auditService
+    def downloadService
     LinkGenerator grailsLinkGenerator
 
     ResultsPageList<StagedFile> getFileList(String userId, GrailsParameterMap params) {
@@ -284,7 +285,7 @@ class ImageStagingService {
 
             // Create the image domain object
             def bytes = file.getBytes()
-            def mimeType = imageService.detectMimeTypeFromBytes(bytes, file.name)
+            def mimeType = downloadService.detectMimeTypeFromBytes(bytes, file.name)
             image = imageService.storeImageBytes(bytes, file.name, file.length(),mimeType, stagedFile.userId, false).image
 
             auditService.log(image, "Imported from ${file.absolutePath}", stagedFile.userId)

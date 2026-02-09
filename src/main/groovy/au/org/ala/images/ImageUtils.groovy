@@ -141,6 +141,9 @@ class ImageUtils {
 
     static String formatFileSize(double filesize) {
         def labels = [ ' bytes', 'KB', 'MB', 'GB' ]
+        if (filesize < 0) {
+            return "unknown bytes"
+        }
         def label = labels.find { ( filesize < 1024 ) ? true : { filesize /= 1024 ; false }() } ?: 'TB'
         return "${new DecimalFormat( '0.#' ).format( filesize )} $label"
     }

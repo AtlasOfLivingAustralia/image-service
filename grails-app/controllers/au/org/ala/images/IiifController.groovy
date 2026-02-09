@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.metrics.MetricsSupport
 import grails.converters.JSON
 import grails.core.GrailsApplication
 import groovy.util.logging.Slf4j
@@ -11,13 +12,12 @@ import io.swagger.v3.oas.annotations.headers.Header
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
+import org.springframework.beans.factory.annotation.Value
+
 import javax.ws.rs.Produces
 
-import javax.imageio.ImageIO
 import javax.servlet.http.HttpServletResponse
-import java.awt.image.BufferedImage
 import org.apache.commons.io.IOUtils
-import java.io.ByteArrayOutputStream
 
 /**
  * IIIF Image API 3.0 controller (Level 2)
@@ -27,9 +27,12 @@ import java.io.ByteArrayOutputStream
  *  - /iiif/{identifier}/{region}/{size}/{rotation}/{quality}.{format}
  */
 @Slf4j
-class IiifController {
+class IiifController implements MetricsSupport {
 
     static responseFormats = ['json']
+
+    @Value('${images.disableCache:false}')
+    boolean disableCache = false
 
     GrailsApplication grailsApplication
     IiifImageService iiifImageService
@@ -65,45 +68,59 @@ class IiifController {
     @Path("/iiif/{identifier}/info.json")
     @Produces("application/json")
     def info() {
-        String identifier = params.identifier
-        if (!identifier) {
-            response.status = 400
-            render(text: 'Missing identifier', contentType: 'text/plain')
-            return
-        }
+        return recordTime('iiif.info', 'Time to serve IIIF info.json') {
+            incrementCounter('iiif.info.request', 'IIIF info.json requests')
 
-        Image image = Image.findByImageIdentifier(identifier)
-        if (!image) {
+            if (!isIiifEnabled()) {
+                // Feature flag: return 404 for all IIIF paths when disabled
+                incrementCounter('iiif.info.disabled', 'IIIF info requests when disabled')
+                response.status = 404
+                render(text: 'Not found', contentType: 'text/plain')
+                return
+            }
+            String identifier = params.identifier
+            if (!identifier) {
+                incrementCounter('iiif.info.error', 'IIIF info errors', [reason: 'missing_identifier'])
+                response.status = 400
+                render(text: 'Missing identifier', contentType: 'text/plain')
+                return
+            }
+
+            Image image = Image.findByImageIdentifier(identifier)
+            if (!image) {
+                incrementCounter('iiif.info.notfound', 'IIIF info not found')
+                enableCors()
+                response.status = 404
+                render(text: 'Image not found', contentType: 'text/plain')
+                return
+            }
+
+            String base = getBaseUrl()
+            String serviceId = "${base}/iiif/${identifier}"
+
+            Map<String, Object> body = [
+                    '@context': CONTEXT,
+                    id       : serviceId,
+                    type     : 'ImageService3',
+                    protocol : PROTOCOL,
+                    width    : image.width ?: 0,
+                    height   : image.height ?: 0,
+                    profile  : 'level2', // included for compatibility with some clients
+                    extraFormats : ['jpg','png','webp'],
+                    extraQualities: ['default','color','gray','bitonal'],
+            ]
+
+            // Tiling info from existing TMS tiles if present
+            if (image.zoomLevels && image.zoomLevels > 0) {
+                List<Integer> scaleFactors = computeScaleFactors(image)
+                body.tiles = [[width: 256, height: 256, scaleFactors: scaleFactors]]
+            }
+
+            incrementCounter('iiif.info.success', 'Successful IIIF info responses')
             enableCors()
-            response.status = 404
-            render(text: 'Image not found', contentType: 'text/plain')
-            return
-        }
-
-        String base = getBaseUrl()
-        String serviceId = "${base}/iiif/${identifier}"
-
-        Map<String, Object> body = [
-                '@context': CONTEXT,
-                id       : serviceId,
-                type     : 'ImageService3',
-                protocol : PROTOCOL,
-                width    : image.width ?: 0,
-                height   : image.height ?: 0,
-                profile  : 'level2', // included for compatibility with some clients
-                extraFormats : ['jpg','png','webp'],
-                extraQualities: ['default','color','gray','bitonal'],
-        ]
-
-        // Tiling info from existing TMS tiles if present
-        if (image.zoomLevels && image.zoomLevels > 0) {
-            List<Integer> scaleFactors = computeScaleFactors(image)
-            body.tiles = [[width: 256, height: 256, scaleFactors: scaleFactors]]
-        }
-
-        enableCors()
-        withCacheHeaders {
-            render(body as JSON)
+            withCacheHeaders {
+                render(body as JSON)
+            }
         }
     }
 
@@ -146,61 +163,94 @@ class IiifController {
     @Path("/iiif/{identifier}/{region}/{size}/{rotation}/{quality}.{format}")
     @Produces(["image/jpeg", "image/png", "image/webp"])
     def renderImage() {
-        String identifier = params.identifier
-        String region = params.region
-        String size = params.size
-        String rotationParam = params.rotation
-        String quality = params.quality
-        String format = params.format ? String.valueOf(params.format).toLowerCase() : null
-        // Support additional parameters consistent with ImageController:
-        //  - i  (invalidate): bypass cached/generated derivative and regenerate
-        //  - nr (no redirect): do not send a redirect response even if storage supports it
-        boolean invalidate = params.containsKey('i')
-        boolean noRedirect = params.containsKey('nr')
+        return recordTime('iiif.render', 'Time to render IIIF image', [format: params.format ?: 'unknown', region: params.region ?: 'unknown', size: params.size ?: 'unknown']) {
+            incrementCounter('iiif.render.request', 'IIIF render requests', [format: params.format ?: 'unknown'])
 
-        def result = iiifImageService.render(identifier, region, size, rotationParam, quality, format, invalidate)
+            if (!isIiifEnabled()) {
+                // Feature flag: return 404 for all IIIF paths when disabled
+                incrementCounter('iiif.render.disabled', 'IIIF render requests when disabled')
+                response.status = 404
+                render(text: 'Not found', contentType: 'text/plain')
+                return
+            }
+            String identifier = params.identifier
+            String region = params.region
+            String size = params.size
+            String rotationParam = params.rotation
+            String quality = params.quality
+            String format = params.format ? String.valueOf(params.format).toLowerCase() : null
+            // Support additional parameters consistent with ImageController:
+            //  - i  (invalidate): bypass cached/generated derivative and regenerate
+            //  - nr (no redirect): do not send a redirect response even if storage supports it
+            boolean invalidate = params.containsKey('i')
+            boolean noRedirect = params.containsKey('nr')
 
-        if (result.isError()) {
-            return iiifError(result.errorStatus as int, result.errorMessage)
-        }
+            def result = iiifImageService.render(identifier, region, size, rotationParam, quality, format, invalidate)
 
-        enableCors()
-        response.setHeader(ImageController.HEADER_ETAG, result.etag)
-        if (result.lastModified) {
-            response.setDateHeader(ImageController.HEADER_LAST_MODIFIED, result.lastModified.time)
-        }
-        if (grailsApplication.config.getProperty('images.cache.headers', Boolean, true)) {
-            cache(shared: true, neverExpires: true)
-        }
+            if (result.isError()) {
+                incrementCounter('iiif.render.error', 'IIIF render errors', [status: result.errorStatus?.toString() ?: 'unknown', format: format ?: 'unknown'])
+                return iiifError(result.errorStatus as int, result.errorMessage)
+            }
 
-        if (!checkForModified(result.etag, result.lastModified)) {
-            response.sendError(HttpServletResponse.SC_NOT_MODIFIED)
-            return
-        }
+            enableCors()
+            applyCacheHeaders(disableCache, grailsApplication.config.getProperty('images.cache.headers', Boolean, true), result.etag, result.lastModified)
 
-        def imageInfo = result.imageInfo
+            if (!disableCache && !checkForModified(result.etag, result.lastModified)) {
+                incrementCounter('iiif.render.notmodified', 'IIIF render not modified (304)', [format: format ?: 'unknown'])
+                response.sendError(HttpServletResponse.SC_NOT_MODIFIED)
+                return
+            }
 
-        if (!noRedirect && imageInfo.redirectUri) {
-            response.sendRedirect(imageInfo.redirectUri.toString())
-            return
-        }
+            def imageInfo = result.imageInfo
 
-        response.contentLengthLong = imageInfo.length
-        response.contentType = result.mime
-        // Grails will provide a dummy output stream for HEAD requests but
-        // explicitly bail on HEAD methods so we don't transfer bytes out of storage
-        // unnecessarily
-        if (request.method == 'HEAD') {
-            return
-        }
+            if (!noRedirect && imageInfo.redirectUri) {
+                incrementCounter('iiif.render.redirect', 'IIIF render redirects', [format: format ?: 'unknown'])
+                response.sendRedirect(imageInfo.redirectUri.toString())
+                return
+            }
 
-        imageInfo.inputStreamSupplier.call(null).withStream { stream ->
-            IOUtils.copy(stream, response.outputStream)
+            response.contentLengthLong = imageInfo.length
+            response.contentType = result.mime
+            // Grails will provide a dummy output stream for HEAD requests but
+            // explicitly bail on HEAD methods so we don't transfer bytes out of storage
+            // unnecessarily
+            if (request.method == 'HEAD') {
+                incrementCounter('iiif.render.head', 'IIIF render HEAD requests', [format: format ?: 'unknown'])
+                return
+            }
+
+            imageInfo.inputStreamSupplier.call(null).withStream { stream ->
+                IOUtils.copy(stream, response.outputStream)
 //                    response.flushBuffer()
+            }
+
+            incrementCounter('iiif.render.success', 'Successful IIIF render responses', [format: format ?: 'unknown'])
         }
     }
 
     // Helpers
+
+    private void applyCacheHeaders(boolean disableCache, boolean cacheHeadersEnabled, String etag, Date lastMod) {
+        if (disableCache) {
+            response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+            response.setHeader('Pragma', 'no-cache')
+            response.setDateHeader('Expires', 0)
+            return
+        }
+        if (etag) {
+            response.setHeader(ImageController.HEADER_ETAG, etag)
+        }
+        if (lastMod) {
+            response.setDateHeader(ImageController.HEADER_LAST_MODIFIED, lastMod.time)
+        }
+        if (cacheHeadersEnabled) {
+            cache(shared: true, neverExpires: true)
+        }
+    }
+
+    private boolean isIiifEnabled() {
+        return grailsApplication.config.getProperty('iiif.enabled', Boolean, true)
+    }
 
     private List<Integer> computeScaleFactors(Image image) {
         List<Integer> sf = []

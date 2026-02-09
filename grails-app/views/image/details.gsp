@@ -114,11 +114,11 @@
                                         <td class="property-name"><g:message code="details.sha1.hash" /></td>
                                         <td class="property-value">${imageInstance.contentSHA1Hash}</td>
                                     </tr>
+                                    <auth:ifAnyGranted roles="${CASRoles.ROLE_ADMIN}">
                                     <tr>
                                         <td class="property-name"><g:message code="details.size.on.disk" /></td>
                                         <td class="property-value"><img:sizeInBytes size="${sizeOnDisk}" /></td>
                                     </tr>
-                                    <auth:ifAnyGranted roles="${CASRoles.ROLE_ADMIN}">
                                     <tr>
                                         <td class="property-name">Storage location</td>
                                         <td class="property-value">${imageInstance.storageLocation}</td>

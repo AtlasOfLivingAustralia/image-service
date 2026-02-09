@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.web.AlaSecured
 import au.org.ala.web.CASRoles
 import grails.converters.JSON
@@ -34,7 +35,7 @@ import static javax.servlet.http.HttpServletResponse.SC_PARTIAL_CONTENT
 import static javax.servlet.http.HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE
 
 @Slf4j
-class ImageController {
+class ImageController implements MetricsSupport {
 
     private final static NEW_LINE = '\r\n'
     public static final String HEADER_ETAG = 'ETag'
@@ -88,6 +89,9 @@ class ImageController {
 
     @Value('${images.cache.headers:true}')
     boolean cacheHeaders = true
+
+    @Value('${images.disableCache:false}')
+    boolean disableCache = false
 
     static AtomicLong boundaryCounter = new AtomicLong(0)
 
@@ -190,7 +194,7 @@ class ImageController {
             description = "Get an image thumbnail version.",
             parameters = [
                     @Parameter(name="id", in = PATH, description = 'Image Id', required = true),
-                    @Parameter(name="type", in = PATH, description = 'Thumbnail type (one of: large, square, square_black, square_white, square_darkGrey, square_darkGray)', required = true)
+                    @Parameter(name="type", in = PATH, description = 'Thumbnail type (one of: large, xlarge, square, square_black, square_white, square_darkGrey, square_darkGray, centre_crop, centre_crop_large)', required = true)
             ],
             responses = [
                     @ApiResponse(content = [@Content(mediaType='image/jpeg')],responseCode = "200",
@@ -271,23 +275,37 @@ class ImageController {
             boolean sendAnalytics,
             String requestType,
             boolean noRedirect = false) {
-        def imageIdentifier = imageInfo.imageIdentifier
-        if (!imageIdentifier || !imageInfo.exists) {
-            if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
-                sendMissingImage(requestType)
-            } else {
-                render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+        recordTime('image.serve', 'Time to serve image request', [type: requestType]) {
+            def imageIdentifier = imageInfo.imageIdentifier
+            if (!imageIdentifier || !imageInfo.exists) {
+                incrementCounter('image.serve.notfound', 'Image not found requests', [type: requestType])
+                if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
+                    sendMissingImage(requestType)
+                } else {
+                    render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+                }
+                return
             }
-            return
-        }
 
-        boolean contentDisposition = params.boolean("contentDisposition", false)
+            incrementCounter('image.serve.request', 'Image serve requests', [type: requestType])
+
+            boolean contentDisposition = params.boolean("contentDisposition", false)
 
         if (sendAnalytics) {
-            analyticsService.sendAnalytics(imageInfo.exists, imageInfo.dataResourceUid, 'imageview', request.getHeader("User-Agent"))
+            if (imageInfo.dataResourceUid != null) {
+                analyticsService.sendAnalytics(imageInfo.exists, imageInfo.dataResourceUid, 'imageview', request.getHeader("User-Agent"))
+            } else {
+                analyticsService.sendAnalyticsFromImageId(imageInfo.exists, imageInfo.imageIdentifier, 'imageview', request.getHeader("User-Agent"))
+            }
         }
 
         if (!noRedirect && imageInfo.redirectUri) {
+            if (disableCache) {
+                // Replace any cache headers with no-cache headers
+                response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+                response.setHeader('Pragma', 'no-cache')
+                response.setDateHeader('Expires', 0)
+            }
             URI uri = imageInfo.redirectUri
             if (uri) {
                 response.status = SC_FOUND
@@ -303,19 +321,21 @@ class ImageController {
             // the generate closure
             def etag = imageInfo.etag
             def lastMod = imageInfo.lastModified
-            def changed = checkForNotModified(etag, lastMod)
-            if (changed) {
-                if (etag) {
-                    response.setHeader(HEADER_ETAG, etag)
+            if (!disableCache) {
+                def changed = checkForNotModified(etag, lastMod)
+                if (changed) {
+                    if (etag) {
+                        response.setHeader(HEADER_ETAG, etag)
+                    }
+                    if (lastMod) {
+                        response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+                    }
+                    if (cacheHeaders) {
+                        cache(shared: true, neverExpires: true)
+                    }
+                    response.sendError(SC_NOT_MODIFIED)
+                    return
                 }
-                if (lastMod) {
-                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
-                }
-                if (cacheHeaders) {
-                    cache(shared: true, neverExpires: true)
-                }
-                response.sendError(SC_NOT_MODIFIED)
-                return
             }
 
             length = imageInfo.length
@@ -325,15 +345,7 @@ class ImageController {
 
             if (ranges.size() > 1) {
                 def boundary = startMultipartResponse(ranges, contentType)
-                if (etag) {
-                    response.setHeader(HEADER_ETAG, etag)
-                }
-                if (lastMod) {
-                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
-                }
-                if (cacheHeaders) {
-                    cache(shared: true, neverExpires: true)
-                }
+                applyCacheHeaders(disableCache, cacheHeaders, etag, lastMod)
 
                 // Grails will provide a dummy output stream for HEAD requests but
                 // explicitly bail on HEAD methods so we don't transfer bytes out of storage
@@ -360,15 +372,7 @@ class ImageController {
                 } else {
                     response.setHeader("Accept-Ranges", "bytes")
                 }
-                if (etag) {
-                    response.setHeader(HEADER_ETAG, etag)
-                }
-                if (lastMod) {
-                    response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
-                }
-                if (cacheHeaders) {
-                    cache(shared: true, neverExpires: true)
-                }
+                applyCacheHeaders(disableCache, cacheHeaders, etag, lastMod)
                 response.contentLengthLong = rangeLength
                 response.contentType = contentType
                 if (contentDisposition) {
@@ -398,8 +402,10 @@ class ImageController {
             }
         } catch (ClientAbortException e) {
             // User hung up, just ignore this exception since we can't recover into a nice error response.
+            incrementCounter('image.serve.client_abort', 'Client aborted requests', [type: requestType])
         } catch (Exception e) {
             log.error("Exception serving image", e)
+            recordError('serveImage', [type: requestType, error: e.class.simpleName])
             cache(false)
             if (response.containsHeader(HEADER_LAST_MODIFIED)) {
                 response.setHeader(HEADER_LAST_MODIFIED, '')
@@ -408,6 +414,27 @@ class ImageController {
                 response.setHeader(HEADER_ETAG, '')
             }
             throw e
+        }
+        }
+    }
+
+    private void applyCacheHeaders(boolean disableCache, boolean cacheHeadersEnabled, String etag, Date lastMod) {
+        if (disableCache) {
+            // Replace any cache headers with no-cache headers
+            response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+            response.setHeader('Pragma', 'no-cache')
+            response.setDateHeader('Expires', 0)
+            // Do not emit ETag/Last-Modified when caching is disabled
+            return
+        }
+        if (etag) {
+            response.setHeader(HEADER_ETAG, etag)
+        }
+        if (lastMod) {
+            response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
+        }
+        if (cacheHeadersEnabled) {
+            cache(shared: true, neverExpires: true)
         }
     }
 
@@ -701,7 +728,15 @@ class ImageController {
 
     private def getImageModel(Image image){
         def subimages = Subimage.findAllByParentImage(image)*.subimage
-        def sizeOnDisk = imageStoreService.consumedSpace(image)
+        long sizeOnDisk
+        try {
+            // don't run the calculation on total size here, it could be expensive.
+            // if required, the admin view will still have it.
+//            sizeOnDisk = imageStoreService.consumedSpace(image)
+            sizeOnDisk = image.fileSize
+        } catch (e) {
+            sizeOnDisk = -1
+        }
 
         def userId = authService.userId
 

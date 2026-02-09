@@ -4,14 +4,19 @@ import au.org.ala.images.AuditService
 import au.org.ala.images.DefaultStoragePathStrategy
 import au.org.ala.images.ImageInfo
 import au.org.ala.images.Range
-import au.org.ala.images.StorageLocation
 import au.org.ala.images.StoragePathStrategy
 import au.org.ala.images.util.ByteSinkFactory
 import au.org.ala.images.util.FileByteSinkFactory
 import groovy.transform.EqualsAndHashCode
+import groovy.transform.NamedVariant
+import groovy.util.logging.Slf4j
 import net.lingala.zip4j.io.inputstream.ZipInputStream
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
+import org.apache.tika.config.TikaConfig
+import org.apache.tika.mime.MimeType
+import org.apache.tika.mime.MimeTypeException
+import org.apache.tika.mime.MimeTypes
 
 import java.nio.file.FileVisitOption
 import java.nio.file.Files
@@ -20,9 +25,25 @@ import java.nio.file.Paths
 import java.util.stream.Collectors
 
 @EqualsAndHashCode(includes = ['basePath'])
+@Slf4j
 class FileSystemStorageOperations implements StorageOperations {
 
     String basePath
+    private boolean probeFilesForImageInfo = false
+
+    @NamedVariant
+    FileSystemStorageOperations(String basePath, boolean probeFilesForImageInfo = false) {
+        this.basePath = basePath
+        this.probeFilesForImageInfo = probeFilesForImageInfo
+    }
+
+    boolean isProbeFilesForImageInfo() {
+        return this.probeFilesForImageInfo
+    }
+
+    void setProbeFilesForImageInfo(boolean probe) {
+        this.probeFilesForImageInfo = probe
+    }
 
     @Override
     boolean isSupportsRedirect() {
@@ -183,18 +204,50 @@ class FileSystemStorageOperations implements StorageOperations {
     ImageInfo originalImageInfo(String uuid) {
         def path = createOriginalPathFromUUID(uuid)
         def file = new File(path)
-        if (file.exists()) {
+        def jPath = Paths.get(path)
+        if (Files.exists(jPath)) {
+            String contentType
+            String ext
+            if (probeFilesForImageInfo) {
+                contentType = Files.probeContentType(jPath)
+                ext = getExtensionFromMimeType(contentType)
+            } else {
+                contentType = 'image/jpeg'
+                ext = 'jpg'
+            }
+            long lastModified = Files.getLastModifiedTime(jPath).toMillis()
+            long length = Files.size(jPath)
+            String etag = "${Long.toHexString(lastModified)}-${Long.toHexString(length)}"
             return new ImageInfo(
                     exists: true,
                     imageIdentifier: uuid,
-                    length: file.length(),
-                    lastModified: new Date(file.lastModified()),
-                    contentType: 'image/jpeg',
-                    extension: 'jpg',
+                    length: length,
+                    lastModified: new Date(lastModified),
+                    contentType: contentType,
+                    extension: ext,
+                    etag: etag,
                     inputStreamSupplier: { file.newInputStream() }
             )
         } else {
             return new ImageInfo(exists: false, imageIdentifier: uuid)
+        }
+    }
+
+    static String getExtensionFromMimeType(String mimeTypeName) {
+        try {
+            TikaConfig config = TikaConfig.getDefaultConfig()
+            MimeTypes allTypes = config.getMimeRepository()
+
+            MimeType mimeType = allTypes.forName(mimeTypeName)
+
+            return mimeType.getExtension()
+        } catch (MimeTypeException e) {
+            // Handle cases where the MIME type name is not recognized
+            log.error("Unrecognized MIME type: " + mimeTypeName, e)
+            return ""
+        } catch (Exception e) {
+            log.error("Error getting extension for MIME type: " + mimeTypeName, e)
+            return ""
         }
     }
 

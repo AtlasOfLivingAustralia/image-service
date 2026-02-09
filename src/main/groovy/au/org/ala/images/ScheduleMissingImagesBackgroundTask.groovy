@@ -39,7 +39,7 @@ class ScheduleMissingImagesBackgroundTask extends BackgroundTask {
         def counter = 0
         while (images.next()) {
             def image = (Image) images.get(0)
-            if (!image.stored()) {
+            if (!_imageStoreService.isImageStored(image)) {
                 writer.writeNext((String[])[image.imageIdentifier, image.storageLocation.createOriginalPathFromUUID(image.imageIdentifier), "original-missing"].toArray())
             }
             // TODO directory missing for S3 buckets?
