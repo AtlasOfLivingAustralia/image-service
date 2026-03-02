@@ -46,6 +46,11 @@ class ImageOptimisationServiceSpec extends Specification {
             }
             return res
         }
+
+        @Override
+        ExecResult exec(String cmd, List<String> args, File workingDir, InputStream stdinStream, long timeoutSeconds, OutputStream stdoutStream) {
+            return new ExecResult(exitCode: 0, stdout: '', stderr: '')
+        }
     }
 
     def 'inferFormat normalises image/jpg to jpeg key so per-format toolset runs'() {

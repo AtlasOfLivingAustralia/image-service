@@ -1,0 +1,24 @@
+pluginManagement {
+    repositories {
+        mavenLocal()
+        maven { url "https://repo.grails.org/grails/core/" }
+        gradlePluginPortal()
+    }
+    plugins {
+        id "org.grails.grails-web" version "6.1.0"
+        id "org.grails.grails-gsp" version "6.1.0"
+        id "com.bertramlabs.asset-pipeline" version "4.3.0"
+        id "com.github.erdi.webdriver-binaries" version "3.0"
+    }
+}
+
+rootProject.name = 'image-project'
+
+include 'image-service'
+include 'image-utils'
+
+// Conditionally include FFM modules for Java 22+
+if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_22)) {
+    include 'image-service-ffm'
+    include 'image-service-vips-ffm'
+}

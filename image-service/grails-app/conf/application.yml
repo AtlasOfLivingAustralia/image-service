@@ -436,6 +436,14 @@ images:
   # When true, disable all HTTP caching for image responses and bypass
   # in-memory Caffeine caches for thumbnails and tiles. Default: false
   disableCache: false
+  # Use streaming implementations for tiling and thumbnailing
+  # When enabled, uses external tools (vips, magick) if available, falls back to pure Java
+  useStreamingTiler: false
+  useStreamingThumbnailer: false
+  # Prefer JNA-based tiler and thumbnailer over CLI versions
+  preferJna: true
+  # Tool to use for streaming operations ('vips' or 'magick')
+  streamingTool: 'vips'
   # Image optimisation settings
   optimisation:
     enabled: false

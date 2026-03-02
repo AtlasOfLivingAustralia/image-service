@@ -1,0 +1,109 @@
+name: CI Build and Deploy
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - 'feature/**'
+      - 'hotfix/**'
+  pull_request:
+    branches:
+      - master
+      - develop
+
+env:
+  JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+  GRADLE_OPTS_BASE: -Dgrails.env=ghactions
+  TRAVIS_DEPLOY_USERNAME: ${{ secrets.TRAVIS_DEPLOY_USERNAME }}
+  TRAVIS_DEPLOY_PASSWORD: ${{ secrets.TRAVIS_DEPLOY_PASSWORD }}
+
+jobs:
+  image-utils-build:
+    name: image-utils (JDK 11)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Build image-utils
+        run: ./gradlew :image-utils:build
+
+  image-service-build:
+    name: image-service (JDK 21)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
+      - name: Start ElasticSearch
+        run: docker compose -f image-service/elastic-dc2.yml up -d
+      - name: Wait for services to be ready
+        run: sleep 10
+      - name: Build image-service
+        run: ./gradlew :image-service:build
+      - name: Publish image-service and utils (on push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: ./gradlew :image-service:publish :image-utils:publish
+        env:
+          GRADLE_OPTS: -Dgrails.env=production
+      - name: Stop ElasticSearch
+        if: always()
+        run: docker compose -f image-service/elastic-dc2.yml down
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v5
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'
+
+  ffm-libs-build:
+    name: FFM Libraries (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [22, 25]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ matrix.java }}
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
+      - name: Start ElasticSearch
+        run: docker compose -f image-service/elastic-dc2.yml up -d
+      - name: Wait for services to be ready
+        run: sleep 10
+      - name: Build All Projects
+        run: ./gradlew build
+      - name: Publish FFM libraries (on push, JDK 25 only)
+        if: matrix.java == 25 && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: ./gradlew :image-service-ffm:publish :image-service-vips-ffm:publish
+        env:
+          GRADLE_OPTS: -Dgrails.env=production
+      - name: Stop ElasticSearch
+        if: always()
+        run: docker compose -f image-service/elastic-dc2.yml down
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v5
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'

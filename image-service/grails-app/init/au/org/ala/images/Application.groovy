@@ -3,8 +3,6 @@ package au.org.ala.images
 import au.org.ala.images.config.ImageOptimisationConfig
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
-import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 
 import java.util.concurrent.ExecutorService

@@ -31,7 +31,7 @@ import java.util.List;
 /**
  * Utility class that can generate thumbnails of various sizes based on a {@link au.org.ala.images.thumb.ThumbDefinition} descriptor
  */
-public class ImageThumbnailer {
+public class ImageThumbnailer implements IImageThumbnailer {
 
     private static final Logger log = LoggerFactory.getLogger(ImageThumbnailer.class);
 
@@ -51,41 +51,43 @@ public class ImageThumbnailer {
         return generateThumbnails(imageBytes, new FileByteSinkFactory(destinationDirectory), thumbDefs);
     }
     public List<ThumbnailingResult> generateThumbnails(byte[] imageBytes, ByteSinkFactory byteSinkFactory, List<ThumbDefinition> thumbDefs) throws IOException {
-        return generateThumbnails(ByteSource.wrap(imageBytes), byteSinkFactory, thumbDefs, false);
+        return generateThumbnails(ByteSource.wrap(imageBytes), byteSinkFactory, thumbDefs);
     }
 
-    public List<ThumbnailingResult> generateThumbnails(ByteSource imageBytes, ByteSinkFactory byteSinkFactory, List<ThumbDefinition> thumbDefs, boolean useFileCache) throws IOException {
+    public List<ThumbnailingResult> generateThumbnails(ByteSource imageBytes, ByteSinkFactory byteSinkFactory, List<ThumbDefinition> thumbDefs) throws IOException {
 
-        List<ThumbnailingResult> results = new ArrayList<ThumbnailingResult>();
-
-        // Open stream once and create ImageReader
-        try (InputStream is = imageBytes.openBufferedStream()) {
-            ImageInputStream iis = ImageIO.createImageInputStream(is);
-            if (iis == null) {
-                log.error("Failed to create ImageInputStream");
-                IOUtils.consume(is);
-                return results;
-            }
-
-            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
-            if (!readers.hasNext()) {
-                log.error("No image readers for image!");
-                IOUtils.consume(is);
-                return results;
-            }
-
-            // Use selection strategy to prefer TwelveMonkeys readers
-            ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
-            if (reader == null) {
-                log.error("No suitable image reader selected!");
-                IOUtils.consume(is);
-                return results;
-            }
-            reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading metadata
-
-            generateThumbnailsInternal(byteSinkFactory, thumbDefs, reader, results, null);
-        }
-        return results;
+        // TODO Add some sort of config to enable this
+//        List<ThumbnailingResult> results = new ArrayList<ThumbnailingResult>();
+//
+//        // Open stream once and create ImageReader
+//        try (InputStream is = imageBytes.openBufferedStream()) {
+//            ImageInputStream iis = ImageIO.createImageInputStream(is);
+//            if (iis == null) {
+//                log.error("Failed to create ImageInputStream");
+//                IOUtils.consume(is);
+//                return results;
+//            }
+//
+//            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+//            if (!readers.hasNext()) {
+//                log.error("No image readers for image!");
+//                IOUtils.consume(is);
+//                return results;
+//            }
+//
+//            // Use selection strategy to prefer TwelveMonkeys readers
+//            ImageReader reader = DefaultImageReaderSelectionStrategy.INSTANCE.selectImageReader(readers);
+//            if (reader == null) {
+//                log.error("No suitable image reader selected!");
+//                IOUtils.consume(is);
+//                return results;
+//            }
+//            reader.setInput(iis, true, false); // Set ignoreMetadata to false to allow reading metadata
+//
+//            generateThumbnailsInternal(byteSinkFactory, thumbDefs, reader, results, null);
+//        }
+//        return results;
+        return generateThumbnailsNoIntermediateEncode(imageBytes, byteSinkFactory, thumbDefs);
     }
 
     /**

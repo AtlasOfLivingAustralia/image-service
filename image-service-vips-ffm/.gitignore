@@ -5,6 +5,3 @@ out/
 *.iml
 *.iws
 *.ipr
-
-# Maven specific
-target/

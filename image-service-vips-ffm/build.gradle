@@ -1,0 +1,37 @@
+plugins {
+    id 'groovy'
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'au.org.ala'
+version = '4.2.0-SNAPSHOT'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://nexus.ala.org.au/content/groups/public/" }
+}
+
+java {
+    sourceCompatibility = JavaVersion.toVersion("22")
+    targetCompatibility = JavaVersion.toVersion("22")
+}
+
+dependencies {
+    implementation localGroovy()
+    api 'org.slf4j:slf4j-api:1.7.36'
+    implementation 'com.google.guava:guava:33.2.1-jre'
+    compileOnly project(':image-utils')
+
+    // The lopcode vips-ffm library
+    implementation 'io.github.lopcode:vips-ffm:0.0.3'
+}
+
+compileGroovy {
+    options.compilerArgs << '--enable-preview'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << '--enable-preview'
+}

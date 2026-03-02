@@ -2,10 +2,14 @@ package au.org.ala.images
 
 import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.images.storage.StorageOperations
+import au.org.ala.images.thumb.DelegatingImageThumbnailer
+import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
 import au.org.ala.images.thumb.ThumbnailingResult
+import au.org.ala.images.optimisation.ProcessCommandExecutor
 import au.org.ala.images.tiling.DefaultZoomFactorStrategy
+import au.org.ala.images.tiling.DelegatingImageTiler
 import au.org.ala.images.tiling.IImageTiler
 import au.org.ala.images.tiling.ImageTiler3
 import au.org.ala.images.tiling.ImageTiler4
@@ -112,6 +116,18 @@ class ImageStoreService implements MetricsSupport {
 
     @Value('${images.disableCache:false}')
     boolean disableCache = false
+
+    @Value('${images.useStreamingTiler:false}')
+    boolean useStreamingTiler = false
+
+    @Value('${images.useStreamingThumbnailer:false}')
+    boolean useStreamingThumbnailer = false
+
+    @Value('${images.streamingTool:vips}')
+    String streamingTool = 'vips'
+
+    @Value('${images.preferJna:true}')
+    boolean preferJna = true
 
     @Value('${tiling.tiler.class:}')
     String tilerClassName
@@ -550,7 +566,7 @@ class ImageStoreService implements MetricsSupport {
     private List<ThumbnailingResult> generateThumbnailsImpl(ByteSource byteSource, String imageIdentifier, StorageOperations operations, String type = null) {
         return recordTime('imagestore.thumbnail.generate', 'Time to generate thumbnails', [type: type ?: 'all', count: type == null ? '6' : '1']) {
             def ct = new CodeTimer("Generating ${type != null ? 1 : 6} thumbnails for image ${imageIdentifier}").tap { debug() }
-            def t = new ImageThumbnailer()
+            def t = createThumbnailer()
     //        def imageIdentifier = image.imageIdentifier
             int size = grailsApplication.config.getProperty('imageservice.thumbnail.size') as Integer
             List<ThumbDefinition> thumbDefs = new ArrayList<ThumbDefinition>(type == null ? 6 : 1)
@@ -585,7 +601,7 @@ class ImageStoreService implements MetricsSupport {
             List<ThumbnailingResult> results
             if (thumbnailSemaphore.tryAcquire(thumbnailConcurrencyTimeout, TimeUnit.SECONDS)) {
                 try {
-                    results = t.generateThumbnailsNoIntermediateEncode(
+                    results = t.generateThumbnails(
                             byteSource,
                             operations.thumbnailByteSinkFactory(imageIdentifier),
                             thumbDefs
@@ -680,7 +696,22 @@ class ImageStoreService implements MetricsSupport {
     }
 
     @CompileStatic
+    private IImageThumbnailer createThumbnailer() {
+        if (useStreamingThumbnailer) {
+            log.debug("Creating DelegatingImageThumbnailer with tool: ${streamingTool} (preferJna: ${preferJna})")
+            return new DelegatingImageThumbnailer(new ProcessCommandExecutor(), streamingTool, preferJna)
+        } else {
+            return new ImageThumbnailer()
+        }
+    }
+
+    @CompileStatic
     private IImageTiler createTiler(ImageTilerConfig config) {
+        if (useStreamingTiler) {
+            log.debug("Creating DelegatingImageTiler with tool: ${streamingTool} (preferJna: ${preferJna})")
+            return new DelegatingImageTiler(new ProcessCommandExecutor(), config, streamingTool, preferJna)
+        }
+
         switch (tilerVersion) {
             case TilerVersion.V1:
                 log.trace("Tiler version V1 is deprecated, using V3 instead")

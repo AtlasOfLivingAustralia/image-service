@@ -1,0 +1,53 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'au.org.ala'
+version = '1.12.0-SNAPSHOT'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://nexus.ala.org.au/content/groups/public/" }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(11)
+    }
+}
+
+dependencies {
+    implementation platform('org.apache.tika:tika-bom:3.2.3')
+
+    implementation 'org.apache.commons:commons-lang3:3.18.0'
+    implementation 'commons-io:commons-io:2.16.1'
+    implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
+
+    api 'org.slf4j:slf4j-api:1.7.36'
+    compileOnly 'org.slf4j:slf4j-simple:1.7.36'
+
+    implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-jpeg:3.12.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-tiff:3.12.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-psd:3.12.0'
+
+    implementation 'org.apache.tika:tika-core'
+    implementation 'org.apache.tika:tika-parsers-standard-package'
+
+    implementation 'com.drewnoakes:metadata-extractor:2.18.0'
+    implementation 'org.imgscalr:imgscalr-lib:4.2'
+    implementation 'com.google.guava:guava:32.1.1-jre'
+
+    testImplementation 'junit:junit:4.13.1'
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+}

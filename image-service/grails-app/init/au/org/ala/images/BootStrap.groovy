@@ -1,5 +1,7 @@
 package au.org.ala.images
 
+import au.org.ala.images.factory.ImageLibraryFactory
+import au.org.ala.images.jna.NativeLibraryDetector
 import grails.converters.JSON
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.marshaller.json.DomainClassMarshaller
@@ -73,5 +75,14 @@ class BootStrap {
         })
     }
     def destroy = {
+        ServiceLoader<ImageLibraryFactory> loader = ServiceLoader.load(ImageLibraryFactory)
+        for (ImageLibraryFactory factory : loader) {
+            try {
+                factory.shutdown()
+            } catch (Exception e) {
+                // Ignore errors on shutdown
+            }
+        }
+        NativeLibraryDetector.shutdown()
     }
 }
