@@ -917,6 +917,15 @@ unnest(all_urls) AS unnest_url;
                 //update metadata stored in the `image` table
                 setMetadataOnImage(metadata, image)
 
+                // Store extracted metadata in JSONB column immediately to avoid race condition with optimisation
+                if (imgDesc?.extractedMetadata) {
+                    log.debug("Storing pre-optimisation metadata for image {} with {} keys in JSONB column", image.imageIdentifier, imgDesc.extractedMetadata.size())
+                    image.metadata = convertMetadataToJsonMap(imgDesc.extractedMetadata, MetaDataSourceType.Embedded)
+                } else {
+                    // Mark as processed even if no metadata (empty map vs null indicates migration status)
+                    image.metadata = [:]
+                }
+
                 result = Image.withTransaction {
                     for (storage in defaultStorages) {
                         storage.applyToImage(image)
@@ -928,15 +937,6 @@ unnest(all_urls) AS unnest_url;
                         image = image.save(failOnError: true)
                         log.trace("storeImageBytes: saved new image record ({}:{}) for originalFilename: {}", image.id, image.imageIdentifier, originalFilename)
 
-                        // TODO We need to add a JSONB column to the image table, otherwise we run this in the background task only
-                        // as the size of the metadata items table can be very large and slow down this transaction
-                        // If we have extracted metadata from before optimisation, persist it now
-//                        boolean metadataPersisted = false
-//                        if (imgDesc.extractedMetadata) {
-//                            log.debug("Persisting pre-optimisation metadata for image {} with {} keys", image.id, imgDesc.extractedMetadata.size())
-//                            persistExtractedMetadata(image.id, imgDesc.extractedMetadata, MetaDataSourceType.Embedded)
-//                            metadataPersisted = true
-//                        }
 
                         return new ImageStoreResult(image, preExisting, isDuplicate, false)
                     } catch (Exception ex) {
@@ -988,11 +988,44 @@ unnest(all_urls) AS unnest_url;
         if (!images || !key) {
             return [:]
         }
-        def results = ImageMetaDataItem.executeQuery("select md.value, md.image.id from ImageMetaDataItem md where md.image in (:images) and lower(name) = :key and source=:source", [images: images, key: key.toLowerCase(), source: source])
+
         def fr = [:]
-        results.each {
-            fr[it[1]] = it[0]
+
+        // Try JSONB first for images that have it
+        images.each { image ->
+            if (image.metadata != null) {
+                // Check for key in nested structure: { "key": { "value": "...", "source": "..." } }
+                def metaObj = image.metadata[key]
+                if (metaObj instanceof Map) {
+                    def sourceStr = metaObj.source
+                    // Check if source matches
+                    if (sourceStr == source.toString()) {
+                        fr[image.id] = metaObj.value
+                    }
+                } else if (!metaObj) {
+                    // Try case-insensitive search
+                    def matchingEntry = image.metadata.find { k, v ->
+                        k.equalsIgnoreCase(key) && v instanceof Map && v.source == source.toString()
+                    }
+                    if (matchingEntry?.value instanceof Map) {
+                        fr[image.id] = matchingEntry.value.value
+                    }
+                }
+            }
         }
+
+        // For images not found in JSONB (null metadata), fallback to EAV table
+        def imagesNotInJson = images.findAll { it.metadata == null }
+        if (imagesNotInJson) {
+            def results = ImageMetaDataItem.executeQuery(
+                "select md.value, md.image.id from ImageMetaDataItem md where md.image in (:images) and lower(name) = :key and source=:source",
+                [images: imagesNotInJson, key: key.toLowerCase(), source: source]
+            )
+            results.each {
+                fr[it[1]] = it[0]
+            }
+        }
+
         return fr
     }
 
@@ -1166,7 +1199,13 @@ unnest(all_urls) AS unnest_url;
     }
 
     def scheduleImageMetadataPersist(long imageId, String imageIdentifier, String fileName,  MetaDataSourceType metaDataSourceType, String uploaderId, Map<String, Object> extractedMetadata = null){
-        scheduleBackgroundTask(new ImageMetadataPersistBackgroundTask(imageId, imageIdentifier, fileName, metaDataSourceType, uploaderId, imageService, imageStoreService, extractedMetadata))
+        // Allow disabling background metadata persistence when using JSONB column
+        boolean enableBackgroundPersist = grailsApplication.config.getProperty('images.metadata.legacy.persist.enabled', Boolean, true)
+        if (enableBackgroundPersist) {
+            scheduleBackgroundTask(new ImageMetadataPersistBackgroundTask(imageId, imageIdentifier, fileName, metaDataSourceType, uploaderId, imageService, imageStoreService, extractedMetadata))
+        } else {
+            log.debug("Background metadata persistence disabled by config for image {}", imageId)
+        }
     }
 
     def scheduleBackgroundTask(BackgroundTask task) {
@@ -1531,16 +1570,35 @@ unnest(all_urls) AS unnest_url;
                 return false
             }
 
-            // See if we already have an existing item...
-            def existing = ImageMetaDataItem.findByImageAndNameAndSource(image, key, source)
-            if (existing) {
-                existing.value = value
-                existing.save()
+            // Initialize metadata if null (for existing images)
+            if (image.metadata == null) {
+                image.metadata = [:]
+            }
+
+            // Update JSONB column with nested structure
+            if (value) {
+                image.metadata[key] = [
+                    value: value,
+                    source: source.toString()
+                ]
             } else {
-                if (value){
-                    image.addToMetadata(new ImageMetaDataItem(image: image, name: key, value: value, source: source)).save()
+                image.metadata.remove(key)
+            }
+
+            // Optionally persist to legacy EAV table (for backward compatibility during migration)
+            boolean persistToLegacyTable = grailsApplication.config.getProperty('images.metadata.legacy.persist.enabled', Boolean, true)
+            if (persistToLegacyTable) {
+                def existing = ImageMetaDataItem.findByImageAndNameAndSource(image, key, source)
+                if (existing) {
+                    existing.value = value
+                    existing.save()
+                } else {
+                    if (value){
+                        image.addToMetadataItems(new ImageMetaDataItem(image: image, name: key, value: value, source: source)).save()
+                    }
                 }
             }
+
             return true
         } else {
             log.debug("Not Setting metadata item! Image ${image?.id} key: ${key} value: ${value}")
@@ -1562,6 +1620,15 @@ unnest(all_urls) AS unnest_url;
         if (!userId) {
             userId = "<unknown>"
         }
+
+        // Initialize metadata if null (for existing images)
+        if (image.metadata == null) {
+            image.metadata = [:]
+        }
+
+        // Check if legacy EAV persistence is enabled
+        boolean persistToLegacyTable = grailsApplication.config.getProperty('images.metadata.legacy.persist.enabled', Boolean, true)
+
         metadata.each { kvp ->
             def value = sanitizeString(kvp.value?.toString())
             def key = kvp.key
@@ -1572,16 +1639,23 @@ unnest(all_urls) AS unnest_url;
                     return false
                 }
 
-                // See if we already have an existing item...
-                def existing = ImageMetaDataItem.findByImageAndNameAndSource(image, key, source)
-                if (existing) {
-                    existing.value = value
-                } else {
-//                    log.info("Storing metadata: ${image.title}, name: ${key}, value: ${value}, source: ${source}")
-                    if(key && value) {
-                        def md = new ImageMetaDataItem(image: image, name: key, value: value, source: source)
-                        md.save(failOnError: true)
-                        image.addToMetadata(md)
+                // Update JSONB column with nested structure
+                image.metadata[key] = [
+                    value: value,
+                    source: source.toString()
+                ]
+
+                // Optionally persist to legacy EAV table (for backward compatibility during migration)
+                if (persistToLegacyTable) {
+                    def existing = ImageMetaDataItem.findByImageAndNameAndSource(image, key, source)
+                    if (existing) {
+                        existing.value = value
+                    } else {
+                        if(key && value) {
+                            def md = new ImageMetaDataItem(image: image, name: key, value: value, source: source)
+                            md.save(failOnError: true)
+                            image.addToMetadataItems(md)
+                        }
                     }
                 }
 
@@ -1597,14 +1671,30 @@ unnest(all_urls) AS unnest_url;
     @Transactional
     def removeMetaDataItem(Image image, String key, MetaDataSourceType source, String userId="<unknown>") {
         def count = 0
-        def items = ImageMetaDataItem.findAllByImageAndNameAndSource(image, key, source)
-        if (items) {
-            items.each { md ->
-                count++
-                md.delete()
-            }
-            scheduleImageIndex(image.id)
+
+        // Initialize metadata if null (for existing images)
+        if (image.metadata == null) {
+            image.metadata = [:]
         }
+
+        // Remove from JSONB column
+        image.metadata.remove(key)
+
+        // Check if legacy EAV persistence is enabled
+        boolean persistToLegacyTable = grailsApplication.config.getProperty('images.metadata.legacy.persist.enabled', Boolean, true)
+
+        if (persistToLegacyTable) {
+            def items = ImageMetaDataItem.findAllByImageAndNameAndSource(image, key, source)
+            if (items) {
+                items.each { md ->
+                    count++
+                    md.delete()
+                }
+                scheduleImageIndex(image.id)
+            }
+        }
+
+        image.save()
         auditService.log(image, "Delete metadata item ${key} (${count} items)", userId)
         return count > 0
     }
@@ -1744,36 +1834,57 @@ unnest(all_urls) AS unnest_url;
             return [columnHeaders: ["imageUrl", "occurrenceId"], data: []]
         }
 
-        def c = ImageMetaDataItem.createCriteria()
-        // retrieve just the relevant metadata rows
-        def metaDataRows = c.list {
-            inList("image", images)
-            or {
-                eq("source", MetaDataSourceType.SystemDefined)
-                eq("source", MetaDataSourceType.UserDefined)
+        // Need special handling for images without JSONB metadata to avoid N+1 queries
+        def legacyMetadataImages = images.findAll { it.metadata == null }
+        def metaDataMappedByImage = [:]
+        if (legacyMetadataImages) {
+            log.debug("getHarvestTabularData found ${legacyMetadataImages.size()} images without JSONB metadata")
+            def c = ImageMetaDataItem.createCriteria()
+            // retrieve just the relevant metadata rows
+            def metaDataRows = c.list {
+                inList("image", imgGroup)
+                or {
+                    eq("source", MetaDataSourceType.SystemDefined)
+                    eq("source", MetaDataSourceType.UserDefined)
+                }
             }
-        }
 
-        def metaDataMappedbyImage = metaDataRows.groupBy {
-            it.image.id
+            metaDataMappedByImage = metaDataRows.groupBy { it.image.id }
         }
 
         def columnHeaders = ['imageUrl', 'occurrenceId']
-
         def tabularData = []
 
         images.each { image ->
             def map =  [occurrenceId: image.imageIdentifier, 'imageUrl': imageService.getImageUrl(image.imageIdentifier)]
-            def imageMetadata = metaDataMappedbyImage[image.id]
-            imageMetadata.each { md ->
-                if (md.value) {
-                    map[md.name] = md.value
-                    if (!columnHeaders.contains(md.name)) {
-                        columnHeaders << md.name
+
+            if (metaDataMappedByImage.containsKey(image.id)) {
+                // Get metadata from legacy EAV table
+                def metadataItems = metaDataMappedByImage[image.id]
+                metadataItems.each { md ->
+                    if (md.value) {
+                        map[md.name] = md.value
+                        if (!columnHeaders.contains(md.name)) {
+                            columnHeaders << md.name
+                        }
                     }
                 }
+                tabularData << map
+            } else {
+                // Get metadata using JSONB, EAV table fallback shouldn't be used now
+                def metadataList = getImageMetadata(image)
+
+                // Filter to only SystemDefined and UserDefined sources
+                metadataList.each { md ->
+                    if (md.value && (md.source == MetaDataSourceType.SystemDefined || md.source == MetaDataSourceType.UserDefined)) {
+                        map[md.key] = md.value
+                        if (!columnHeaders.contains(md.key)) {
+                            columnHeaders << md.key
+                        }
+                    }
+                }
+                tabularData << map
             }
-            tabularData << map
         }
 
         return [data: tabularData, columnHeaders: columnHeaders]
@@ -1938,11 +2049,7 @@ unnest(all_urls) AS unnest_url;
         }
 
         if (includeMetadata) {
-            results.metadata = []
-            def metaDataList = ImageMetaDataItem.findAllByImage(image)
-            metaDataList?.each { md ->
-                results.metadata << [key: md.name, value: md.value, source: md.source]
-            }
+            results.metadata = getImageMetadata(image)
         }
     }
 
@@ -2338,5 +2445,118 @@ unnest(all_urls) AS unnest_url;
         if (source && imageIdentifier && deleteSource) {
             source.deleteStored(imageIdentifier)
         }
+    }
+
+    /**
+     * Convert metadata map to JSONB-compatible format.
+     * Structure: { "key": { "value": "...", "source": "Embedded" } }
+     * @param extractedMetadata Raw metadata map
+     * @param source The metadata source type
+     * @return Map suitable for JSONB storage
+     */
+    private Map convertMetadataToJsonMap(Map<String, Object> extractedMetadata, MetaDataSourceType source) {
+        if (!extractedMetadata) {
+            return [:]
+        }
+
+        def result = [:]
+        extractedMetadata.each { key, value ->
+            def cleanedValue = sanitizeString(value)
+            if (cleanedValue && cleanedValue.length() < 8000) {
+                result[key] = [
+                    value: cleanedValue,
+                    source: source.toString()
+                ]
+            }
+        }
+        return result
+    }
+
+    /**
+     * Get metadata for an image, preferring JSONB column but falling back to EAV table.
+     * Returns list of maps with keys: key, value, source
+     * @param image The image to get metadata for
+     * @return List of metadata items
+     */
+    List<Map> getImageMetadata(Image image) {
+        if (image.metadata != null && !image.metadata.isEmpty()) {
+            // Use JSONB column (new way)
+            // Structure: { "key": { "value": "...", "source": "Embedded" } }
+            def results = []
+            image.metadata.each { key, metaObj ->
+                if (metaObj instanceof Map) {
+                    def value = metaObj.value
+                    def sourceStr = metaObj.source
+                    def source = sourceStr ? MetaDataSourceType.valueOf(sourceStr) : MetaDataSourceType.SystemDefined
+                    results << [key: key, value: value, source: source]
+                } else {
+                    // Fallback for unexpected format
+                    results << [key: key, value: metaObj.toString(), source: MetaDataSourceType.SystemDefined]
+                }
+            }
+            return results
+        } else {
+            // Fallback to EAV table (old way)
+            def results = []
+            def metaDataList = ImageMetaDataItem.findAllByImage(image)
+            metaDataList?.each { md ->
+                results << [key: md.name, value: md.value, source: md.source]
+            }
+            return results
+        }
+    }
+
+    /**
+     * Get all distinct metadata keys across all images, with optional source filtering.
+     * Queries both JSONB column and EAV table for complete coverage.
+     * @param source Optional - filter by metadata source type
+     * @return List of distinct metadata keys
+     */
+    List<String> getDistinctMetadataKeys(MetaDataSourceType source = null) {
+        def keys = [] as Set<String>
+
+        // Get keys from JSONB column (for migrated images)
+        Image.withSession { session ->
+            String sql
+            if (source) {
+                sql = """
+                    SELECT DISTINCT kv.key
+                    FROM image i, jsonb_each(i.metadata) AS kv
+                    WHERE i.metadata IS NOT NULL 
+                      AND i.date_deleted IS NULL
+                      AND kv.value->>'source' = :source
+                """
+            } else {
+                sql = """
+                    SELECT DISTINCT jsonb_object_keys(i.metadata)
+                    FROM image i
+                    WHERE i.metadata IS NOT NULL
+                      AND i.date_deleted IS NULL
+                """
+            }
+
+            def query = session.createSQLQuery(sql)
+            if (source) {
+                query.setParameter("source", source.toString())
+            }
+            def jsonbKeys = query.list()
+            if (jsonbKeys) {
+                keys.addAll(jsonbKeys)
+            }
+        }
+
+        // Get keys from EAV table (for unmigrated images)
+        def eavQuery
+        if (source) {
+            eavQuery = "SELECT DISTINCT md.name FROM ImageMetaDataItem md WHERE md.image.dateDeleted IS NULL AND md.source = :source"
+            def eavKeys = ImageMetaDataItem.executeQuery(eavQuery, [source: source])
+            keys.addAll(eavKeys)
+        } else {
+            eavQuery = "SELECT DISTINCT md.name FROM ImageMetaDataItem md WHERE md.image.dateDeleted IS NULL"
+            def eavKeys = ImageMetaDataItem.executeQuery(eavQuery)
+            keys.addAll(eavKeys)
+        }
+
+        return keys.toList().sort { it?.toLowerCase() }
     }
 }
