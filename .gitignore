@@ -53,6 +53,7 @@ temp/
 *.dylib
 
 # Specific to image-service
+.secrets
 image-service/debian/ala-image
 image-service/debian/debhelper-build-stamp
 image-service/debian/files
