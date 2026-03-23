@@ -60,7 +60,7 @@ security:
 #websevice jwt
 webservice:
   jwt: {{ .Values.webservice.enabled }}
-  jwt-scopes:
+  jwt-scopes: ala/internal users/read ala/attrs
   client-id: {{ .Values.webservice.clientId }}
   client-secret: {{ .Values.webservice.secret }}
 
@@ -91,6 +91,20 @@ imageservice:
     root: "{{ .Values.app.url }}/store/"
     multiple_roots:  "{{ .Values.app.url }}/store/"
     exportDir: "/data/image-service/exports"
+  storage:
+    locations: {{ .Values.imageservice.storage.locations }}
+  optimisation:
+    enabled: {{ .Values.imageservice.optimisation.enabled }}
+  metadata:
+    legacy:
+      persist:
+        enabled: {{ .Values.imageservice.metadata.legacy.persist.enabled }}
+    jsonb:
+      migration:
+        enabled: {{ .Values.imageservice.metadata.jsonb.migration.enabled }}
+        startTime: {{ .Values.imageservice.metadata.jsonb.migration.startTime }}
+        endTime: {{ .Values.imageservice.metadata.jsonb.migration.endTime }}
+        maxLoadAverage: {{ .Values.imageservice.metadata.jsonb.migration.maxLoadAverage }}
 
 # skin
 skin:
@@ -142,8 +156,15 @@ userdetails.api.url: {{ .Values.userdetails.api.url }}
 
 aws:
   region: ap-southeast-2
+  s3:
+    force.async: {{ .Values.aws.s3.force.async }}
+    crt.enabled: {{ .Values.aws.s3.crt.enabled }}
+    cloudwatch:
+      metrics:
+        enabled: {{ .Values.aws.s3.cloudwatch.metrics.enabled }}
 
 elasticsearch:
+  tls.disableTrust: {{ .Values.elasticsearch.tls.disableTrust }}
   indexName: {{ .Values.elasticsearch.indexName }}
   username: {{ .Values.elasticsearch.username }}
   password: {{ .Values.elasticsearch.password }}
@@ -151,3 +172,20 @@ elasticsearch:
     - host: {{ .Values.elasticsearch.host }}
       scheme: {{ .Values.elasticsearch.scheme }}
       port: {{ .Values.elasticsearch.port }}
+
+images:
+  disableCache: {{ .Values.images.disableCache }}
+
+iiif.enabled: {{ .Values.iiif.enabled }}
+imageServiceUrls: {{ .Values.imageServiceUrls }}
+management:
+  metrics:
+    export:
+      datadog:
+        enabled: {{ .Values.management.metrics.export.datadog.enabled }}
+      cloudwatch:
+        enabled: {{ .Values.management.metrics.export.cloudwatch.enabled }}
+      statsd:
+        enabled: {{ .Values.management.metrics.export.statsd.enabled }}
+  tags:
+    environment: {{ .Values.tags.environment }}

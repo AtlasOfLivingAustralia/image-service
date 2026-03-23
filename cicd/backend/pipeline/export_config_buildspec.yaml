@@ -12,7 +12,6 @@ env:
     - BASE_STACK_FILE_PFIX
     - BASE_STACK_NAME
     - CODEBUILD_BUILD_NUMBER
-    - CODEBUILD_BUILD_NUMBER
     - COGNITO_STACK_NAME
     - DB_READ_ENDPOINT
     - DB_WRITE_ENDPOINT
@@ -80,12 +79,15 @@ phases:
       - echo EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME
       - export OIDC_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesAppClient'].OutputValue" --output text)
       - echo OIDC_CLIENT_ID=$OIDC_CLIENT_ID
+      - export WEB_SERVICE_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesServerToServerAppClient'].OutputValue" --output text)
+      - echo WEB_SERVICE_CLIENT_ID=$WEB_SERVICE_CLIENT_ID
       - echo SECRET_NAME=$SECRET_NAME
       - echo BASE_STACK_NAME=$BASE_STACK_NAME
       - DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["db-password"]')
       - CAS_CLIENT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["cas-client-secret"]')
       - export USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $COGNITO_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
       - export CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $OIDC_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
+      - export WEB_SERVICE_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $WEB_SERVICE_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
       - export ELASTICSEARCH_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$ELASTICSEARCH_SECRET_NAME" --query 'SecretString' --output text | jq -r '.["password"]')
       - echo creating the configmap for the images deployment...
       - |
@@ -100,11 +102,12 @@ phases:
     commands:
       - echo Entered the build phase...
       - DB_NAME=$PRODUCT_NAME$ENVIRONMENT
-      - DB_HOSTNAME=$([[ "$ENVIRONMENT" == "development" ]] && echo "$CLEAN_BRANCH" || echo "$ENVIRONMENT")
       - |
           if [[ "$ENVIRONMENT" == "production" ]]; then
-            CLIENT_ID=${CAS_CLIENT_ID}
+            OIDC_CLIENT_ID=${CAS_CLIENT_ID}
             CLIENT_SECRET=${CAS_CLIENT_SECRET}
+            WEB_SERVICE_CLIENT_ID=${CAS_CLIENT_ID}
+            WEB_SERVICE_CLIENT_SECRET=${CAS_CLIENT_SECRET}
           fi
       - |
         echo "
@@ -115,6 +118,7 @@ phases:
             name: elasticsearch-images-${CLEAN_BRANCH}
           single_node_es: ${SINGLE_NODE_ES}
         elasticsearch:
+          tls.disableTrust: ${ELASTICSEARCH_DISABLE_TLS_TRUST_VERIFICATION}
           host: "${ELASTICSEARCH_HOST}"
           indexName: "${INDEX_NAME}"
           username: "${ELASTICSEARCH_USERNAME}"
@@ -147,6 +151,8 @@ phases:
             enabled: $JWT_FALLBACK_TO_LEGACY
         webservice:
           enabled: $WEB_SERVICE_ENABLED
+          clientId: $WEB_SERVICE_CLIENT_ID
+          secret: $WEB_SERVICE_CLIENT_SECRET
         apikey:
           enabled: $APIKEY_ENABLED
           auth:
@@ -186,6 +192,43 @@ phases:
           branch: "${CLEAN_BRANCH}"
           version: "${COMMIT_ID}"
           Name: "${HELM_RELEASE_NAME}"
+        aws:
+          s3:
+            force.async: ${IMAGE_SERVICE_S3_FORCE_ASYNC}
+            crt.enabled: ${IMAGE_SERVICE_S3_USE_CRT_ASYNC}
+            cloudwatch:
+              metrics:
+                enabled: ${IMAGE_SERVICE_S3_CLOUDWATCH_METRICS_ENABLED}
+        imageservice:
+          storage: 
+            locations: ${IMAGE_SERVICE_STORAGE_LOCATIONS}
+          optimisation:
+            enabled: ${IMAGE_SERVICE_IMAGE_OPTIMISATION_ENABLED}
+          metadata:
+            legacy:
+              persist:
+                enabled: ${IMAGE_SERVICE_METADATA_LEGACY_PERSIST_ENABLED}
+            jsonb:
+              migration:
+                enabled: ${IMAGE_SERVICE_METADATA_JSONB_MIGRATION_ENABLED}
+                startTime: ${IMAGE_SERVICE_METADATA_JSONB_MIGRATION_START_TIME}
+                endTime: ${IMAGE_SERVICE_METADATA_JSONB_MIGRATION_END_TIME}
+                maxLoadAverage: ${IMAGE_SERVICE_METADATA_JSONB_MAX_LOAD_AVERAGE}
+        images:
+          disableCache: ${IMAGE_SERVICE_DISABLE_CACHE}
+        iiif.enabled: ${IMAGE_SERVICE_IIIF_ENABLED}
+        imageServiceUrls: ${IMAGE_SERVICE_URLS}
+        management:
+          metrics:
+            export:
+              datadog:
+                enabled: ${IMAGE_SERVICE_METRICS_DATADOG_ENABLED}
+              cloudwatch:
+                enabled: ${IMAGE_SERVICE_METRICS_CLOUDWATCH_ENABLED}
+              statsd:
+                enabled: ${IMAGE_SERVICE_METRICS_STATSD_ENABLED}
+          tags:
+            environment: "${DATADOG_APM_ENVIRONMENT}"
         resources:
           requests:
             cpu: ${CPU_REQUEST}

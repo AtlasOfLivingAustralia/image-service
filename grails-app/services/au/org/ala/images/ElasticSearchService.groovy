@@ -91,15 +91,6 @@ class ElasticSearchService implements MetricsSupport {
             new BasicHeader(it.name, it.value)
         }
 
-        SSLContext sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, [
-                new X509TrustManager() {
-                    @Override void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
-                    @Override void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
-                    @Override java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0] }
-                }
-        ] as TrustManager[], new SecureRandom())
-
         def restClient = RestClient.builder(*hosts)
                 .setHttpClientConfigCallback { httpClientBuilder ->
                     if (credentialsProvider) {

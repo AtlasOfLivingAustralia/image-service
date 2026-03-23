@@ -186,6 +186,8 @@ elasticsearch:
   username: ""
   password: ""
   scheme: "https"
+  tls:
+    disableTrust:
 
 elasticsearch-images:
   deployment:
@@ -205,3 +207,43 @@ elasticsearch-images:
     accessMode: ReadWriteOnce
     size: 10Gi
   single_node_es: false
+
+imageservice:
+  storage:
+    locations: []
+  optimisation:
+    enabled: false
+  metadata:
+    legacy:
+      persist:
+        enabled: false
+    jsonb:
+      migration:
+        enabled: false
+        startTime:
+        endTime:
+        maxLoadAverage:
+aws:
+  s3:
+    force.async:
+    crt.enabled:
+    cloudwatch:
+      metrics:
+        enabled:
+
+images:
+  disableCache: false
+
+iiif.enabled: false
+imageServiceUrls:
+management:
+  metrics:
+    export:
+      datadog:
+        enabled: false
+      cloudwatch:
+        enabled: false
+      statsd:
+        enabled: false
+  tags:
+    environment:

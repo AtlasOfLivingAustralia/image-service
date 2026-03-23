@@ -227,6 +227,50 @@ Resources:
       UserPoolId: !ImportValue
         Fn::Sub: ${pCognitoStackName}-UserPoolId
 
+  AppClientImagesServer:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AccessTokenValidity: 60
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthFlowsUserPoolClient: True
+      AllowedOAuthScopes:
+        - ala/internal
+        - ala/attrs
+        - users/read
+      AuthSessionValidity: 3
+      CallbackURLs:
+        - !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+      ClientName: !Sub
+        - ${pProductName}-${ResourceName}-server-to-server
+        - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+      DefaultRedirectURI: !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+      EnablePropagateAdditionalUserContextData: True
+      EnableTokenRevocation: True
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      GenerateSecret: True
+      IdTokenValidity: 60
+      LogoutURLs:
+        - !Sub "https://${pAppClientDomain}"
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      SupportedIdentityProviders:
+        - COGNITO
+        - Facebook
+        - Google
+        - AAF
+        - SignInWithApple
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      UserPoolId: !ImportValue
+        Fn::Sub: ${pCognitoStackName}-UserPoolId
+
   LoadBalancerAccessLogsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -292,6 +336,10 @@ Outputs:
   ImagesAppClient:
     Description: The app client for the Image service
     Value: !Ref AppClient
+
+  ImagesServerToServerAppClient:
+    Description: The app client for the images server to server service
+    Value: !Ref AppClientImagesServer
 
   LoadBalancerAccessLogsBucket:
     Description: The S3 bucket for the Load Balancer access logs
