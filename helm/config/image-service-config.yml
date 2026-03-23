@@ -176,7 +176,8 @@ elasticsearch:
 images:
   disableCache: {{ .Values.images.disableCache }}
 
-iiif.enabled: {{ .Values.iiif.enabled }}
+iiif:
+  enabled: {{ .Values.iiif.enabled }}
 imageServiceUrls: {{ .Values.imageServiceUrls }}
 management:
   metrics:

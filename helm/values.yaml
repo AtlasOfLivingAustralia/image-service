@@ -236,7 +236,8 @@ aws:
 images:
   disableCache: false
 
-iiif.enabled: false
+iiif:
+  enabled: false
 imageServiceUrls:
 management:
   metrics:
