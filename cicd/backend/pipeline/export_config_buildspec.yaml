@@ -194,8 +194,10 @@ phases:
           Name: "${HELM_RELEASE_NAME}"
         aws:
           s3:
-            force.async: ${IMAGE_SERVICE_S3_FORCE_ASYNC}
-            crt.enabled: ${IMAGE_SERVICE_S3_USE_CRT_ASYNC}
+            force:
+              async: ${IMAGE_SERVICE_S3_FORCE_ASYNC}
+            crt:
+              enabled: ${IMAGE_SERVICE_S3_USE_CRT_ASYNC}
             cloudwatch:
               metrics:
                 enabled: ${IMAGE_SERVICE_S3_CLOUDWATCH_METRICS_ENABLED}

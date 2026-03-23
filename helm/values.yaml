@@ -225,8 +225,10 @@ imageservice:
         maxLoadAverage:
 aws:
   s3:
-    force.async:
-    crt.enabled:
+    force:
+      async:
+    crt:
+      enabled:
     cloudwatch:
       metrics:
         enabled:
