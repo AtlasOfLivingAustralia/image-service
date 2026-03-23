@@ -218,7 +218,8 @@ phases:
                 maxLoadAverage: ${IMAGE_SERVICE_METADATA_JSONB_MAX_LOAD_AVERAGE}
         images:
           disableCache: ${IMAGE_SERVICE_DISABLE_CACHE}
-        iiif.enabled: ${IMAGE_SERVICE_IIIF_ENABLED}
+        iiif:
+          enabled: ${IMAGE_SERVICE_IIIF_ENABLED}
         imageServiceUrls: ${IMAGE_SERVICE_URLS}
         management:
           metrics:
