@@ -25,7 +25,7 @@ class SearchController {
 
     def list() {
 
-        def ct = new CodeTimer("Image list")
+        def ct = new CodeTimer("Image list").tap { debug() }
 
         params.offset = params.offset ?: 0
         params.max = params.max ?: 50

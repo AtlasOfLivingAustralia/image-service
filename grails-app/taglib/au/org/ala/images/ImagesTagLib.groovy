@@ -368,12 +368,24 @@ class ImagesTagLib {
     }
 
     /**
-     * @attr metaDataItem The metadata item whose value is to be rendered
+     * @attr metaDataItem The metadata item whose value is to be rendered (can be ImageMetaDataItem or Map)
      */
     def renderMetaDataValue = { attrs, body ->
-        ImageMetaDataItem md = attrs.metaDataItem as ImageMetaDataItem
+        def md = attrs.metaDataItem
         if (md) {
-            out << sanitiserService.sanitise(new MetaDataValueFormatRules(grailsApplication).formatValue(md))
+            // Handle both Map format (from JSONB) and ImageMetaDataItem objects (from EAV)
+            def metaDataItem
+            if (md instanceof Map) {
+                // Create a pseudo-ImageMetaDataItem from the map for formatting
+                metaDataItem = new ImageMetaDataItem(
+                    name: md.key,
+                    value: md.value,
+                    source: md.source
+                )
+            } else {
+                metaDataItem = md as ImageMetaDataItem
+            }
+            out << sanitiserService.sanitise(new MetaDataValueFormatRules(grailsApplication).formatValue(metaDataItem))
         }
     }
 

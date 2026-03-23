@@ -332,7 +332,7 @@ class ImageStoreService implements MetricsSupport {
                         }
                     }
                 } catch (Throwable t) {
-                    log.warn('Image optimisation failed for {}: {}', uuid, t.message)
+                    log.warn('Image optimisation failed for {}: {}', uuid, t.message, t)
                 }
             }
 
@@ -549,7 +549,7 @@ class ImageStoreService implements MetricsSupport {
 
     private List<ThumbnailingResult> generateThumbnailsImpl(ByteSource byteSource, String imageIdentifier, StorageOperations operations, String type = null) {
         return recordTime('imagestore.thumbnail.generate', 'Time to generate thumbnails', [type: type ?: 'all', count: type == null ? '6' : '1']) {
-            def ct = new CodeTimer("Generating ${type != null ? 1 : 6} thumbnails for image ${imageIdentifier}")
+            def ct = new CodeTimer("Generating ${type != null ? 1 : 6} thumbnails for image ${imageIdentifier}").tap { debug() }
             def t = new ImageThumbnailer()
     //        def imageIdentifier = image.imageIdentifier
             int size = grailsApplication.config.getProperty('imageservice.thumbnail.size') as Integer

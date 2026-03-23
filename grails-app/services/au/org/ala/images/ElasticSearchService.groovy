@@ -173,7 +173,7 @@ class ElasticSearchService implements MetricsSupport {
 
             try {
                 log.debug("Indexing image {}", image.id)
-                def ct = new CodeTimer("Index Image ${image.id}")
+                def ct = new CodeTimer("Index Image ${image.id}").tap { debug() }
                 // only add the fields that are searchable. They are marked with an annotation
                 def fields = Image.class.declaredFields
                 def data = [:]
@@ -807,7 +807,7 @@ class ElasticSearchService implements MetricsSupport {
         boolQueryBuilder
     }
 
-    def filtered = ['class', 'active', 'metaClass', 'tags', 'keywords', 'metadata']
+    def filtered = ['class', 'active', 'metaClass', 'tags', 'keywords', 'metadata', 'metadataItems']
 
     Map asMap(Image image) {
 
@@ -850,7 +850,7 @@ class ElasticSearchService implements MetricsSupport {
             ct = new CodeTimer("Object retrieval (${searchResponse.hits().hits().size()} of ${searchResponse.hits().total().value()} hits)")
             final hitsIdList = searchResponse.hits() ? searchResponse.hits().hits()*.id() : []
             final imageList = hitsIdList ? Image.findAllByImageIdentifierInList(hitsIdList)?.collect { image ->
-                image.metadata = null
+                image.metadataItems = null
                 image.tags = null
                 asMap(image)
             } ?: [] : []

@@ -5,7 +5,6 @@ import grails.gorm.async.AsyncEntity
 import grails.util.Holders
 import org.codehaus.groovy.runtime.StackTraceUtils
 
-//import net.kaleidos.hibernate.usertype.ArrayType
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 
 class Image implements AsyncEntity<Image> {
@@ -84,8 +83,13 @@ class Image implements AsyncEntity<Image> {
     String[] alternateFilename = []
     String storageLocationName
 
+    // New JSONB column for storing metadata (replaces EAV table image_meta_data_item)
+    // Null = not yet migrated, empty map = migrated but no metadata
+    // Structure: { "key": { "value": "...", "source": "Embedded" } }
+    Map metadata
+
     static belongsTo = [ storageLocation: StorageLocation ]
-    static hasMany = [keywords:ImageKeyword, metadata: ImageMetaDataItem, tags: ImageTag, outSourcedJobs: OutsourcedJob]
+    static hasMany = [keywords:ImageKeyword, metadataItems: ImageMetaDataItem, tags: ImageTag, outSourcedJobs: OutsourcedJob]
 
     static constraints = {
         parent nullable: true
@@ -132,6 +136,7 @@ class Image implements AsyncEntity<Image> {
 
         storageLocation nullable: true
         storageLocationName nullable: true
+        metadata nullable: true // null = not yet migrated, empty map = migrated but no metadata
 
         storageLocationName(nullable: true, validator: { val, obj ->
             return (val || obj.storageLocation != null)
@@ -147,6 +152,7 @@ class Image implements AsyncEntity<Image> {
         originalFilename index: 'image_originalfilename_idx'
         alternateFilename type: ArrayType, params: [type: String], index: 'image_alternatefilename_idx'
         storageLocationName index: 'idx_image_storage_location_name'
+        metadata type: JsonbMapType, index: 'idx_image_metadata'
 
         description length: 8096
         references column: "dc_references",  length: 1024
@@ -155,7 +161,7 @@ class Image implements AsyncEntity<Image> {
         source length: 1024
         audience length: 1024
 
-        metadata cascade: 'all'
+        metadataItems cascade: 'all'
         cache true
         storageLocation cache: true
     }
