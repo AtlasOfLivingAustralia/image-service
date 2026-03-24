@@ -1,6 +1,8 @@
 package au.org.ala.images.vipsffm
 
+import app.photofox.vipsffm.Vips
 import au.org.ala.images.factory.ImageLibraryFactory
+import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.tiling.IImageTiler
@@ -34,14 +36,9 @@ class VipsFfmLibraryFactoryImpl implements ImageLibraryFactory {
         if (initialized) return
         try {
             // Attempt to initialize lopcode/vips-ffm
-            // Based on library intent, it has a Vips class
-            int result = vips.ffm.Vips.vips_init("image-service")
-            available = (result == 0)
-            if (available) {
-                log.info("VipsFfmLibraryFactoryImpl initialized (lopcode/vips-ffm)")
-            } else {
-                log.warn("lopcode/vips-ffm vips_init failed")
-            }
+            Vips.init()
+            available = true
+            log.info("VipsFfmLibraryFactoryImpl initialized (lopcode/vips-ffm)")
         } catch (Throwable e) {
             log.warn("VipsFfmLibraryFactoryImpl (lopcode/vips-ffm) not available: {}", e.message)
             available = false
@@ -67,6 +64,11 @@ class VipsFfmLibraryFactoryImpl implements ImageLibraryFactory {
     }
 
     @Override
+    IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback) {
+        return null
+    }
+
+    @Override
     int getPriority() {
         return 25 // Prefer over our custom FFM (20) and JNA (10)
     }
@@ -80,7 +82,7 @@ class VipsFfmLibraryFactoryImpl implements ImageLibraryFactory {
     void shutdown() {
         if (available) {
             try {
-                vips.ffm.Vips.vips_shutdown()
+                Vips.shutdown()
                 log.info("lopcode/vips-ffm shutdown complete")
             } catch (Throwable e) {
                 log.warn("Error during lopcode/vips-ffm shutdown: {}", e.message)

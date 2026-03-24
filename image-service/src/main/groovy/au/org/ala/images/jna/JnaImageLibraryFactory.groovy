@@ -1,6 +1,8 @@
 package au.org.ala.images.jna;
 
 import au.org.ala.images.factory.ImageLibraryFactory;
+import au.org.ala.images.iiif.IiifImageProcessor;
+import au.org.ala.images.iiif.JnaIiifImageProcessor;
 import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.IImageThumbnailer;
 import au.org.ala.images.thumb.JnaStreamingImageThumbnailer;
@@ -47,6 +49,14 @@ public class JnaImageLibraryFactory implements ImageLibraryFactory {
                 new ImageTiler(config);
                 
         return new JnaStreamingImageTiler(cliFallback, tileSize);
+    }
+
+    @Override
+    public IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return new JnaIiifImageProcessor(fallback);
     }
 
     @Override

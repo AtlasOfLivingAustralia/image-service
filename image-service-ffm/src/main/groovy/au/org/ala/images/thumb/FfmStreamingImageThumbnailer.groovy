@@ -84,7 +84,19 @@ class FfmStreamingImageThumbnailer implements IImageThumbnailer {
         try (Arena sessionArena = Arena.ofConfined()) {
             // Create streaming source from ByteSource
             InputStream inputStream = imageBytes.openStream()
-            vipsSource = new InputStreamVipsSourceFFM(vips, inputStream)
+            try {
+                vipsSource = new InputStreamVipsSourceFFM(vips, inputStream)
+                // Ownership of the stream is now with vipsSource; prevent it from being closed here
+                inputStream = null
+            } finally {
+                if (inputStream != null) {
+                    try {
+                        inputStream.close()
+                    } catch (IOException ioe) {
+                        log.warn("Failed to close input stream after libvips initialization failure", ioe)
+                    }
+                }
+            }
 
             // Load image from source - this streams the data without buffering entire image
             inputImage = vips.vipsImageNewFromSource(vipsSource.getSource(), "")

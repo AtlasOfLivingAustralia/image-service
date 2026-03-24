@@ -53,6 +53,9 @@ class JnaStreamingImageTiler implements IImageTiler {
             return tileWithVipsJna(imageInputStream, tilerSink, minLevel, maxLevel)
         } catch (Exception e) {
             log.error("JNA tiling failed, trying fallback", e)
+            if (fallbackTiler == null) {
+                throw e
+            }
             // Reset the input stream if possible
             if (imageInputStream.markSupported()) {
                 imageInputStream.reset()
@@ -90,12 +93,13 @@ class JnaStreamingImageTiler implements IImageTiler {
 
             // Call vips_dzsave to generate tiles
             // Parameters: tile-size, overlap, suffix, depth, layout
+            // Enum values: depth: onetile=1, layout: google=2
             int result = vips.vips_dzsave(inputImage, tilesBase.absolutePath,
-                    "tile-size", Integer.toString(tileSize),
-                    "overlap", "0",
+                    "tile-size", tileSize,
+                    "overlap", 0,
                     "suffix", ".png",
-                    "depth", "onetile",
-                    "layout", "google",
+                    "depth", 1,
+                    "layout", 2,
                     null)
 
             if (result != 0) {
@@ -105,9 +109,15 @@ class JnaStreamingImageTiler implements IImageTiler {
             }
 
             // Parse the generated tiles and copy them to the tiler sink
-            File tilesDir = new File(tempOutDir, 'tiles_files')
+            // For 'google' layout, tiles are directly in the base directory
+            File tilesDir = tilesBase
             if (!tilesDir.exists() || !tilesDir.isDirectory()) {
-                throw new IOException("vips_dzsave did not create expected tiles directory: ${tilesDir.absolutePath}")
+                // Some versions/layouts might still use _files suffix
+                tilesDir = new File(tempOutDir, 'tiles_files')
+            }
+
+            if (!tilesDir.exists() || !tilesDir.isDirectory()) {
+                throw new IOException("vips_dzsave did not create expected tiles directory: ${tilesBase.absolutePath} or ${tilesDir.absolutePath}")
             }
 
             // Copy tiles from vips output to tiler sink (same logic as process-based version)

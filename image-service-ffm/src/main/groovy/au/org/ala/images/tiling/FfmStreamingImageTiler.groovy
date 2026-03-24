@@ -47,13 +47,21 @@ class FfmStreamingImageTiler implements IImageTiler {
             throw new IllegalArgumentException("Invalid min/max levels")
         }
 
+        // Mark the stream so we can safely reset on FFM failure, if supported
+        if (imageInputStream.markSupported()) {
+            imageInputStream.mark(Integer.MAX_VALUE)
+        }
         try {
             return tileWithVipsFFM(imageInputStream, tilerSink, minLevel, maxLevel)
         } catch (Exception e) {
             log.error("FFM tiling failed, trying fallback", e)
-            // Reset the input stream if possible
+            // Reset the input stream if possible, but do not let failures prevent fallback
             if (imageInputStream.markSupported()) {
-                imageInputStream.reset()
+                try {
+                    imageInputStream.reset()
+                } catch (IOException resetEx) {
+                    log.warn("Failed to reset image input stream after FFM tiling failure; proceeding with fallback anyway", resetEx)
+                }
             }
             return fallbackTiler.tileImage(imageInputStream, tilerSink, minLevel, maxLevel)
         }

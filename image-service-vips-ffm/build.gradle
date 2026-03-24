@@ -4,13 +4,11 @@ plugins {
     id 'maven-publish'
 }
 
-group = 'au.org.ala'
-version = '4.2.0-SNAPSHOT'
-
 repositories {
     mavenLocal()
     mavenCentral()
     maven { url "https://nexus.ala.org.au/content/groups/public/" }
+    maven { url "https://jitpack.io" }
 }
 
 java {
@@ -23,9 +21,26 @@ dependencies {
     api 'org.slf4j:slf4j-api:1.7.36'
     implementation 'com.google.guava:guava:33.2.1-jre'
     compileOnly project(':image-utils')
+    testImplementation project(':image-utils')
 
     // The lopcode vips-ffm library
-    implementation 'io.github.lopcode:vips-ffm:0.0.3'
+    implementation 'app.photofox.vips-ffm:vips-ffm-core:1.9.5'
+
+    // Testing
+    testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    jvmArgs = [
+        '--enable-preview',
+        '--enable-native-access=ALL-UNNAMED'
+    ]
+    testLogging {
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
 }
 
 compileGroovy {

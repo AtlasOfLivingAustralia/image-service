@@ -1,6 +1,7 @@
 package au.org.ala.images.ffm
 
 import au.org.ala.images.factory.ImageLibraryFactory
+import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.thumb.FfmStreamingImageThumbnailer
 import au.org.ala.images.thumb.IImageThumbnailer
@@ -42,6 +43,14 @@ class FfmLibraryFactoryImpl implements ImageLibraryFactory {
         }
         int tileSize = config?.tileSize ?: 256
         return new FfmStreamingImageTiler(fallbackTiler, tileSize)
+    }
+
+    @Override
+    IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback) {
+        if (!isAvailable()) {
+            return null
+        }
+        return new FfmIiifImageProcessor(fallback)
     }
 
     @Override

@@ -1,9 +1,10 @@
 package au.org.ala.images.factory;
 
+import au.org.ala.images.iiif.IiifImageProcessor;
+import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.IImageThumbnailer;
 import au.org.ala.images.tiling.IImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
-import au.org.ala.images.optimisation.CommandExecutor;
 
 /**
  * Common interface for image processing library factories.
@@ -34,6 +35,13 @@ public interface ImageLibraryFactory {
      * @return tiler or null if not supported by this factory
      */
     IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, String tool, IImageTiler fallback);
+
+    /**
+     * Create an IIIF image processor.
+     * @param fallback fallback implementation
+     * @return IIIF processor or null if not supported by this factory
+     */
+    IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback);
 
     /**
      * Get the priority of this factory. Higher values are preferred.

@@ -190,12 +190,15 @@ class InputStreamVipsSource implements AutoCloseable {
                 }
             }
 
-            // Close the underlying stream
+            // Do NOT close the underlying stream here, as it may be needed for fallback
+            // The caller who provided the InputStream should be responsible for closing it.
+            /*
             try {
                 inputStream.close()
             } catch (IOException e) {
                 log.debug("Error closing InputStream", e)
             }
+            */
         }
     }
 

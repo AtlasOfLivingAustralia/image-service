@@ -4,9 +4,6 @@ plugins {
     id 'maven-publish'
 }
 
-group = 'au.org.ala'
-version = '4.2.0-SNAPSHOT'
-
 repositories {
     mavenLocal()
     mavenCentral()
@@ -35,6 +32,10 @@ dependencies {
 
     // Core image-service interfaces (for IImageThumbnailer, IImageTiler, etc.)
     compileOnly project(':image-utils')
+
+    // Testing
+    testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // jextract tool for build-time binding generation
     jextract 'org.openjdk.jextract:jextract:22.0.1'
@@ -107,6 +108,18 @@ task generateVipsBindings(type: JavaExec) {
 // Make compileJava depend on binding generation
 // This is optional - bindings can be generated manually
 // compileJava.dependsOn generateVipsBindings
+
+test {
+    useJUnitPlatform()
+    jvmArgs = [
+        '--enable-preview',
+        '--enable-native-access=ALL-UNNAMED'
+    ]
+    testLogging {
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
+}
 
 compileGroovy {
     // Ensure we can access Java 22+ features

@@ -76,7 +76,13 @@ class StreamingImageTiler implements IImageTiler {
         }
 
         // Parse the generated tiles and copy them to the tiler sink
-        File tilesDir = new File(outputDir, 'tiles_files')
+        // For 'google' layout, tiles are directly in the base directory
+        File tilesDir = new File(outputDir, 'tiles')
+        if (!tilesDir.exists() || !tilesDir.isDirectory()) {
+            // Some versions/layouts might still use _files suffix
+            tilesDir = new File(outputDir, 'tiles_files')
+        }
+
         if (!tilesDir.exists() || !tilesDir.isDirectory()) {
             log.error("vips did not create expected tiles directory: ${tilesDir.absolutePath}")
             return new ImageTilerResults(false, 0)

@@ -1,5 +1,9 @@
 package au.org.ala.images.vipsffm
 
+import app.photofox.vipsffm.VImage
+import app.photofox.vipsffm.VSource
+import app.photofox.vipsffm.VTarget
+import app.photofox.vipsffm.VipsOption
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
 import au.org.ala.images.thumb.ThumbnailingResult
@@ -8,9 +12,6 @@ import com.google.common.io.ByteSink
 import com.google.common.io.ByteSource
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
-import vips.ffm.VipsImage
-import vips.ffm.VipsSource
-import vips.ffm.VipsTarget
 
 import java.awt.Color
 import java.lang.foreign.Arena
@@ -64,17 +65,15 @@ class VipsFfmStreamingImageThumbnailer implements IImageThumbnailer {
 
         try (var arena = Arena.ofConfined()) {
             try (InputStream inputStream = imageBytes.openStream()) {
-                VipsSource source = VipsSource.newFromStream(arena, inputStream)
-                VipsImage image = VipsImage.newFromSource(source, "")
+                VImage image = VImage.newFromStream(arena, inputStream)
 
                 // Call thumbnail operation
-                VipsImage thumb = callVipsThumbnail(image, thumbDef, size, backgroundColor)
+                VImage thumb = callVipsThumbnail(image, thumbDef, size, backgroundColor)
 
                 // Save to target (streaming output)
                 String suffix = thumbDef.name.endsWith('.png') ? '.png' : '.jpg[Q=85]'
                 try (OutputStream outputStream = destination.openStream()) {
-                    VipsTarget target = VipsTarget.newToStream(arena, outputStream)
-                    thumb.writeToTarget(suffix, target)
+                    thumb.writeToStream(outputStream, suffix)
                 }
 
                 // Get actual dimensions
@@ -91,20 +90,20 @@ class VipsFfmStreamingImageThumbnailer implements IImageThumbnailer {
     /**
      * Call vips thumbnail operation with appropriate options.
      */
-    private VipsImage callVipsThumbnail(VipsImage inputImage, ThumbDefinition thumbDef, int size, Color backgroundColor) {
+    private VImage callVipsThumbnail(VImage inputImage, ThumbDefinition thumbDef, int size, Color backgroundColor) {
         // Based on JNA implementation, we try to match the logic
         if (thumbDef.square && thumbDef.centreCrop) {
             // Centre crop to square
-            return inputImage.thumbnail(size, "height", size, "crop", "centre")
+            return inputImage.thumbnailImage(size, VipsOption.Int("height", size), VipsOption.String("crop", "centre"))
         } else if (thumbDef.square) {
             // Fit within square
-            return inputImage.thumbnail(size, "height", size)
+            return inputImage.thumbnailImage(size, VipsOption.Int("height", size))
         } else if (thumbDef.width != -1) {
             // Specific width
-            return inputImage.thumbnail(thumbDef.width)
+            return inputImage.thumbnailImage(thumbDef.width)
         } else {
             // Default: fit within size x size
-            return inputImage.thumbnail(size)
+            return inputImage.thumbnailImage(size)
         }
     }
 

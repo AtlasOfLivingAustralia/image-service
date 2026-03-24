@@ -3,9 +3,6 @@ plugins {
     id 'maven-publish'
 }
 
-group = 'au.org.ala'
-version = '1.12.0-SNAPSHOT'
-
 repositories {
     mavenLocal()
     mavenCentral()

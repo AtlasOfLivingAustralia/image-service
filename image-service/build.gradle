@@ -1,21 +1,17 @@
 plugins {
     id "groovy"
-    id "org.grails.grails-gsp"
-    id "org.grails.grails-web"
+    id "org.grails.grails-web" version "6.2.3"
+    id "org.grails.grails-gsp" version "6.2.3"
     id "com.github.erdi.webdriver-binaries" version "3.2"
     id "war"
     id "idea"
-    id "com.bertramlabs.asset-pipeline"
+    id "com.bertramlabs.asset-pipeline" version "4.3.0"
     id "application"
     id "eclipse"
     id "maven-publish"
     id "com.gorylenko.gradle-git-properties" version "2.5.4"
     id "org.flywaydb.flyway" version "9.4.0"
 }
-
-version "4.2.0-SNAPSHOT"
-
-group "au.org.ala"
 
 repositories {
     mavenLocal()

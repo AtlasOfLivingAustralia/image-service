@@ -81,6 +81,7 @@ class BootStrap {
                 factory.shutdown()
             } catch (Exception e) {
                 // Ignore errors on shutdown
+                log.warn("Error during shutdown of ImageLibraryFactory ${factory}: ${e.message}", e)
             }
         }
         NativeLibraryDetector.shutdown()

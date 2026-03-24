@@ -81,6 +81,7 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
         int size = thumbDef.maximumDimension
         Color backgroundColor = thumbDef.backgroundColor
 
+        InputStream inputStream = null
         InputStreamVipsSource vipsSource = null
         OutputStreamVipsTarget vipsTarget = null
         Pointer inputImage = null
@@ -88,7 +89,7 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
 
         try {
             // Create streaming source from ByteSource
-            InputStream inputStream = imageBytes.openStream()
+            inputStream = imageBytes.openStream()
             vipsSource = new InputStreamVipsSource(vips, inputStream)
 
             // Load image from source - this streams the data without buffering entire image
@@ -151,6 +152,13 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
             if (vipsSource != null) {
                 vipsSource.close()
             }
+            if (inputStream != null) {
+                try {
+                    inputStream.close()
+                } catch (IOException e) {
+                    log.debug("Error closing input stream", e)
+                }
+            }
         }
     }
 
@@ -163,9 +171,10 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
         // The varargs in JNA are tricky, so we need to be careful to use correct types (Integer, not String)
         if (thumbDef.square && thumbDef.centreCrop) {
             // Centre crop to square - use height parameter and crop
+            // VIPS_INTERESTING_CENTRE = 1
             return vips.vips_thumbnail_image(inputImage, outRef.pointer, size,
                     "height", size,
-                    "crop", "centre",
+                    "crop", 1,
                     null)
         } else if (thumbDef.square) {
             // Fit within square with background

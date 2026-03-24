@@ -189,14 +189,52 @@ interface VipsLibrary extends Library {
     int vips_crop(Pointer input, Pointer out, int left, int top, int width, int height)
 
     /**
+     * Rotate an image.
+     * @param input input image
+     * @param out pointer to receive output image
+     * @param angle VipsAngle (0=D0, 1=D90, 2=D180, 3=D270)
+     * @return 0 on success
+     */
+    int vips_rot(Pointer input, Pointer out, int angle, Object... varargs)
+
+    /**
+     * Flip an image.
+     * @param input input image
+     * @param out pointer to receive output image
+     * @param direction VipsDirection (0=HORIZONTAL, 1=VERTICAL)
+     * @return 0 on success
+     */
+    int vips_flip(Pointer input, Pointer out, int direction, Object... varargs)
+
+    /**
+     * Change image colourspace.
+     * @param input input image
+     * @param out pointer to receive output image
+     * @param interpretation VipsInterpretation (e.g., 2=B_W, 22=sRGB)
+     * @return 0 on success
+     */
+    int vips_colourspace(Pointer input, Pointer out, int interpretation, Object... varargs)
+
+    /**
+     * Perform a relational operation on an image and a constant.
+     * Used for thresholding (e.g., BITONAL).
+     * @param input input image
+     * @param out pointer to receive output image
+     * @param relational VipsOperationRelational (e.g., 4=MORE)
+     * @param c constant(s) to compare against
+     * @return 0 on success
+     */
+    int vips_relational_const(Pointer input, Pointer out, int relational, double[] c, Object... varargs)
+
+    /**
      * Resize an image.
      * @param input input image
      * @param out pointer to receive output image
      * @param scale scale factor
-     * @param options variable arguments (null-terminated)
+     * @param varargs variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_resize(Pointer input, Pointer out, double scale, String... options)
+    int vips_resize(Pointer input, Pointer out, double scale, Object... varargs)
 
     /**
      * Free memory allocated by VIPS (e.g., for buffers).

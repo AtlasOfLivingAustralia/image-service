@@ -5,14 +5,17 @@ pluginManagement {
         gradlePluginPortal()
     }
     plugins {
-        id "org.grails.grails-web" version "6.1.0"
-        id "org.grails.grails-gsp" version "6.1.0"
+        id "org.grails.grails-web" version "6.2.3"
+        id "org.grails.grails-gsp" version "6.2.3"
         id "com.bertramlabs.asset-pipeline" version "4.3.0"
         id "com.github.erdi.webdriver-binaries" version "3.0"
     }
 }
 
 rootProject.name = 'image-service'
+
+include ':image-utils'
+project(':image-utils').projectDir = new File(settingsDir, '../image-utils')
 
 //include ':images-client-plugin'
 //project(':images-client-plugin').projectDir = new File(settingsDir,'../images-client-plugin')

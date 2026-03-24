@@ -1,6 +1,8 @@
 package au.org.ala.images.thumb;
 
 import au.org.ala.images.factory.ImageLibraryFactory;
+import au.org.ala.images.iiif.IiifImageProcessor;
+import au.org.ala.images.iiif.JavaIiifImageProcessor;
 import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.tiling.IImageTiler;
 import au.org.ala.images.tiling.ImageTiler;
@@ -24,6 +26,11 @@ public class JavaImageLibraryFactory implements ImageLibraryFactory {
     @Override
     public IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, String tool, IImageTiler fallback) {
         return new ImageTiler(config);
+    }
+
+    @Override
+    public IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback) {
+        return new JavaIiifImageProcessor();
     }
 
     @Override

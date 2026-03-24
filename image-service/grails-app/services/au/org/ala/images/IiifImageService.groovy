@@ -1,5 +1,6 @@
 package au.org.ala.images
 
+import au.org.ala.images.iiif.DelegatingIiifImageProcessor
 import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.storage.StorageOperations
 import com.github.benmanes.caffeine.cache.Cache
@@ -160,7 +161,7 @@ class IiifImageService {
         def imageInfo = operations.thumbnailImageInfo(identifier, type)
 
         if (!imageInfo.exists) {
-            IiifImageProcessor iif = new IiifImageProcessor()
+            IiifImageProcessor iif = new DelegatingIiifImageProcessor()
 
             def byteSource = new ByteSource() {
                 @Override

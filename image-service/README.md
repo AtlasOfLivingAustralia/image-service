@@ -9,7 +9,7 @@ It includes:
 * Exif extraction
 * Tile view for large images compatible with GIS Javascript clients such as LeafletJS, OpenLayers and Google Maps
 * Web services for image upload
-* Generate of derivative images for thumbnail presentation
+* Generation of derivative images for thumbnail presentation
 * Tagging support via webservices
 * Administrator console for image management
 * Swagger API definition

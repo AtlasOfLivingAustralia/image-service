@@ -100,4 +100,4 @@ jobs:
 
     - name: Stop Docker Compose services
       if: always() # Run even if previous steps fail
-      run: docker compose -f elastic.yml down
+      run: docker compose -f elastic-dc2.yml down

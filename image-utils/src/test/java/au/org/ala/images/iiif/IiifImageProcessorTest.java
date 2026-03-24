@@ -60,7 +60,7 @@ public class IiifImageProcessorTest extends TestBase {
         int expectedH = sizedW;
 
         byte[] bytes = readImageBytes(filename);
-        var proc = new IiifImageProcessor();
+        var proc = new JavaIiifImageProcessor();
         try (var out = new ByteArrayOutputStream()) {
             IiifImageProcessor.Result result = proc.process(ByteSource.wrap(bytes), region, size, rotation, quality, format, out);
             assertNotNull(result);
@@ -93,7 +93,7 @@ public class IiifImageProcessorTest extends TestBase {
         int expectedH = Math.max(1, (int) Math.round(srcH * scale));
 
         byte[] bytes = readImageBytes(filename);
-        var proc = new IiifImageProcessor();
+        var proc = new JavaIiifImageProcessor();
         try (var out = new ByteArrayOutputStream()) {
             IiifImageProcessor.Result result = proc.process(ByteSource.wrap(bytes), region, size, rotation, quality, format, out);
             assertNotNull(result);
@@ -125,7 +125,7 @@ public class IiifImageProcessorTest extends TestBase {
         double aspect = 16.0 / 9.0;
 
         byte[] bytes = readImageBytes(filename);
-        var proc = new IiifImageProcessor();
+        var proc = new JavaIiifImageProcessor();
         try (var out = new ByteArrayOutputStream()) {
             IiifImageProcessor.Result result = proc.process(ByteSource.wrap(bytes), region, size, rotation, quality, format, out);
             assertNotNull(result);
