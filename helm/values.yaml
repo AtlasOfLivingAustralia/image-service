@@ -76,11 +76,11 @@ startupProbe:
     path: /actuator/health
     port: 8080
     scheme: HTTP
-  initialDelaySeconds: 90
-  periodSeconds: 5
-  timeoutSeconds: 15
+  initialDelaySeconds: 120
+  periodSeconds: 10
+  timeoutSeconds: 30
   successThreshold: 1
-  failureThreshold: 40 # 40 failures + initial delay of 90 seconds = 290 seconds
+  failureThreshold: 60 # 40 failures + initial delay of 90 seconds = 290 seconds
 
 readinessProbe:
   enabled: true
