@@ -180,8 +180,8 @@ phases:
         bie:
           baseURL: $BIE_BASE_URL
         podEnvironment: "${POD_ENVIRONMENT}"
-        xmx: "${HEAP_SIZE_INITIAL}"
-        xms: "${HEAP_SIZE_MAX}"
+        xmx: "${HEAP_SIZE_MAX}"
+        xms: "${HEAP_SIZE_INITIAL}"
         ingress:
           accessLogsPrefix: "logs"
           accessLogsBucket: "${ACCESS_LOGS_S3_BUCKET_NAME}"
