@@ -118,7 +118,8 @@ phases:
             name: elasticsearch-images-${CLEAN_BRANCH}
           single_node_es: ${SINGLE_NODE_ES}
         elasticsearch:
-          tls.disableTrust: ${ELASTICSEARCH_DISABLE_TLS_TRUST_VERIFICATION}
+          tls:
+            disableTrust: ${ELASTICSEARCH_DISABLE_TLS_TRUST_VERIFICATION}
           host: "${ELASTICSEARCH_HOST}"
           indexName: "${INDEX_NAME}"
           username: "${ELASTICSEARCH_USERNAME}"
