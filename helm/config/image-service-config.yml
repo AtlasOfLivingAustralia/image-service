@@ -74,6 +74,7 @@ info:
     version: {{ .Values.version }}
 
 flyway:
+  enabled: false
   baselineOnMigrate: true
 
 dataSource:
