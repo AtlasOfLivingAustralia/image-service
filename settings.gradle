@@ -10,8 +10,9 @@ pluginManagement {
 
 rootProject.name = 'image-project'
 
-include 'image-service'
 include 'image-utils'
+include 'image-service'
+
 
 // Our Grails App doesn't support Java 25 yet, so don't bother with the FFM modules for now.
 

@@ -41,7 +41,23 @@ dependencies {
     testImplementation 'junit:junit:4.13.1'
 }
 
+tasks.withType(Test) {
+    // 2GB required for ImageTiler4LargeImageTest
+    maxHeapSize = "2048m"
+    minHeapSize = "512m"
+}
+
 publishing {
+    repositories {
+        maven {
+            name 'Nexus'
+            url "https://nexus.ala.org.au/content/repositories/${project.version.endsWith('-SNAPSHOT') ? 'snapshots' : 'releases' }"
+            credentials {
+                username = System.getenv('TRAVIS_DEPLOY_USERNAME')
+                password = System.getenv('TRAVIS_DEPLOY_PASSWORD')
+            }
+        }
+    }
     publications {
         maven(MavenPublication) {
             from components.java

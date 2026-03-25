@@ -47,7 +47,7 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
       - name: Install libvips
         run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
       - name: Start ElasticSearch
@@ -55,7 +55,9 @@ jobs:
       - name: Wait for services to be ready
         run: sleep 10
       - name: Build image-service
-        run: ./gradlew :image-service:build
+        run: ./gradlew :image-service:clean :image-service:build
+        env:
+          GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }} # Added Grails env flag
       - name: Publish image-service and utils (on push)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
         run: ./gradlew :image-service:publish :image-utils:publish
