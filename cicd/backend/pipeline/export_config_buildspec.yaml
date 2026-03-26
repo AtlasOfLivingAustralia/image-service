@@ -126,6 +126,9 @@ phases:
           password: $ELASTICSEARCH_PASSWORD
           port: ${ELASTIC_PORT}
           scheme: "${ES_SCHEME}"
+        tiling:
+          levelThreads: ${TILING_LEVEL_THREADS}
+          ioThreads: ${TILING_IO_THREADS}
         app:
           url: https://$DOMAIN_NAME
         db:
