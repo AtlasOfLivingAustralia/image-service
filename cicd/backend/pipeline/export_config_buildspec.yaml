@@ -222,15 +222,15 @@ phases:
                 maxLoadAverage: ${IMAGE_SERVICE_METADATA_JSONB_MAX_LOAD_AVERAGE}
         images:
           disableCache: ${IMAGE_SERVICE_DISABLE_CACHE}
-            store:
-              container:
-                credentials: ${CONTAINER_CREDENTIALS}
-              prefix: ${PREFIX}
-              privateAcl: ${PRIVATE_ACL}
-              publicRead: ${PUBLIC_READ}
-              redirect: ${REDIRECT}
-              cloudfront:
-                domain: ${CLOUDFRONT_DOMAIN}
+          store:
+            container:
+              credentials: ${CONTAINER_CREDENTIALS}
+            prefix: ${PREFIX}
+            privateAcl: ${PRIVATE_ACL}
+            publicRead: ${PUBLIC_READ}
+            redirect: ${REDIRECT}
+            cloudfront:
+              domain: ${CLOUDFRONT_DOMAIN}
         iiif:
           enabled: ${IMAGE_SERVICE_IIIF_ENABLED}
         imageServiceUrls: ${IMAGE_SERVICE_URLS}
