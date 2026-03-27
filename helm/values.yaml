@@ -208,8 +208,8 @@ elasticsearch-images:
   single_node_es: false
 
 imageservice:
-  storage:
-    locations: []
+  bucket:
+    name:
   optimisation:
     enabled: false
   metadata:
@@ -234,6 +234,15 @@ aws:
 
 images:
   disableCache: false
+  store:
+    container:
+      credentials:
+    prefix:
+    privateAcl:
+    publicRead:
+    redirect:
+    cloudfront:
+      domain:
 
 iiif:
   enabled: false

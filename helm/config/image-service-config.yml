@@ -93,7 +93,17 @@ imageservice:
     multiple_roots:  "{{ .Values.app.url }}/store/"
     exportDir: "/data/image-service/exports"
   storage:
-    locations: {{ .Values.imageservice.storage.locations }}
+    locations:
+      s3_ap-southeast-2_ala-images_store:
+        bucket: {{ .Values.imageservice.bucket.name }}
+        containerCredentials: {{ .Values.images.store.container.credentials }}
+        prefix: {{ .Values.images.store.prefix }}
+        privateAcl: {{ .Values.images.store.privateAcl }}
+        publicRead: {{ .Values.images.store.publicRead }}
+        redirect: {{ .Values.images.store.redirect }}
+        region: ap-southeast-2
+        type: s3
+        cloudfrontDomain: {{ .Values.images.store.cloudfront.domain }}
   optimisation:
     enabled: {{ .Values.imageservice.optimisation.enabled }}
   metadata:
