@@ -206,8 +206,8 @@ phases:
               metrics:
                 enabled: ${IMAGE_SERVICE_S3_CLOUDWATCH_METRICS_ENABLED}
         imageservice:
-            bucket:
-              name: ${S3_BUCKET}
+          bucket:
+            name: ${S3_BUCKET}
           optimisation:
             enabled: ${IMAGE_SERVICE_IMAGE_OPTIMISATION_ENABLED}
           metadata:
