@@ -247,7 +247,7 @@ Resources:
     Properties:
       AllowMajorVersionUpgrade: false
       AutoMinorVersionUpgrade: true
-      DBInstanceClass: !Ref pInstanceClass
+      DBInstanceClass: !If [ IsProvisioned, !Ref pInstanceClass, db.serverless ]
       DBInstanceIdentifier: !Sub ${pDbInstanceName}-primary
       DBClusterIdentifier: !Ref DbCluster
       Engine: !Ref pDbEngine
