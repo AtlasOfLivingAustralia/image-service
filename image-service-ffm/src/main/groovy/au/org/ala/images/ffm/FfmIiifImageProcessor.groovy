@@ -89,9 +89,6 @@ class FfmIiifImageProcessor implements IiifImageProcessor {
 
         } catch (Throwable e) {
             log.error("FFM IIIF processing failed, falling back", e)
-            if (inputStream?.markSupported()) {
-                inputStream.reset()
-            }
             return fallback.process(imageBytes, region, size, rotation, quality, format, out)
         } finally {
             try {

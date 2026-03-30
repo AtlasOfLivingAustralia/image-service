@@ -1,7 +1,6 @@
 package au.org.ala.images.vipsffm
 
 import app.photofox.vipsffm.VImage
-import app.photofox.vipsffm.VSource
 import app.photofox.vipsffm.VipsOption
 import app.photofox.vipsffm.enums.VipsForeignDzDepth
 import app.photofox.vipsffm.enums.VipsForeignDzLayout

@@ -8,6 +8,7 @@ import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
 import java.lang.foreign.MemorySegment
+import java.nio.file.Files
 
 /**
  * FFM-based tiler that uses libvips directly via the Foreign Function & Memory API (Java 22+).
@@ -88,9 +89,7 @@ class FfmStreamingImageTiler implements IImageTiler {
 
             // Create temp directory for tiles output
             // Unfortunately, vips_dzsave doesn't have a memory-only mode, so we still need temp files
-            tempOutDir = File.createTempFile('tile-out-ffm-', '', new File(System.getProperty('java.io.tmpdir')))
-            tempOutDir.delete()
-            tempOutDir.mkdirs()
+            tempOutDir = Files.createTempDirectory('tile-out-ffm-').toFile()
 
             File tilesBase = new File(tempOutDir, 'tiles')
 

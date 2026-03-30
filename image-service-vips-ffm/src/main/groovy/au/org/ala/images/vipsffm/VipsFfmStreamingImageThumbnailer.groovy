@@ -1,8 +1,6 @@
 package au.org.ala.images.vipsffm
 
 import app.photofox.vipsffm.VImage
-import app.photofox.vipsffm.VSource
-import app.photofox.vipsffm.VTarget
 import app.photofox.vipsffm.VipsOption
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
