@@ -58,9 +58,7 @@ class VipsFfmStreamingImageTiler implements IImageTiler {
         try (var arena = Arena.ofConfined()) {
             VImage image = VImage.newFromStream(arena, imageInputStream)
 
-            File tempOutDir = File.createTempFile('tile-out-vipsffm-', '', new File(System.getProperty('java.io.tmpdir')))
-            tempOutDir.delete()
-            tempOutDir.mkdirs()
+            File tempOutDir = Files.createTempDirectory('tile-out-vipsffm-').toFile()
 
             try {
                 File tilesBase = new File(tempOutDir, 'tiles')

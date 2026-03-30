@@ -11,6 +11,7 @@ import org.apache.commons.io.IOUtils
 
 import javax.imageio.ImageIO
 import java.awt.image.BufferedImage
+import java.nio.file.Files
 
 /**
  * Streaming tiler that uses external tools (vips) to generate tiles without loading
@@ -38,10 +39,7 @@ class StreamingImageTiler implements IImageTiler {
             throw new IllegalArgumentException("Invalid min/max levels")
         }
 
-        File workDir = new File(System.getProperty('java.io.tmpdir'))
-        File tempOutDir = File.createTempFile('tile-out-', '', workDir)
-        tempOutDir.delete()
-        tempOutDir.mkdirs()
+        File tempOutDir = Files.createTempDirectory('tile-out-').toFile()
 
         try {
             if (tool == 'vips') {
