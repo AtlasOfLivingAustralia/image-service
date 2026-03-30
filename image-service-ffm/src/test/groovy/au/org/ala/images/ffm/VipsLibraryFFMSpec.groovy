@@ -46,12 +46,16 @@ class VipsLibraryFFMSpec extends Specification {
         given:
         def recordedArgs = []
         def impl = new Object() {
-            MemorySegment apply(MemorySegment buf, long len, MemorySegment options) {
-                recordedArgs << [buf: buf, len: len, options: options.reinterpret(1024).getUtf8String(0)]
+            MemorySegment apply(MemorySegment buf, long len, MemorySegment options, MemorySegment sentinel) {
+                recordedArgs << [
+                        buf: buf,
+                        len: len,
+                        options: options.reinterpret(1024).getUtf8String(0)
+                ]
                 return MemorySegment.ofAddress(1234)
             }
         }
-        MethodType mt = MethodType.methodType(MemorySegment.class, [MemorySegment.class, long.class, MemorySegment.class] as Class[])
+        MethodType mt = MethodType.methodType(MemorySegment.class, [MemorySegment.class, long.class, MemorySegment.class, MemorySegment.class] as Class[])
         MethodHandle mh = MethodHandles.lookup().findVirtual(impl.class, "apply", mt).bindTo(impl)
         MemorySegment stub = linker.upcallStub(mh, VipsLibraryFFM.FD_vips_image_new_from_buffer, arena)
 
@@ -102,8 +106,13 @@ class VipsLibraryFFMSpec extends Specification {
         given:
         def recordedArgs = []
         def impl = new Object() {
-            int apply(MemorySegment image, MemorySegment bufPtr, MemorySegment lenPtr, MemorySegment suffix, MemorySegment options) {
-                recordedArgs << [image: image, bufPtr: bufPtr, lenPtr: lenPtr, suffix: suffix.reinterpret(1024).getUtf8String(0)]
+            int apply(MemorySegment image, MemorySegment suffix, MemorySegment bufPtr, MemorySegment lenPtr, MemorySegment options) {
+                recordedArgs << [
+                        image: image,
+                        suffix: suffix.reinterpret(1024).getUtf8String(0),
+                        bufPtr: bufPtr,
+                        lenPtr: lenPtr
+                ]
                 return 0
             }
         }

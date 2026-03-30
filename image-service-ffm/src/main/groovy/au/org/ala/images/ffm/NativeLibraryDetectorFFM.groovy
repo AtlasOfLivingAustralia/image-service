@@ -33,9 +33,10 @@ class NativeLibraryDetectorFFM {
                 return vipsAvailable
             }
 
+            VipsLibraryFFM lib = null
             try {
                 // Try to load the library
-                VipsLibraryFFM lib = loadVipsLibrary()
+                lib = loadVipsLibrary()
                 if (lib == null) {
                     log.info("libvips not found on system")
                     vipsAvailable = false
@@ -47,6 +48,7 @@ class NativeLibraryDetectorFFM {
                 if (result != 0) {
                     log.warn("libvips found but initialization failed: {}", lib.vipsErrorBuffer())
                     lib.vipsErrorClear()
+                    lib.close()
                     vipsAvailable = false
                     return false
                 }
@@ -59,10 +61,12 @@ class NativeLibraryDetectorFFM {
 
             } catch (UnsatisfiedLinkError e) {
                 log.debug("libvips not available: {}", e.message)
+                lib?.close()
                 vipsAvailable = false
                 return false
             } catch (Throwable e) {
                 log.warn("Error checking for libvips", e)
+                lib?.close()
                 vipsAvailable = false
                 return false
             }
@@ -198,13 +202,18 @@ class NativeLibraryDetectorFFM {
      * Should be called on application shutdown.
      */
     static void shutdown() {
-        if (vipsInstance != null) {
+        synchronized (NativeLibraryDetectorFFM.class) {
             try {
-                vipsInstance.vipsShutdown()
-                vipsInstance.close()
-                log.info("libvips shutdown complete (FFM)")
+                if (vipsInstance != null) {
+                    vipsInstance.vipsShutdown()
+                    vipsInstance.close()
+                    log.info("libvips shutdown complete (FFM)")
+                }
             } catch (Throwable e) {
                 log.warn("Error during libvips shutdown", e)
+            } finally {
+                vipsInstance = null
+                vipsAvailable = null
             }
         }
     }
