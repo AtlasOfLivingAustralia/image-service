@@ -18,6 +18,7 @@ class OutputStreamVipsTargetFFM implements AutoCloseable {
     private final MemorySegment target
     private final MemorySegment writeCallbackStub
     private final Arena callbackArena
+    private final byte[] javaBuffer = new byte[BUFFER_SIZE]
 
     private boolean closed = false
 
@@ -81,9 +82,8 @@ class OutputStreamVipsTargetFFM implements AutoCloseable {
             long offset = 0
             while (remaining > 0) {
                 int toWrite = (int) Math.min(remaining, (long) BUFFER_SIZE)
-                byte[] javaBuffer = new byte[toWrite]
                 MemorySegment.copy(buffer, ValueLayout.JAVA_BYTE, offset, javaBuffer, 0, toWrite)
-                outputStream.write(javaBuffer)
+                outputStream.write(javaBuffer, 0, toWrite)
                 remaining -= toWrite
                 offset += toWrite
             }

@@ -2,6 +2,7 @@ package au.org.ala.images.thumb
 
 import au.org.ala.images.ffm.InputStreamVipsSourceFFM
 import au.org.ala.images.ffm.NativeLibraryDetectorFFM
+import au.org.ala.images.ffm.OutputStreamVipsTargetFFM
 import au.org.ala.images.ffm.VipsLibraryFFM
 import au.org.ala.images.util.ByteSinkFactory
 import com.google.common.io.ByteSink
@@ -124,38 +125,25 @@ class FfmStreamingImageThumbnailer implements IImageThumbnailer {
                 throw new IOException("vips_thumbnail_image returned null output")
             }
 
-            // Save to buffer
+            // Save to destination
             String suffix = thumbDef.name.endsWith('.png') ? '.png' : '.jpg[Q=85]'
-            MemorySegment bufPtr = sessionArena.allocate(ValueLayout.ADDRESS)
-            MemorySegment lenPtr = sessionArena.allocate(ValueLayout.JAVA_LONG)
 
-            result = vips.vipsImageWriteToBuffer(outputImage, bufPtr, lenPtr, suffix)
-
-            if (result != 0) {
-                String error = vips.vipsErrorBuffer()
-                vips.vipsErrorClear()
-                throw new IOException("Failed to write thumbnail to buffer: ${error}")
+            try (OutputStream os = destination.openStream()) {
+                try (OutputStreamVipsTargetFFM vipsTarget = new OutputStreamVipsTargetFFM(vips, os)) {
+                    result = vips.vipsImageWriteToTarget(outputImage, suffix, vipsTarget.getTarget())
+                    if (result != 0) {
+                        String error = vips.vipsErrorBuffer()
+                        vips.vipsErrorClear()
+                        throw new IOException("Failed to write thumbnail to target: ${error}")
+                    }
+                }
             }
 
-            // Copy output buffer to destination
-            MemorySegment outBuffer = bufPtr.get(ValueLayout.ADDRESS, 0)
-            long outLength = lenPtr.get(ValueLayout.JAVA_LONG, 0)
+            // Get actual dimensions from the output image
+            int actualWidth = vips.vipsImageGetWidth(outputImage)
+            int actualHeight = vips.vipsImageGetHeight(outputImage)
 
-            if (outBuffer != null && outBuffer.address() != 0 && outLength > 0) {
-                byte[] outputData = outBuffer.reinterpret(outLength).toArray(ValueLayout.JAVA_BYTE)
-                destination.write(outputData)
-
-                // Free the buffer allocated by vips
-                vips.gFree(outBuffer)
-
-                // Get actual dimensions from the output image
-                int actualWidth = vips.vipsImageGetWidth(outputImage)
-                int actualHeight = vips.vipsImageGetHeight(outputImage)
-
-                return new ThumbnailingResult(actualWidth, actualHeight, thumbDef.square, thumbDef.name)
-            } else {
-                throw new IOException("libvips produced no output")
-            }
+            return new ThumbnailingResult(actualWidth, actualHeight, thumbDef.square, thumbDef.name)
 
         } catch (Throwable e) {
             if (e instanceof IOException) {
