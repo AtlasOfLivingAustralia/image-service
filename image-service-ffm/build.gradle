@@ -11,123 +11,71 @@ repositories {
 }
 
 java {
-    sourceCompatibility = JavaVersion.toVersion("22")
-    targetCompatibility = JavaVersion.toVersion("22")
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
-// jextract configuration for generating libvips bindings
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java21']
+        }
+    }
+    java22 {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java22']
+        }
+    }
+}
+
+// Inherit classpaths for java22 sourceSet
 configurations {
+    java22CompileClasspath.extendsFrom compileClasspath
+    java22RuntimeClasspath.extendsFrom runtimeClasspath
     jextract
 }
 
 dependencies {
-    // Groovy for Groovy source files
     implementation localGroovy()
-
-    // Logging
     api 'org.slf4j:slf4j-api:1.7.36'
-
-    // Google Guava for ByteSource/ByteSink
     implementation 'com.google.guava:guava:33.2.1-jre'
-
-    // Core image-service interfaces (for IImageThumbnailer, IImageTiler, etc.)
     compileOnly project(':image-utils')
-
-    // Testing
+    
     testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
-    // jextract tool for build-time binding generation
     jextract 'org.openjdk.jextract:jextract:22.0.1'
 }
 
-// Task to generate FFM bindings from libvips headers using jextract
-task generateVipsBindings(type: JavaExec) {
-    description = 'Generate FFM bindings for libvips using jextract'
-    group = 'build'
+tasks.named('compileJava', JavaCompile) {
+    options.compilerArgs << '--enable-preview'
+}
 
-    classpath = configurations.jextract
-    mainClass = 'org.openjdk.jextract.JextractTool'
-
-    def outputDir = file("${projectDir}/src/main/java")
-    def targetPackage = 'au.org.ala.images.ffm.generated'
-
-    // Common libvips header locations
-    def possibleHeaderPaths = [
-        '/usr/include/vips/vips.h',
-        '/usr/local/include/vips/vips.h',
-        '/opt/homebrew/include/vips/vips.h',
-        '/opt/local/include/vips/vips.h'
-    ]
-
-    def vipsHeader = possibleHeaderPaths.find { file(it).exists() }
-
-    if (vipsHeader == null) {
-        // If no header found, create a placeholder task
-        doFirst {
-            logger.warn("libvips headers not found in standard locations. Skipping jextract generation.")
-            logger.warn("Install libvips development headers or set VIPS_INCLUDE_PATH environment variable.")
-            logger.warn("Searched paths: ${possibleHeaderPaths}")
-        }
-        enabled = false
-        return
-    }
-
-    args = [
-        '--output', outputDir.absolutePath,
-        '--target-package', targetPackage,
-        '--library', 'vips',
-        '--header-class-name', 'VipsFFI',
-        // Include specific functions we need
-        '--include-function', 'vips_init',
-        '--include-function', 'vips_shutdown',
-        '--include-function', 'vips_error_buffer',
-        '--include-function', 'vips_error_clear',
-        '--include-function', 'vips_image_new_from_source',
-        '--include-function', 'vips_image_get_width',
-        '--include-function', 'vips_image_get_height',
-        '--include-function', 'vips_thumbnail_image',
-        '--include-function', 'vips_image_write_to_buffer',
-        '--include-function', 'vips_dzsave',
-        '--include-function', 'vips_source_custom_new',
-        '--include-function', 'g_object_unref',
-        '--include-function', 'g_free',
-        '--include-function', 'g_signal_connect_data',
-        vipsHeader
-    ]
-
-    inputs.file(vipsHeader)
-    outputs.dir(outputDir)
-
-    doFirst {
-        logger.info("Generating libvips FFM bindings from: ${vipsHeader}")
-        logger.info("Output directory: ${outputDir}")
+tasks.named('compileJava22Java', JavaCompile) {
+    description = 'Compile Java 22 stable classes'
+    options.release = 22
+    // Use JDK 25 compiler to target Java 22 stable
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
-// Make compileJava depend on binding generation
-// This is optional - bindings can be generated manually
-// compileJava.dependsOn generateVipsBindings
+jar {
+    manifest {
+        attributes 'Multi-Release': 'true'
+    }
+    into('META-INF/versions/22') {
+        from compileJava22Java.destinationDirectory
+    }
+    dependsOn compileJava22Java
+}
 
 test {
     useJUnitPlatform()
     jvmArgs = [
-//        '--enable-preview',
+        '--enable-preview',
         '--enable-native-access=ALL-UNNAMED'
     ]
-    testLogging {
-        showStandardStreams = true
-        exceptionFormat = 'full'
-    }
-}
-
-compileGroovy {
-    // Ensure we can access Java 22+ features
-//    options.compilerArgs << '--enable-preview'
-}
-
-tasks.withType(JavaCompile).configureEach {
-//    options.compilerArgs << '--enable-preview'
 }
 
 publishing {
@@ -135,16 +83,6 @@ publishing {
         maven(MavenPublication) {
             from components.java
             artifactId = 'image-service-ffm'
-        }
-    }
-    repositories {
-        maven {
-            name 'Nexus'
-            url "https://nexus.ala.org.au/content/repositories/${project.version.endsWith('-SNAPSHOT') ? 'snapshots' : 'releases'}"
-            credentials {
-                username = System.getenv('TRAVIS_DEPLOY_USERNAME')
-                password = System.getenv('TRAVIS_DEPLOY_PASSWORD')
-            }
         }
     }
 }

@@ -25,7 +25,7 @@ class VipsLibraryFFMSpec extends Specification {
         def recordedArgs = []
         def impl = new Object() {
             int apply(MemorySegment name) {
-                recordedArgs << name.reinterpret(1024).getString(0)
+                recordedArgs << FFMShim.getString(name.reinterpret(1024), 0)
                 return 0
             }
         }
@@ -50,7 +50,7 @@ class VipsLibraryFFMSpec extends Specification {
                 recordedArgs << [
                         buf: buf,
                         len: len,
-                        options: options.reinterpret(1024).getString(0)
+                        options: FFMShim.getString(options.reinterpret(1024), 0)
                 ]
                 return MemorySegment.ofAddress(1234)
             }
@@ -109,7 +109,7 @@ class VipsLibraryFFMSpec extends Specification {
             int apply(MemorySegment image, MemorySegment suffix, MemorySegment bufPtr, MemorySegment lenPtr, MemorySegment options) {
                 recordedArgs << [
                         image: image,
-                        suffix: suffix.reinterpret(1024).getString(0),
+                        suffix: FFMShim.getString(suffix.reinterpret(1024), 0),
                         bufPtr: bufPtr,
                         lenPtr: lenPtr
                 ]
@@ -142,7 +142,7 @@ class VipsLibraryFFMSpec extends Specification {
         def recordedArgs = []
         def impl = new Object() {
             int apply(MemorySegment input, MemorySegment path, MemorySegment options) {
-                recordedArgs << [input: input, path: path.reinterpret(1024).getString(0)]
+                recordedArgs << [input: input, path: FFMShim.getString(path.reinterpret(1024), 0)]
                 return 0
             }
         }
@@ -168,7 +168,7 @@ class VipsLibraryFFMSpec extends Specification {
         def recordedArgs = []
         def impl = new Object() {
             long apply(MemorySegment instance, MemorySegment signal, MemorySegment handler, MemorySegment data, MemorySegment closure, int flags) {
-                recordedArgs << [instance: instance, signal: signal.reinterpret(1024).getString(0), handler: handler, data: data]
+                recordedArgs << [instance: instance, signal: FFMShim.getString(signal.reinterpret(1024), 0), handler: handler, data: data]
                 return 1L
             }
         }

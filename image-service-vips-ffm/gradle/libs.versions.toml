@@ -1,0 +1,9 @@
+[versions]
+mockito = "5.11.0"
+
+[libraries]
+mockito = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
+
+[bundles]
+
+[plugins]

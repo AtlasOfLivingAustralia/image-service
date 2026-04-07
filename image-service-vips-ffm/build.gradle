@@ -15,6 +15,9 @@ java {
     sourceCompatibility = JavaVersion.toVersion("22")
     targetCompatibility = JavaVersion.toVersion("22")
 }
+//configurations {
+//    mockitoAgent
+//}
 
 dependencies {
     implementation localGroovy()
@@ -23,7 +26,7 @@ dependencies {
     compileOnly project(':image-utils')
     testImplementation project(':image-utils')
 
-    // The lopcode vips-ffm library
+    // The photofox vips-ffm library
     implementation 'app.photofox.vips-ffm:vips-ffm-core:1.9.5'
 
     // Testing
@@ -31,7 +34,11 @@ dependencies {
     // 2. Required for mocking ANY concrete class (not just interfaces)
     testImplementation 'net.bytebuddy:byte-buddy:1.14.12'
     // 3. Required specifically for mocking FINAL classes via Spock 2.4+
-    testImplementation 'org.mockito:mockito-core:5.11.0'
+    testImplementation(libs.mockito)
+//    mockitoAgent(libs.mockito) {
+//        transitive = false
+//    }
+//    testImplementation 'org.mockito:mockito-core:5.11.0'
     // Optional: Required if your classes don't have default constructors
     testImplementation 'org.objenesis:objenesis:3.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -41,7 +48,9 @@ test {
     useJUnitPlatform()
     jvmArgs = [
 //        '--enable-preview',
-        '--enable-native-access=ALL-UNNAMED'
+        '--enable-native-access=ALL-UNNAMED',
+//        "-javaagent:${configurations.mockitoAgent.asPath}",
+        "-XX:+EnableDynamicAgentLoading"
     ]
     testLogging {
         showStandardStreams = true
