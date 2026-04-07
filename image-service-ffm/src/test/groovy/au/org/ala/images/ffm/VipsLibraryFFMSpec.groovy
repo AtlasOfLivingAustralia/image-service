@@ -25,7 +25,7 @@ class VipsLibraryFFMSpec extends Specification {
         def recordedArgs = []
         def impl = new Object() {
             int apply(MemorySegment name) {
-                recordedArgs << name.reinterpret(1024).getUtf8String(0)
+                recordedArgs << name.reinterpret(1024).getString(0)
                 return 0
             }
         }
@@ -50,7 +50,7 @@ class VipsLibraryFFMSpec extends Specification {
                 recordedArgs << [
                         buf: buf,
                         len: len,
-                        options: options.reinterpret(1024).getUtf8String(0)
+                        options: options.reinterpret(1024).getString(0)
                 ]
                 return MemorySegment.ofAddress(1234)
             }
@@ -109,7 +109,7 @@ class VipsLibraryFFMSpec extends Specification {
             int apply(MemorySegment image, MemorySegment suffix, MemorySegment bufPtr, MemorySegment lenPtr, MemorySegment options) {
                 recordedArgs << [
                         image: image,
-                        suffix: suffix.reinterpret(1024).getUtf8String(0),
+                        suffix: suffix.reinterpret(1024).getString(0),
                         bufPtr: bufPtr,
                         lenPtr: lenPtr
                 ]
@@ -142,7 +142,7 @@ class VipsLibraryFFMSpec extends Specification {
         def recordedArgs = []
         def impl = new Object() {
             int apply(MemorySegment input, MemorySegment path, MemorySegment options) {
-                recordedArgs << [input: input, path: path.reinterpret(1024).getUtf8String(0)]
+                recordedArgs << [input: input, path: path.reinterpret(1024).getString(0)]
                 return 0
             }
         }
@@ -168,7 +168,7 @@ class VipsLibraryFFMSpec extends Specification {
         def recordedArgs = []
         def impl = new Object() {
             long apply(MemorySegment instance, MemorySegment signal, MemorySegment handler, MemorySegment data, MemorySegment closure, int flags) {
-                recordedArgs << [instance: instance, signal: signal.reinterpret(1024).getUtf8String(0), handler: handler, data: data]
+                recordedArgs << [instance: instance, signal: signal.reinterpret(1024).getString(0), handler: handler, data: data]
                 return 1L
             }
         }
@@ -193,6 +193,15 @@ class VipsLibraryFFMSpec extends Specification {
         recordedArgs[0].data == data
     }
 
+    def "vipsThumbnailImage with variadic options can be called"() {
+        given:
+        def mockLookup = createMockLookup([:])
+        def vips = new VipsLibraryFFM(mockLookup, mockLookup, mockLookup)
+
+        expect:
+        vips != null
+    }
+
     private SymbolLookup createMockLookup(Map<String, MemorySegment> customMappings) {
         return new SymbolLookup() {
             @Override
@@ -201,7 +210,6 @@ class VipsLibraryFFMSpec extends Specification {
                     return Optional.of(customMappings.get(name))
                 }
                 // Return a dummy for all others to satisfy the constructor
-                // In Java 21, MemorySegment.ofAddress(long) is available
                 return Optional.of(MemorySegment.ofAddress(9999))
             }
         }

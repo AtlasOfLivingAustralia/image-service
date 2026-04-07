@@ -34,7 +34,7 @@ dependencies {
     compileOnly project(':image-utils')
 
     // Testing
-    testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // jextract tool for build-time binding generation
@@ -112,7 +112,7 @@ task generateVipsBindings(type: JavaExec) {
 test {
     useJUnitPlatform()
     jvmArgs = [
-        '--enable-preview',
+//        '--enable-preview',
         '--enable-native-access=ALL-UNNAMED'
     ]
     testLogging {
@@ -123,11 +123,11 @@ test {
 
 compileGroovy {
     // Ensure we can access Java 22+ features
-    options.compilerArgs << '--enable-preview'
+//    options.compilerArgs << '--enable-preview'
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.compilerArgs << '--enable-preview'
+//    options.compilerArgs << '--enable-preview'
 }
 
 publishing {

@@ -183,24 +183,20 @@ class FfmStreamingImageThumbnailer implements IImageThumbnailer {
      */
     private int callVipsThumbnail(MemorySegment inputImage, MemorySegment outPtr,
                                    ThumbDefinition thumbDef, int size, Color backgroundColor) throws Throwable {
-        // For simplicity, we'll call vips_thumbnail_image with basic size parameter
-        // Advanced options (height, crop, etc.) would require implementing varargs support
-
         if (thumbDef.square && thumbDef.centreCrop) {
-            // Centre crop to square - use height parameter and crop
-            // Note: Full implementation would pass these as varargs
             log.trace("Creating square thumbnail with centre crop: size={}", size)
-            return vips.vipsThumbnailImage(inputImage, outPtr, size)
+            // VIPS_INTERESTING_CENTRE = 1
+            return vips.vipsThumbnailImage(inputImage, outPtr, size,
+                "height", size,
+                "crop", 1)
         } else if (thumbDef.square) {
-            // Fit within square with background
             log.trace("Creating square thumbnail: size={}", size)
-            return vips.vipsThumbnailImage(inputImage, outPtr, size)
+            return vips.vipsThumbnailImage(inputImage, outPtr, size,
+                "height", size)
         } else if (thumbDef.width != -1) {
-            // Specific width
             log.trace("Creating thumbnail with specific width: {}", thumbDef.width)
             return vips.vipsThumbnailImage(inputImage, outPtr, thumbDef.width)
         } else {
-            // Default: fit within size x size
             log.trace("Creating thumbnail with max dimension: {}", size)
             return vips.vipsThumbnailImage(inputImage, outPtr, size)
         }

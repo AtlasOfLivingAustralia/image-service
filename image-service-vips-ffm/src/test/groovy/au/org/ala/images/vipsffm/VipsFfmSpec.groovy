@@ -32,7 +32,8 @@ class VipsFfmSpec extends Specification {
         def mockFallback = Mock(IImageThumbnailer)
         def thumbnailer = new VipsFfmStreamingImageThumbnailer(mockFallback)
         def mockImage = Mock(VImage)
-        def thumbDef = new ThumbDefinition(name: "test.jpg", maximumDimension: 100, square: true, centreCrop: true)
+//        def thumbDef = new ThumbDefinition(name: "test.jpg", maximumDimension: 100, square: true, centreCrop: true)
+        def thumbDef = new ThumbDefinition(100, 100, true, true, null, "test.jpg")
 
         when:
         thumbnailer.callVipsThumbnail(mockImage, thumbDef, 100, Color.BLACK)
@@ -46,7 +47,8 @@ class VipsFfmSpec extends Specification {
         def mockFallback = Mock(IImageThumbnailer)
         def thumbnailer = new VipsFfmStreamingImageThumbnailer(mockFallback)
         def mockImage = Mock(VImage)
-        def thumbDef = new ThumbDefinition(name: "test.jpg", maximumDimension: 100, square: false, width: 50)
+//        def thumbDef = new ThumbDefinition(name: "test.jpg", maximumDimension: 100, square: false, width: 50)
+        def thumbDef = new ThumbDefinition(100, 50, false, false, null, "test.jpg")
 
         when:
         thumbnailer.callVipsThumbnail(mockImage, thumbDef, 100, Color.BLACK)

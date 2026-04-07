@@ -1,0 +1,3 @@
+rootProject.name = 'image-service-vips-ffm'
+include ':image-utils'
+project(':image-utils').projectDir = new File(settingsDir, '../image-utils')

@@ -27,14 +27,20 @@ dependencies {
     implementation 'app.photofox.vips-ffm:vips-ffm-core:1.9.5'
 
     // Testing
-    testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+    // 2. Required for mocking ANY concrete class (not just interfaces)
+    testImplementation 'net.bytebuddy:byte-buddy:1.14.12'
+    // 3. Required specifically for mocking FINAL classes via Spock 2.4+
+    testImplementation 'org.mockito:mockito-core:5.11.0'
+    // Optional: Required if your classes don't have default constructors
+    testImplementation 'org.objenesis:objenesis:3.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 test {
     useJUnitPlatform()
     jvmArgs = [
-        '--enable-preview',
+//        '--enable-preview',
         '--enable-native-access=ALL-UNNAMED'
     ]
     testLogging {
@@ -44,9 +50,9 @@ test {
 }
 
 compileGroovy {
-    options.compilerArgs << '--enable-preview'
+//    options.compilerArgs << '--enable-preview'
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.compilerArgs << '--enable-preview'
+//    options.compilerArgs << '--enable-preview'
 }

@@ -5,6 +5,11 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * FFM (Foreign Function & Memory API) interface to libvips C library.
@@ -18,6 +23,9 @@ public class VipsLibraryFFM implements AutoCloseable {
 
     private final Linker linker;
     private final Arena arena;
+
+    private final Map<List<MemoryLayout>, MethodHandle> handleCache = new ConcurrentHashMap<>();
+    private final MemorySegment vips_thumbnail_image_symbol;
 
     // Method handles for libvips functions
     private final MethodHandle vips_init;
@@ -98,6 +106,7 @@ public class VipsLibraryFFM implements AutoCloseable {
             this.vips_image_get_width = lookupFunction(libvipsLookup, "vips_image_get_width", FD_vips_image_get_width);
             this.vips_image_get_height = lookupFunction(libvipsLookup, "vips_image_get_height", FD_vips_image_get_height);
             this.vips_thumbnail_image = lookupFunction(libvipsLookup, "vips_thumbnail_image", FD_vips_thumbnail_image);
+            this.vips_thumbnail_image_symbol = libvipsLookup.find("vips_thumbnail_image").get();
             this.vips_image_write_to_buffer = lookupFunction(libvipsLookup, "vips_image_write_to_buffer", FD_vips_image_write_to_buffer);
             this.vips_image_write_to_target = lookupFunction(libvipsLookup, "vips_image_write_to_target", FD_vips_image_write_to_target);
             this.vips_dzsave = lookupFunction(libvipsLookup, "vips_dzsave", FD_vips_dzsave);
@@ -127,7 +136,7 @@ public class VipsLibraryFFM implements AutoCloseable {
 
     public int vipsInit(String argv0) throws Throwable {
         try (Arena tempArena = Arena.ofConfined()) {
-            MemorySegment nameSegment = argv0 != null ? tempArena.allocateUtf8String(argv0) : MemorySegment.NULL;
+            MemorySegment nameSegment = argv0 != null ? tempArena.allocateFrom(argv0) : MemorySegment.NULL;
             return (int) vips_init.invokeExact(nameSegment);
         }
     }
@@ -141,7 +150,7 @@ public class VipsLibraryFFM implements AutoCloseable {
         if (errorPtr == null || errorPtr.address() == 0) {
             return "";
         }
-        return errorPtr.getUtf8String(0);
+        return errorPtr.getString(0);//getUtf8String(0);
     }
 
     public void vipsErrorClear() throws Throwable {
@@ -150,14 +159,14 @@ public class VipsLibraryFFM implements AutoCloseable {
 
     public MemorySegment vipsImageNewFromBuffer(MemorySegment buf, long len, String options) throws Throwable {
         try (Arena tempArena = Arena.ofConfined()) {
-            MemorySegment optionsSegment = options != null ? tempArena.allocateUtf8String(options) : MemorySegment.NULL;
+            MemorySegment optionsSegment = options != null ? tempArena.allocateFrom(options) : MemorySegment.NULL;
             return (MemorySegment) vips_image_new_from_buffer.invokeExact(buf, len, optionsSegment, MemorySegment.NULL);
         }
     }
 
     public MemorySegment vipsImageNewFromSource(MemorySegment source, String options) throws Throwable {
         try (Arena tempArena = Arena.ofConfined()) {
-            MemorySegment optionsSegment = options != null ? tempArena.allocateUtf8String(options) : tempArena.allocateUtf8String("");
+            MemorySegment optionsSegment = options != null ? tempArena.allocateFrom(options) : tempArena.allocateFrom("");
             return (MemorySegment) vips_image_new_from_source.invokeExact(source, optionsSegment, MemorySegment.NULL);
         }
     }
@@ -174,23 +183,77 @@ public class VipsLibraryFFM implements AutoCloseable {
         return (int) vips_thumbnail_image.invokeExact(input, outPtr, width, MemorySegment.NULL);
     }
 
+    /**
+     * Variadic version of vipsThumbnailImage that supports additional options.
+     */
+    public int vipsThumbnailImage(MemorySegment input, MemorySegment outPtr, int width, Object... options) throws Throwable {
+        if (options == null || options.length == 0) {
+            return vipsThumbnailImage(input, outPtr, width);
+        }
+
+        List<MemoryLayout> layouts = new ArrayList<>();
+        layouts.add(ValueLayout.ADDRESS);  // input
+        layouts.add(ValueLayout.ADDRESS);  // outPtr
+        layouts.add(ValueLayout.JAVA_INT); // width
+
+        for (Object opt : options) {
+            layouts.add(inferLayout(opt));
+        }
+        layouts.add(ValueLayout.ADDRESS); // Terminating NULL
+
+        MethodHandle mh = handleCache.computeIfAbsent(layouts, l -> {
+            FunctionDescriptor fd = FunctionDescriptor.of(ValueLayout.JAVA_INT, l.toArray(new MemoryLayout[0]));
+            // Variadic arguments start at index 3 (after input, outPtr, and width)
+            return linker.downcallHandle(vips_thumbnail_image_symbol, fd, Linker.Option.firstVariadicArg(3));
+        });
+
+        Object[] args = new Object[options.length + 4];
+        args[0] = input;
+        args[1] = outPtr;
+        args[2] = width;
+
+        try (Arena tempArena = Arena.ofConfined()) {
+            for (int i = 0; i < options.length; i++) {
+                args[i + 3] = convertArg(tempArena, options[i]);
+            }
+            args[args.length - 1] = MemorySegment.NULL;
+
+            return (int) mh.invokeWithArguments(args);
+        }
+    }
+
+    private MemoryLayout inferLayout(Object obj) {
+        if (obj instanceof String) return ValueLayout.ADDRESS;
+        if (obj instanceof Integer) return ValueLayout.JAVA_INT;
+        if (obj instanceof Double) return ValueLayout.JAVA_DOUBLE;
+        if (obj instanceof Boolean) return ValueLayout.JAVA_INT;
+        if (obj instanceof MemorySegment) return ValueLayout.ADDRESS;
+        throw new IllegalArgumentException("Unsupported FFM vararg type: " + obj.getClass());
+    }
+
+    private Object convertArg(Arena arena, Object obj) {
+        if (obj instanceof String) return arena.allocateFrom((String) obj);
+        if (obj instanceof Boolean) return ((Boolean) obj) ? 1 : 0;
+        return obj;
+    }
+
     public int vipsImageWriteToBuffer(MemorySegment image, MemorySegment bufPtr, MemorySegment lenPtr, String suffix) throws Throwable {
         try (Arena tempArena = Arena.ofConfined()) {
-            MemorySegment suffixSegment = tempArena.allocateUtf8String(suffix);
+            MemorySegment suffixSegment = tempArena.allocateFrom(suffix);
             return (int) vips_image_write_to_buffer.invokeExact(image, suffixSegment, bufPtr, lenPtr, MemorySegment.NULL);
         }
     }
 
     public int vipsImageWriteToTarget(MemorySegment image, String suffix, MemorySegment target) throws Throwable {
         try (Arena tempArena = Arena.ofConfined()) {
-            MemorySegment suffixSegment = tempArena.allocateUtf8String(suffix);
+            MemorySegment suffixSegment = tempArena.allocateFrom(suffix);
             return (int) vips_image_write_to_target.invokeExact(image, suffixSegment, target, MemorySegment.NULL);
         }
     }
 
     public int vipsDzsave(MemorySegment input, String outputPath) throws Throwable {
         try (Arena tempArena = Arena.ofConfined()) {
-            MemorySegment pathSegment = tempArena.allocateUtf8String(outputPath);
+            MemorySegment pathSegment = tempArena.allocateFrom(outputPath);
             return (int) vips_dzsave.invokeExact(input, pathSegment, MemorySegment.NULL);
         }
     }
@@ -213,7 +276,7 @@ public class VipsLibraryFFM implements AutoCloseable {
 
     public int vipsRelationalConst(MemorySegment input, MemorySegment outPtr, int relational, double[] c) throws Throwable {
         try (Arena tempArena = Arena.ofConfined()) {
-            MemorySegment cSegment = tempArena.allocateArray(ValueLayout.JAVA_DOUBLE, c);
+            MemorySegment cSegment = tempArena.allocateFrom(ValueLayout.JAVA_DOUBLE, c);//allocateArray(ValueLayout.JAVA_DOUBLE, c);
             return (int) vips_relational_const.invokeExact(input, outPtr, relational, cSegment, c.length, MemorySegment.NULL);
         }
     }
@@ -244,7 +307,7 @@ public class VipsLibraryFFM implements AutoCloseable {
 
     public long gSignalConnectData(MemorySegment instance, String detailedSignal, MemorySegment cHandler, MemorySegment data) throws Throwable {
         try (Arena tempArena = Arena.ofConfined()) {
-            MemorySegment signalSegment = tempArena.allocateUtf8String(detailedSignal);
+            MemorySegment signalSegment = tempArena.allocateFrom(detailedSignal);
             return (long) g_signal_connect_data.invokeExact(instance, signalSegment, cHandler, data, MemorySegment.NULL, 0);
         }
     }
