@@ -1,3 +1,3 @@
-rootProject.name = 'image-service-vips-ffm'
+rootProject.name = 'image-utils-photofox'
 include ':image-utils'
 project(':image-utils').projectDir = new File(settingsDir, '../image-utils')
