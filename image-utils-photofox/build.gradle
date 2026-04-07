@@ -4,6 +4,15 @@ plugins {
     id 'maven-publish'
 }
 
+// Share version and group from parent gradle.properties if present
+def parentPropertiesFile = new File(rootDir.parentFile, 'gradle.properties')
+if (parentPropertiesFile.exists()) {
+    def parentProps = new Properties()
+    parentPropertiesFile.withInputStream { parentProps.load(it) }
+    if (parentProps.version) version = parentProps.version
+    if (parentProps.group) group = parentProps.group
+}
+
 repositories {
     mavenLocal()
     mavenCentral()
@@ -64,4 +73,23 @@ compileGroovy {
 
 tasks.withType(JavaCompile).configureEach {
 //    options.compilerArgs << '--enable-preview'
+}
+
+publishing {
+    repositories {
+        maven {
+            name 'Nexus'
+            url "https://nexus.ala.org.au/content/repositories/${project.version.endsWith('-SNAPSHOT') ? 'snapshots' : 'releases' }"
+            credentials {
+                username = System.getenv('TRAVIS_DEPLOY_USERNAME')
+                password = System.getenv('TRAVIS_DEPLOY_PASSWORD')
+            }
+        }
+    }
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            artifactId = 'image-utils-photofox'
+        }
+    }
 }

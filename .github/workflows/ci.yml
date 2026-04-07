@@ -72,42 +72,40 @@ jobs:
         with:
           report_paths: '**/build/test-results/**/*.xml'
 
-#  Our Grails app doesn't work with JDK 25 yet, so don't bother with the extra FFM libs for now.
-
-#  ffm-libs-build:
-#    name: FFM Libraries (JDK ${{ matrix.java }})
-#    runs-on: ubuntu-latest
-#    strategy:
-#      matrix:
-#        java: [22, 25]
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v4
-#      - name: Set up JDK ${{ matrix.java }}
-#        uses: actions/setup-java@v4
-#        with:
-#          distribution: 'temurin'
-#          java-version: ${{ matrix.java }}
-#      - name: Setup Gradle
-#        uses: gradle/actions/setup-gradle@v4
-#      - name: Install libvips
-#        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
-#      - name: Start ElasticSearch
-#        run: docker compose -f image-service/elastic-dc2.yml up -d
-#      - name: Wait for services to be ready
-#        run: sleep 10
-#      - name: Build All Projects
-#        run: ./gradlew build
-#      - name: Publish FFM libraries (on push, JDK 25 only)
-#        if: matrix.java == 25 && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
-#        run: ./gradlew :image-service-ffm:publish :image-service-vips-ffm:publish
-#        env:
-#          GRADLE_OPTS: -Dgrails.env=production
-#      - name: Stop ElasticSearch
-#        if: always()
-#        run: docker compose -f image-service/elastic-dc2.yml down
-#      - name: Publish Test Report
-#        uses: mikepenz/action-junit-report@v5
-#        if: failure()
-#        with:
-#          report_paths: '**/build/test-results/**/*.xml'
+  ffm-libs-build:
+    name: FFM Libraries (JDK 25)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
+      - name: Build image-utils-ffm-libvips
+        run: |
+          cd image-utils-ffm-libvips
+          chmod +x gradlew
+          ./gradlew build
+      - name: Build image-utils-photofox
+        run: |
+          cd image-utils-photofox
+          chmod +x gradlew
+          ./gradlew build
+      - name: Publish FFM libraries (on push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: |
+          cd image-utils-ffm-libvips
+          ./gradlew publish
+          cd ../image-utils-photofox
+          ./gradlew publish
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v5
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'
