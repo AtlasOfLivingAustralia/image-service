@@ -81,7 +81,6 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
         int size = thumbDef.maximumDimension
         Color backgroundColor = thumbDef.backgroundColor
 
-        InputStream inputStream = null
         InputStreamVipsSource vipsSource = null
         OutputStreamVipsTarget vipsTarget = null
         Pointer inputImage = null
@@ -89,8 +88,7 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
 
         try {
             // Create streaming source from ByteSource
-            inputStream = imageBytes.openStream()
-            vipsSource = new InputStreamVipsSource(vips, inputStream)
+            vipsSource = new InputStreamVipsSource(vips, imageBytes)
 
             // Load image from source - this streams the data without buffering entire image
             inputImage = vips.vips_image_new_from_source(vipsSource.getSource(), "", null)
@@ -151,13 +149,6 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
             }
             if (vipsSource != null) {
                 vipsSource.close()
-            }
-            if (inputStream != null) {
-                try {
-                    inputStream.close()
-                } catch (IOException e) {
-                    log.debug("Error closing input stream", e)
-                }
             }
         }
     }

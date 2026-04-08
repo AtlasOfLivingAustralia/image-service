@@ -16,6 +16,8 @@ class OutputStreamVipsTarget implements AutoCloseable {
     private final OutputStream outputStream
     private final Pointer target
     private final VipsLibrary.WriteCallback writeCallback
+    private final byte[] javaBuffer
+    private long bytesWritten = 0
     private boolean closed = false
 
     // Buffer size for copying from native memory to Java byte array
@@ -29,6 +31,7 @@ class OutputStreamVipsTarget implements AutoCloseable {
     OutputStreamVipsTarget(VipsLibrary vips, OutputStream outputStream) {
         this.vips = vips
         this.outputStream = outputStream
+        this.javaBuffer = new byte[BUFFER_SIZE]
 
         // Create the custom target
         this.target = vips.vips_target_custom_new()
@@ -53,6 +56,14 @@ class OutputStreamVipsTarget implements AutoCloseable {
         }
 
         log.debug("Created OutputStreamVipsTarget with write handler: {}", writeHandlerId)
+    }
+
+    /**
+     * Get the number of bytes written to the OutputStream.
+     * @return bytes written
+     */
+    long getBytesWritten() {
+        return bytesWritten
     }
 
     /**
@@ -84,14 +95,14 @@ class OutputStreamVipsTarget implements AutoCloseable {
             long remaining = length
             long offset = 0
             while (remaining > 0) {
-                int toWrite = (int) Math.min(remaining, BUFFER_SIZE)
-                byte[] javaBuffer = new byte[toWrite]
+                int toWrite = (int) Math.min(remaining, (long) BUFFER_SIZE)
                 
                 // Copy from native buffer to Java byte array
                 buffer.read(offset, javaBuffer, 0, toWrite)
                 
-                outputStream.write(javaBuffer)
+                outputStream.write(javaBuffer, 0, toWrite)
                 
+                bytesWritten += toWrite
                 remaining -= toWrite
                 offset += toWrite
             }

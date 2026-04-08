@@ -7,6 +7,7 @@ import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
 import au.org.ala.images.thumb.ThumbnailingResult
+import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.optimisation.ProcessCommandExecutor
 import au.org.ala.images.tiling.DefaultZoomFactorStrategy
 import au.org.ala.images.tiling.DelegatingImageTiler
@@ -38,6 +39,7 @@ import org.apache.commons.io.FileUtils
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.commons.lang3.tuple.Pair
 import org.apache.tika.Tika
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
 import org.springframework.web.multipart.MultipartFile
@@ -71,6 +73,13 @@ class ImageStoreService implements MetricsSupport {
     LinkGenerator grailsLinkGenerator
     StorageLocationService storageLocationService
     ImageOptimisationService imageOptimisationService
+    CommandExecutor commandExecutor
+
+    DelegatingImageThumbnailer delegatingImageThumbnailer
+    DelegatingImageTiler delegatingImageTiler
+    ImageTilerConfig imageTilerConfig
+    ExecutorService tilingIoPool
+    ExecutorService tilingWorkPool
 
     @Value('${placeholder.sound.thumbnail}')
     Resource audioThumbnail
@@ -156,45 +165,12 @@ class ImageStoreService implements MetricsSupport {
     Cache<Pair<String, Point>, ImageInfo> tileCache
     Cache<String, ImageInfo> originalCache
 
-    ExecutorService tilingIoPool
-    ExecutorService tilingWorkPool
-
     @PostConstruct
     @NotTransactional
     def init() {
         thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).build()
         tileCache = Caffeine.from(tileLookupCacheConfig).build()
         originalCache = Caffeine.from(originalLookupCacheConfig).build()
-        tilingIoPool = tilingIoVirtualThreads ? Executors.newVirtualThreadPerTaskExecutor() : Executors.newFixedThreadPool(tilingIoThreads)
-        tilingWorkPool = Executors.newFixedThreadPool(tilingLevelThreads)
-    }
-
-    @PreDestroy
-    @NotTransactional
-    void destroy() {
-        closePool(tilingWorkPool, 10, TimeUnit.SECONDS)
-        closePool(tilingIoPool, 10, TimeUnit.SECONDS)
-    }
-
-    private static void closePool(ExecutorService pool, long timeout, TimeUnit unit) {
-        boolean terminated = pool.isTerminated()
-        if (!terminated) {
-            pool.shutdown()
-            boolean interrupted = false
-            while (!terminated) {
-                try {
-                    terminated = pool.awaitTermination(timeout, unit);
-                } catch (InterruptedException e) {
-                    if (!interrupted) {
-                        pool.shutdownNow();
-                        interrupted = true;
-                    }
-                }
-            }
-            if (interrupted) {
-                Thread.currentThread().interrupt();
-            }
-        }
     }
 
     @NotTransactional
@@ -698,8 +674,7 @@ class ImageStoreService implements MetricsSupport {
     @CompileStatic
     private IImageThumbnailer createThumbnailer() {
         if (useStreamingThumbnailer) {
-            log.debug("Creating DelegatingImageThumbnailer with tool: ${streamingTool} (preferJna: ${preferJna})")
-            return new DelegatingImageThumbnailer(new ProcessCommandExecutor(), streamingTool, preferJna)
+            return delegatingImageThumbnailer
         } else {
             return new ImageThumbnailer()
         }
@@ -708,8 +683,7 @@ class ImageStoreService implements MetricsSupport {
     @CompileStatic
     private IImageTiler createTiler(ImageTilerConfig config) {
         if (useStreamingTiler) {
-            log.debug("Creating DelegatingImageTiler with tool: ${streamingTool} (preferJna: ${preferJna})")
-            return new DelegatingImageTiler(new ProcessCommandExecutor(), config, streamingTool, preferJna)
+            return delegatingImageTiler
         }
 
         switch (tilerVersion) {
@@ -723,11 +697,13 @@ class ImageStoreService implements MetricsSupport {
                 log.trace("Using custom Tiler class: ${tilerClassName}")
                 return loadCustomTiler(config)
             case TilerVersion.V4:
+                log.trace("Using Tiler version V4")
                 return new ImageTiler4(config)
             case TilerVersion.V5:
             default:
+                log.trace("Using Tiler version V5")
                 return new ImageTiler5(config)
-                log.trace("Using Tiler version V4")
+
         }
     }
 
@@ -747,9 +723,7 @@ class ImageStoreService implements MetricsSupport {
     }
 
     private ImageTilerResults tileImageLevel(String imageIdentifier, StorageOperations operations, int z) {
-        def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
-        config.setTileBackgroundColor(new Color(221, 221, 221))
-        def tiler = createTiler(config)
+        def tiler = createTiler(imageTilerConfig)
         return tiler.tileImage(
                 operations.originalInputStream(imageIdentifier, null),
                 new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier)),
@@ -759,9 +733,7 @@ class ImageStoreService implements MetricsSupport {
     }
 
     private ImageTilerResults tileImage(String imageIdentifier, StorageOperations operations) {
-        def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
-        config.setTileBackgroundColor(new Color(221, 221, 221))
-        def tiler = createTiler(config)
+        def tiler = createTiler(imageTilerConfig)
         return tiler.tileImage(
                 operations.originalInputStream(imageIdentifier, null),
                 new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier))

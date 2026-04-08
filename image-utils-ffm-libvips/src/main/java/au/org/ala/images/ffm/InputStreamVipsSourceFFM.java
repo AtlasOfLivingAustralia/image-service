@@ -1,5 +1,7 @@
 package au.org.ala.images.ffm;
 
+import com.google.common.io.ByteSource;
+import com.google.common.io.ByteStreams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,12 +25,17 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(InputStreamVipsSourceFFM.class);
 
+    /** Configurable read limit for mark/reset. Default 10MB. */
+    public static final int READ_LIMIT = Integer.getInteger("vips.source.readlimit", 10 * 1024 * 1024);
+
     private final VipsLibraryFFM vips;
-    private final InputStream inputStream;
+    private final ByteSource byteSource;
+    private InputStream inputStream;
     private final MemorySegment source;
     private final MemorySegment readCallbackStub;
     private final MemorySegment seekCallbackStub;
     private final Arena callbackArena;
+    private byte[] javaBuffer;
 
     private long position = 0;
     private boolean closed = false;
@@ -56,11 +63,58 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
     public InputStreamVipsSourceFFM(VipsLibraryFFM vips, InputStream inputStream) throws IOException {
         this.vips = vips;
         this.inputStream = inputStream;
+        this.byteSource = null;
         this.callbackArena = Arena.ofShared();
+        this.javaBuffer = new byte[BUFFER_SIZE];
 
         if (inputStream.markSupported()) {
-            inputStream.mark(Integer.MAX_VALUE);
+            log.trace("Marking input stream with limit: {}", READ_LIMIT);
+            inputStream.mark(READ_LIMIT);
         }
+
+        try {
+            this.source = vips.vipsSourceCustomNew();
+            if (source == null || source.address() == 0) {
+                throw new IOException("Failed to create VipsSourceCustom");
+            }
+
+            Linker linker = Linker.nativeLinker();
+
+            // Read callback
+            MethodHandle readHandle = MethodHandles.lookup().findVirtual(InputStreamVipsSourceFFM.class, "handleRead",
+                    MethodType.methodType(long.class, MemorySegment.class, MemorySegment.class, long.class, MemorySegment.class)).bindTo(this);
+            this.readCallbackStub = linker.upcallStub(readHandle, FD_READ_CALLBACK, callbackArena);
+
+            // Seek callback
+            MethodHandle seekHandle = MethodHandles.lookup().findVirtual(InputStreamVipsSourceFFM.class, "handleSeek",
+                    MethodType.methodType(long.class, MemorySegment.class, long.class, int.class, MemorySegment.class)).bindTo(this);
+            this.seekCallbackStub = linker.upcallStub(seekHandle, FD_SEEK_CALLBACK, callbackArena);
+
+            // Connect the callbacks to the source
+            long readHandlerId = vips.gSignalConnectData(source, "read", readCallbackStub, MemorySegment.NULL);
+            long seekHandlerId = vips.gSignalConnectData(source, "seek", seekCallbackStub, MemorySegment.NULL);
+
+            if (readHandlerId == 0) {
+                log.warn("Failed to connect read callback to VipsSourceCustom");
+            }
+            if (seekHandlerId == 0) {
+                log.debug("Failed to connect seek callback to VipsSourceCustom (may not be supported)");
+            }
+
+            log.debug("Created InputStreamVipsSourceFFM with read handler: {}, seek handler: {}", readHandlerId, seekHandlerId);
+
+        } catch (Throwable e) {
+            callbackArena.close();
+            throw new IOException("Failed to create VipsSource", e);
+        }
+    }
+
+    public InputStreamVipsSourceFFM(VipsLibraryFFM vips, ByteSource byteSource) throws IOException {
+        this.vips = vips;
+        this.byteSource = byteSource;
+        this.inputStream = byteSource.openStream();
+        this.callbackArena = Arena.ofShared();
+        this.javaBuffer = new byte[BUFFER_SIZE];
 
         try {
             this.source = vips.vipsSourceCustomNew();
@@ -114,8 +168,10 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
         }
 
         try {
-            int toRead = (int) Math.min(length, BUFFER_SIZE);
-            byte[] javaBuffer = new byte[toRead];
+            int toRead = (int) Math.min(length, (long) Integer.MAX_VALUE);
+            if (toRead > javaBuffer.length) {
+                javaBuffer = new byte[toRead];
+            }
 
             int bytesRead = inputStream.read(javaBuffer, 0, toRead);
 
@@ -144,14 +200,37 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
         }
 
         try {
-            if (whence == 0 && offset == 0 && inputStream.markSupported()) {
-                inputStream.reset();
-                position = 0;
-                return 0;
+            if (whence == 0) { // SEEK_SET
+                if (offset == 0) {
+                    if (byteSource != null) {
+                        inputStream.close();
+                        inputStream = byteSource.openStream();
+                        position = 0;
+                        log.trace("Seeked to beginning by reopening ByteSource");
+                        return 0;
+                    } else if (inputStream.markSupported()) {
+                        try {
+                            inputStream.reset();
+                            position = 0;
+                            log.trace("Seeked to beginning using reset");
+                            return 0;
+                        } catch (IOException e) {
+                            log.debug("Reset failed (likely exceeded read limit or not marked): {}", e.getMessage());
+                            return -1;
+                        }
+                    }
+                } else if (byteSource != null) {
+                    inputStream.close();
+                    inputStream = byteSource.openStream();
+                    ByteStreams.skipFully(inputStream, offset);
+                    position = offset;
+                    log.trace("Seeked to {} by reopening ByteSource", offset);
+                    return position;
+                }
             }
             return -1;
         } catch (IOException e) {
-            log.debug("Error seeking in InputStream", e);
+            log.debug("Error seeking in InputStream: {}", e.getMessage());
             return -1;
         }
     }
@@ -168,16 +247,19 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
                 log.warn("Error unreffing VipsSource", e);
             }
             callbackArena.close();
-            try {
-                inputStream.close();
-            } catch (IOException e) {
-                log.debug("Error closing InputStream", e);
+
+            if (byteSource != null && inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (IOException e) {
+                    log.debug("Error closing InputStream: {}", e.getMessage());
+                }
             }
         }
     }
 
     public boolean isSeekable() {
-        return inputStream.markSupported();
+        return byteSource != null || inputStream.markSupported();
     }
 
     public long getPosition() {

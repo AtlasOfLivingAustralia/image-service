@@ -39,7 +39,7 @@ class ImageOptimisationService implements MetricsSupport {
     def grailsApplication
     @Autowired
     ImageOptimisationConfig imageOptimisationConfig
-    CommandExecutor commandExecutor = new ProcessCommandExecutor()
+    CommandExecutor commandExecutor
     // Cache for Java SPI tools by tool key
     private final Map<String, ImageOptimTool> javaTools = new HashMap<>()
 

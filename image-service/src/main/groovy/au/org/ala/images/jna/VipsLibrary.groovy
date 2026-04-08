@@ -90,8 +90,8 @@ interface VipsLibrary extends Library {
     Pointer vips_image_new_from_buffer(Pointer buf, long len, String options)
 
     /**
-     * Create a new image object from a file descriptor.
-     * @param fd file descriptor
+     * Create a new image object from a file.
+     * @param filename path to the image file
      * @return VipsImage pointer or null on error
      */
     Pointer vips_image_new_from_file(String filename)
@@ -122,7 +122,8 @@ interface VipsLibrary extends Library {
      * @param input input image
      * @param out pointer to receive output image
      * @param width target width
-     * @param height target height (optional, use -1 for auto)
+     * @param options optional named arguments passed to libvips (null-terminated)
+     *                      for example {@code "height", value} to set a target height
      * @return 0 on success
      */
     int vips_thumbnail_image(Pointer input, Pointer out, int width, Object... options)

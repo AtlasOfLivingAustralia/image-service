@@ -33,15 +33,13 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             return fallback.process(imageBytes, region, size, rotation, quality, format, out)
         }
 
-        InputStream inputStream = null
         InputStreamVipsSource vipsSource = null
         OutputStreamVipsTarget vipsTarget = null
         Pointer image = null
         Pointer workingImage = null
 
         try {
-            inputStream = imageBytes.openStream()
-            vipsSource = new InputStreamVipsSource(vips, inputStream)
+            vipsSource = new InputStreamVipsSource(vips, imageBytes)
 
             // Load image
             image = vips.vips_image_new_from_source(vipsSource.getSource(), "", null)
@@ -91,12 +89,11 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             )
 
         } catch (Exception e) {
-            log.error("JNA IIIF processing failed, falling back", e)
-            if (inputStream?.markSupported()) {
-                inputStream.reset()
-            } else {
-                // If we can't reset, we might need a fresh stream from ByteSource
+            if (vipsTarget != null && vipsTarget.getBytesWritten() > 0) {
+                log.error("JNA IIIF processing failed after writing {} bytes, cannot fallback", vipsTarget.getBytesWritten(), e)
+                throw new IOException("Failed to write image and partial bytes already written to output", e)
             }
+            log.error("JNA IIIF processing failed, falling back", e)
             return fallback.process(imageBytes, region, size, rotation, quality, format, out)
         } finally {
             if (workingImage != null && workingImage != image) {
@@ -107,7 +104,6 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             }
             vipsSource?.close()
             vipsTarget?.close()
-            inputStream?.close()
         }
     }
 
@@ -144,8 +140,8 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         }
 
         // clamp
-        x = Math.max(0, Math.min(x, srcW))
-        y = Math.max(0, Math.min(y, srcH))
+        x = Math.max(0, Math.min(x, srcW - 1))
+        y = Math.max(0, Math.min(y, srcH - 1))
         w = Math.max(1, Math.min(w, srcW - x))
         h = Math.max(1, Math.min(h, srcH - y))
 

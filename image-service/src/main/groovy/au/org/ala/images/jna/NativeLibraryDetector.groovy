@@ -15,6 +15,7 @@ class NativeLibraryDetector {
 
     private static volatile Boolean vipsAvailable = null
     private static volatile VipsLibrary vipsInstance = null
+    private static volatile NativeLibrary vipsNativeLibrary = null
 
     /**
      * Check if libvips is available on the system.
@@ -101,6 +102,7 @@ class NativeLibraryDetector {
                 VipsLibrary lib = Native.load(name, VipsLibrary.class) as VipsLibrary
                 if (lib != null) {
                     log.debug("Successfully loaded: {}", name)
+                    vipsNativeLibrary = NativeLibrary.getInstance(name)
                     return lib
                 }
             } catch (UnsatisfiedLinkError e) {
@@ -120,14 +122,8 @@ class NativeLibraryDetector {
             return null
         }
 
-        try {
-            // Try to get version from library path
-            NativeLibrary lib = NativeLibrary.getInstance("vips")
-            if (lib != null) {
-                return "libvips (path: ${lib.file?.absolutePath})"
-            }
-        } catch (Exception e) {
-            log.debug("Could not get libvips version info", e)
+        if (vipsNativeLibrary != null) {
+            return "libvips (path: ${vipsNativeLibrary.file?.absolutePath})"
         }
 
         return "libvips (version unknown)"

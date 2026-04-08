@@ -1,5 +1,7 @@
 package au.org.ala.images.jna
 
+import com.google.common.io.ByteSource
+import com.google.common.io.ByteStreams
 import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import groovy.transform.CompileStatic
@@ -16,11 +18,16 @@ import groovy.util.logging.Slf4j
 @CompileStatic
 class InputStreamVipsSource implements AutoCloseable {
 
+    /** Configurable read limit for mark/reset. Default 10MB. */
+    public static int READ_LIMIT = Integer.getInteger("vips.source.readlimit", 10 * 1024 * 1024)
+
     private final VipsLibrary vips
-    private final InputStream inputStream
+    private final ByteSource byteSource
+    private InputStream inputStream
     private final Pointer source
     private final VipsLibrary.ReadCallback readCallback
     private final VipsLibrary.SeekCallback seekCallback
+    private byte[] javaBuffer
 
     private long position = 0
     private boolean closed = false
@@ -36,10 +43,13 @@ class InputStreamVipsSource implements AutoCloseable {
     InputStreamVipsSource(VipsLibrary vips, InputStream inputStream) {
         this.vips = vips
         this.inputStream = inputStream
+        this.byteSource = null
+        this.javaBuffer = new byte[BUFFER_SIZE]
 
-        // Mark the stream if possible for seeking support
+        // Mark the stream if possible for seeking support, but with a bounded limit
         if (inputStream.markSupported()) {
-            inputStream.mark(Integer.MAX_VALUE)
+            log.trace("Marking input stream with limit: {}", READ_LIMIT)
+            inputStream.mark(READ_LIMIT)
         }
 
         // Create the custom source
@@ -48,21 +58,57 @@ class InputStreamVipsSource implements AutoCloseable {
             throw new IOException("Failed to create VipsSourceCustom")
         }
 
-        // Create callbacks that delegate to this instance
-        this.readCallback = new VipsLibrary.ReadCallback() {
+        this.readCallback = createReadCallback()
+        this.seekCallback = createSeekCallback()
+
+        connectCallbacks()
+    }
+
+    /**
+     * Create a VipsSource from a ByteSource.
+     * This allows seeking by reopening the stream.
+     * @param vips VipsLibrary instance
+     * @param byteSource the byte source to wrap
+     */
+    InputStreamVipsSource(VipsLibrary vips, ByteSource byteSource) {
+        this.vips = vips
+        this.byteSource = byteSource
+        this.inputStream = byteSource.openStream()
+        this.javaBuffer = new byte[BUFFER_SIZE]
+
+        // No need to mark if we have ByteSource, we can reopen instead
+
+        // Create the custom source
+        this.source = vips.vips_source_custom_new()
+        if (source == null || source == Pointer.NULL) {
+            throw new IOException("Failed to create VipsSourceCustom")
+        }
+
+        this.readCallback = createReadCallback()
+        this.seekCallback = createSeekCallback()
+
+        connectCallbacks()
+    }
+
+    private VipsLibrary.ReadCallback createReadCallback() {
+        return new VipsLibrary.ReadCallback() {
             @Override
             long invoke(Pointer source, Pointer buffer, long length, Pointer user_data) {
                 return handleRead(buffer, length)
             }
         }
+    }
 
-        this.seekCallback = new VipsLibrary.SeekCallback() {
+    private VipsLibrary.SeekCallback createSeekCallback() {
+        return new VipsLibrary.SeekCallback() {
             @Override
             long invoke(Pointer source, long offset, int whence, Pointer user_data) {
                 return handleSeek(offset, whence)
             }
         }
+    }
 
+    private void connectCallbacks() {
         // Connect the callbacks to the source
         // g_signal_connect_data(instance, signal_name, callback, data, destroy_notify, flags)
         long readHandlerId = vips.g_signal_connect_data(source, "read", readCallback,
@@ -108,8 +154,10 @@ class InputStreamVipsSource implements AutoCloseable {
 
         try {
             // Read from InputStream in chunks
-            int toRead = (int) Math.min(length, BUFFER_SIZE)
-            byte[] javaBuffer = new byte[toRead]
+            int toRead = (int) Math.min(length, (long) Integer.MAX_VALUE)
+            if (toRead > javaBuffer.length) {
+                javaBuffer = new byte[toRead]
+            }
 
             int bytesRead = inputStream.read(javaBuffer, 0, toRead)
 
@@ -152,14 +200,35 @@ class InputStreamVipsSource implements AutoCloseable {
         }
 
         try {
-            // Most InputStreams don't support seeking
-            // We can only support SEEK_SET to 0 (reset) if mark/reset is supported
-            if (whence == 0 && offset == 0 && inputStream.markSupported()) {
-                // SEEK_SET to beginning
-                inputStream.reset()
-                position = 0
-                log.trace("Seeked to beginning")
-                return 0
+            // Support SEEK_SET to any position if ByteSource is available, otherwise only to 0 via mark/reset
+            if (whence == 0) {
+                if (offset == 0) {
+                    if (byteSource != null) {
+                        inputStream.close()
+                        inputStream = byteSource.openStream()
+                        position = 0
+                        log.trace("Seeked to beginning by reopening ByteSource")
+                        return 0
+                    } else if (inputStream.markSupported()) {
+                        try {
+                            inputStream.reset()
+                            position = 0
+                            log.trace("Seeked to beginning using reset")
+                            return 0
+                        } catch (IOException e) {
+                            log.debug("Reset failed (likely exceeded read limit or not marked): {}", e.message)
+                            return -1
+                        }
+                    }
+                } else if (byteSource != null) {
+                    // SEEK_SET to non-zero offset
+                    inputStream.close()
+                    inputStream = byteSource.openStream()
+                    ByteStreams.skipFully(inputStream, offset)
+                    position = offset
+                    log.trace("Seeked to {} by reopening ByteSource", offset)
+                    return position
+                }
             }
 
             // Seeking not supported for this stream
@@ -167,7 +236,7 @@ class InputStreamVipsSource implements AutoCloseable {
             return -1
 
         } catch (IOException e) {
-            log.debug("Error seeking in InputStream", e)
+            log.debug("Error seeking in InputStream: {}", e.message)
             return -1
         } catch (Exception e) {
             log.error("Unexpected error in seek callback", e)
@@ -190,24 +259,24 @@ class InputStreamVipsSource implements AutoCloseable {
                 }
             }
 
-            // Do NOT close the underlying stream here, as it may be needed for fallback
-            // The caller who provided the InputStream should be responsible for closing it.
-            /*
-            try {
-                inputStream.close()
-            } catch (IOException e) {
-                log.debug("Error closing InputStream", e)
+            // If we opened the stream from ByteSource, we should close it.
+            // If it was provided to the constructor, the caller is responsible.
+            if (byteSource != null && inputStream != null) {
+                try {
+                    inputStream.close()
+                } catch (IOException e) {
+                    log.debug("Error closing InputStream: {}", e.message)
+                }
             }
-            */
         }
     }
 
     /**
      * Check if this source supports seeking.
-     * @return true if the underlying stream supports mark/reset
+     * @return true if the underlying stream supports mark/reset OR if we have a ByteSource
      */
     boolean isSeekable() {
-        return inputStream.markSupported()
+        return byteSource != null || inputStream.markSupported()
     }
 
     /**

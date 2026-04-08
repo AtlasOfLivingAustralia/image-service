@@ -2,6 +2,7 @@ package au.org.ala.images.tiling
 
 import au.org.ala.images.factory.ImageLibraryFactory
 import au.org.ala.images.optimisation.CommandExecutor
+import au.org.ala.images.tiling.ImageTilerConfig
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 

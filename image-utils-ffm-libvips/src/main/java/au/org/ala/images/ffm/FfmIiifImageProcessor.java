@@ -38,8 +38,8 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
         MemorySegment image = MemorySegment.NULL;
         MemorySegment workingImage = MemorySegment.NULL;
 
-        try (InputStream inputStream = imageBytes.openStream()) {
-            vipsSource = new InputStreamVipsSourceFFM(vips, inputStream);
+        try {
+            vipsSource = new InputStreamVipsSourceFFM(vips, imageBytes);
 
             // Load image
             image = vips.vipsImageNewFromSource(vipsSource.getSource(), "");
@@ -89,6 +89,10 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
             );
 
         } catch (Throwable e) {
+            if (vipsTarget != null && vipsTarget.getBytesWritten() > 0) {
+                log.error("FFM IIIF processing failed after writing {} bytes, cannot fallback", vipsTarget.getBytesWritten(), e);
+                throw new IOException("Failed to write image and partial bytes already written to output", e);
+            }
             log.error("FFM IIIF processing failed, falling back", e);
             return fallback.process(imageBytes, region, size, rotation, quality, format, out);
         } finally {

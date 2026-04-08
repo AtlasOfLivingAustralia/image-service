@@ -82,19 +82,7 @@ public class FfmStreamingImageThumbnailer implements IImageThumbnailer {
         MemorySegment inputImage = null;
 
         try (Arena sessionArena = Arena.ofConfined()) {
-            InputStream inputStream = imageBytes.openStream();
-            try {
-                vipsSource = new InputStreamVipsSourceFFM(vips, inputStream);
-                inputStream = null;
-            } finally {
-                if (inputStream != null) {
-                    try {
-                        inputStream.close();
-                    } catch (IOException ioe) {
-                        log.warn("Failed to close input stream after libvips initialization failure", ioe);
-                    }
-                }
-            }
+            vipsSource = new InputStreamVipsSourceFFM(vips, imageBytes);
 
             inputImage = vips.vipsImageNewFromSource(vipsSource.getSource(), "");
             if (inputImage == null || inputImage.address() == 0) {
