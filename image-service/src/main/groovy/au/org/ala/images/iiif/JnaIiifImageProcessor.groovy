@@ -23,8 +23,12 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
     private final IiifImageProcessor fallback
 
     JnaIiifImageProcessor(IiifImageProcessor fallback) {
+        this(NativeLibraryDetector.getVipsLibrary(), fallback)
+    }
+
+    JnaIiifImageProcessor(VipsLibrary vips, IiifImageProcessor fallback) {
+        this.vips = vips
         this.fallback = fallback
-        this.vips = NativeLibraryDetector.getVipsLibrary()
     }
 
     @Override
@@ -146,10 +150,9 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         h = Math.max(1, Math.min(h, srcH - y))
 
         PointerByReference out = new PointerByReference()
-        int result = vips.vips_crop(image, out.getPointer(), x, y, w, h)
+        int result = vips.vips_crop(image, out, x, y, w, h)
         if (result != 0) {
-            log.warn("vips_crop failed: {}", vips.vips_error_buffer())
-            return image
+            throw new RuntimeException("vips_crop failed: " + vips.vips_error_buffer())
         }
         return out.getValue()
     }
@@ -199,15 +202,14 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         PointerByReference out = new PointerByReference()
         int result
         if (scaleW == scaleH) {
-            result = vips.vips_resize(image, out.getPointer(), (double) scaleW, (Object) null)
+            result = vips.vips_resize(image, out, (double) scaleW, (Object) null)
         } else {
             // For now, let's just do proportional to stay simple, or use vips_resize twice? No.
-            result = vips.vips_resize(image, out.getPointer(), (double) scaleW, "vscale", (double) scaleH, (Object) null)
+            result = vips.vips_resize(image, out, (double) scaleW, "vscale", (double) scaleH, (Object) null)
         }
 
         if (result != 0) {
-            log.warn("vips_resize failed: {}", vips.vips_error_buffer())
-            return image
+            throw new RuntimeException("vips_resize failed: " + vips.vips_error_buffer())
         }
         return out.getValue()
     }
@@ -223,11 +225,12 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         if (rotation.mirror) {
             PointerByReference out = new PointerByReference()
             // VIPS_DIRECTION_HORIZONTAL = 0
-            int result = vips.vips_flip(current, out.getPointer(), 0, null)
-            if (result == 0) {
-                if (current != image) vips.g_object_unref(current)
-                current = out.getValue()
+            int result = vips.vips_flip(current, out, 0, null)
+            if (result != 0) {
+                throw new RuntimeException("vips_flip failed: " + vips.vips_error_buffer())
             }
+            if (current != image) vips.g_object_unref(current)
+            current = out.getValue()
         }
 
         // 2. Rotation
@@ -236,26 +239,21 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             PointerByReference out = new PointerByReference()
             int result
             if (deg == 90) {
-                result = vips.vips_rot(current, out.getPointer(), 1, null)
+                result = vips.vips_rot(current, out, 1, null)
             } else if (deg == 180) {
-                result = vips.vips_rot(current, out.getPointer(), 2, null)
+                result = vips.vips_rot(current, out, 2, null)
             } else if (deg == 270) {
-                result = vips.vips_rot(current, out.getPointer(), 3, null)
+                result = vips.vips_rot(current, out, 3, null)
             } else {
                 // Arbitrary rotation - use vips_similarity
-                // int vips_similarity(VipsImage *in, VipsImage **out, ...)
-                // we haven't mapped similarity yet. 
-                // Fallback to Java for arbitrary rotation for now, or map it.
-                // For simplicity, we'll just skip it if not 90/180/270
-                result = -1 
+                result = vips.vips_similarity(current, out, "angle", deg, null)
             }
 
-            if (result == 0) {
-                if (current != image) vips.g_object_unref(current)
-                current = out.getValue()
-            } else {
-                log.warn("Native rotation failed or unsupported for {} degrees", deg)
+            if (result != 0) {
+                throw new RuntimeException("Native rotation failed or unsupported for ${deg} degrees: ${vips.vips_error_buffer()}")
             }
+            if (current != image) vips.g_object_unref(current)
+            current = out.getValue()
         }
 
         return current
@@ -269,24 +267,27 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         if (quality == IiifImageProcessor.Quality.GRAY) {
             PointerByReference out = new PointerByReference()
             // VIPS_INTERPRETATION_B_W = 2
-            int result = vips.vips_colourspace(image, out.getPointer(), 2, null)
-            if (result == 0) {
-                return out.getValue()
+            int result = vips.vips_colourspace(image, out, 2, null)
+            if (result != 0) {
+                throw new RuntimeException("vips_colourspace failed: " + vips.vips_error_buffer())
             }
+            return out.getValue()
         } else if (quality == IiifImageProcessor.Quality.BITONAL) {
             PointerByReference out = new PointerByReference()
             // Convert to gray first then threshold
             Pointer gray = null
             PointerByReference grayRef = new PointerByReference()
-            if (vips.vips_colourspace(image, grayRef.getPointer(), 2, null) == 0) {
-                gray = grayRef.getValue()
-                // VIPS_OPERATION_RELATIONAL_MORE = 4
-                if (vips.vips_relational_const(gray, out.getPointer(), 4, [128.0] as double[], null) == 0) {
-                    vips.g_object_unref(gray)
-                    return out.getValue()
-                }
-                vips.g_object_unref(gray)
+            if (vips.vips_colourspace(image, grayRef, 2, null) != 0) {
+                throw new RuntimeException("vips_colourspace failed (for BITONAL): " + vips.vips_error_buffer())
             }
+            gray = grayRef.getValue()
+            // VIPS_OPERATION_RELATIONAL_MORE = 4
+            if (vips.vips_relational_const(gray, out, 4, [128.0] as double[], null) != 0) {
+                vips.g_object_unref(gray)
+                throw new RuntimeException("vips_relational_const failed (for BITONAL): " + vips.vips_error_buffer())
+            }
+            vips.g_object_unref(gray)
+            return out.getValue()
         }
 
         return image

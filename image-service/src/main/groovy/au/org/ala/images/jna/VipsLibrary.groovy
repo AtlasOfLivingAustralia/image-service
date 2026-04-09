@@ -2,12 +2,10 @@ package au.org.ala.images.jna
 
 import com.sun.jna.Callback
 import com.sun.jna.Library
-import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.ptr.LongByReference
 import com.sun.jna.ptr.PointerByReference
 import groovy.transform.CompileStatic
-import groovy.util.logging.Slf4j
 
 /**
  * JNA interface to libvips C library.
@@ -120,24 +118,24 @@ interface VipsLibrary extends Library {
      * Thumbnail an image. This is a high-level operation that will
      * shrink or expand an image to fit within a bounding box.
      * @param input input image
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param width target width
      * @param options optional named arguments passed to libvips (null-terminated)
      *                      for example {@code "height", value} to set a target height
      * @return 0 on success
      */
-    int vips_thumbnail_image(Pointer input, Pointer out, int width, Object... options)
+    int vips_thumbnail_image(Pointer input, PointerByReference out, int width, Object... options)
 
     /**
      * Thumbnail an image from a buffer.
      * @param buf pointer to image data
      * @param len length of image data
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param width target width
      * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_thumbnail_buffer(Pointer buf, long len, Pointer out, int width, Object... options)
+    int vips_thumbnail_buffer(Pointer buf, long len, PointerByReference out, int width, Object... options)
 
     /**
      * Save an image to a buffer.
@@ -180,62 +178,81 @@ interface VipsLibrary extends Library {
     /**
      * Crop an image (extract a rectangular region).
      * @param input input image
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param left left coordinate
      * @param top top coordinate
      * @param width width of region
      * @param height height of region
      * @return 0 on success
      */
-    int vips_crop(Pointer input, Pointer out, int left, int top, int width, int height)
+    int vips_crop(Pointer input, PointerByReference out, int left, int top, int width, int height)
 
     /**
      * Rotate an image.
      * @param input input image
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param angle VipsAngle (0=D0, 1=D90, 2=D180, 3=D270)
      * @return 0 on success
      */
-    int vips_rot(Pointer input, Pointer out, int angle, Object... varargs)
+    int vips_rot(Pointer input, PointerByReference out, int angle, Object... varargs)
+
+    /**
+     * Rotate an image by an arbitrary angle.
+     * @param input input image
+     * @param out pointer to receive output image pointer
+     * @param angle degrees to rotate clockwise
+     * @param varargs variable arguments (null-terminated)
+     * @return 0 on success
+     */
+    int vips_rotate(Pointer input, PointerByReference out, double angle, Object... varargs)
+
+    /**
+     * Similarity transform.
+     * @param input input image
+     * @param out pointer to receive output image pointer
+     * @param varargs variable arguments (null-terminated)
+     * @return 0 on success
+     */
+    int vips_similarity(Pointer input, PointerByReference out, Object... varargs)
 
     /**
      * Flip an image.
      * @param input input image
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param direction VipsDirection (0=HORIZONTAL, 1=VERTICAL)
      * @return 0 on success
      */
-    int vips_flip(Pointer input, Pointer out, int direction, Object... varargs)
+    int vips_flip(Pointer input, PointerByReference out, int direction, Object... varargs)
 
     /**
      * Change image colourspace.
      * @param input input image
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param interpretation VipsInterpretation (e.g., 2=B_W, 22=sRGB)
      * @return 0 on success
      */
-    int vips_colourspace(Pointer input, Pointer out, int interpretation, Object... varargs)
+    int vips_colourspace(Pointer input, PointerByReference out, int interpretation, Object... varargs)
 
     /**
      * Perform a relational operation on an image and a constant.
      * Used for thresholding (e.g., BITONAL).
      * @param input input image
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param relational VipsOperationRelational (e.g., 4=MORE)
      * @param c constant(s) to compare against
      * @return 0 on success
      */
-    int vips_relational_const(Pointer input, Pointer out, int relational, double[] c, Object... varargs)
+    int vips_relational_const(Pointer input, PointerByReference out, int relational, double[] c, Object... varargs)
 
     /**
      * Resize an image.
      * @param input input image
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param scale scale factor
      * @param varargs variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_resize(Pointer input, Pointer out, double scale, Object... varargs)
+    int vips_resize(Pointer input, PointerByReference out, double scale, Object... varargs)
 
     /**
      * Free memory allocated by VIPS (e.g., for buffers).
@@ -268,12 +285,12 @@ interface VipsLibrary extends Library {
     /**
      * Thumbnail an image from a source.
      * @param source the source to read from
-     * @param out pointer to receive output image
+     * @param out pointer to receive output image pointer
      * @param width target width
      * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_thumbnail_source(Pointer source, Pointer out, int width, Object... options)
+    int vips_thumbnail_source(Pointer source, PointerByReference out, int width, Object... options)
 
     /**
      * Signal handlers for VipsSourceCustom.

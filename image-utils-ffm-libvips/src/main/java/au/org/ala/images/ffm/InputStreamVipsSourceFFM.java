@@ -168,10 +168,7 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
         }
 
         try {
-            int toRead = (int) Math.min(length, (long) Integer.MAX_VALUE);
-            if (toRead > javaBuffer.length) {
-                javaBuffer = new byte[toRead];
-            }
+            int toRead = (int) Math.min(length, (long) javaBuffer.length);
 
             int bytesRead = inputStream.read(javaBuffer, 0, toRead);
 

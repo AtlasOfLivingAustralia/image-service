@@ -23,7 +23,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 
 /**
  * Memory-optimized tiler implementation that writes tiles immediately with strict sequential processing.
@@ -39,8 +39,8 @@ public class ImageTiler5 implements IImageTiler {
     private boolean _exceptionOccurred = false;
     private ZoomFactorStrategy _zoomFactorStrategy = new DefaultZoomFactorStrategy(_tileSize);
 
-    private ExecutorService levelThreadPool;
-    private ExecutorService ioThreadPool;
+    private Executor levelThreadPool;
+    private Executor ioThreadPool;
 
     private static final GraphicsEnvironment GRAPHICS_ENV =
             GraphicsEnvironment.getLocalGraphicsEnvironment();

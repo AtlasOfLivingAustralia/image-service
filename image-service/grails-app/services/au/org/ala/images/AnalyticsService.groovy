@@ -6,7 +6,8 @@ import grails.gorm.transactions.NotTransactional
 import groovy.json.JsonSlurper
 
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.Executors
+import java.util.concurrent.Executor
+import org.springframework.beans.factory.annotation.Autowired
 
 class AnalyticsService {
 
@@ -15,7 +16,8 @@ class AnalyticsService {
     def collectoryService
     def grailsApplication
 
-    final analyticsExecutor = Executors.newSingleThreadExecutor()
+    @Autowired
+    Executor analyticsExecutor
 
     def REPORT_PERIODS = [
         "thisMonth": "30daysAgo",

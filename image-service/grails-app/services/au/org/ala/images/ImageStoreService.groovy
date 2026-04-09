@@ -58,7 +58,7 @@ import java.nio.file.Files
 
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 
-import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -78,8 +78,8 @@ class ImageStoreService implements MetricsSupport {
     DelegatingImageThumbnailer delegatingImageThumbnailer
     DelegatingImageTiler delegatingImageTiler
     ImageTilerConfig imageTilerConfig
-    ExecutorService tilingIoPool
-    ExecutorService tilingWorkPool
+    Executor tilingIoPool
+    Executor tilingWorkPool
 
     @Value('${placeholder.sound.thumbnail}')
     Resource audioThumbnail

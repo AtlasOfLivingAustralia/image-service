@@ -53,6 +53,33 @@ class InputStreamVipsSourceSpec extends Specification {
         source?.close()
     }
 
+    def "test handleRead caps the requested length by BUFFER_SIZE"() {
+        given:
+        if (!NativeLibraryDetector.isVipsAvailable()) {
+            return
+        }
+        VipsLibrary vips = NativeLibraryDetector.getVipsLibrary()
+        byte[] data = new byte[1024 * 1024] // 1MB
+        new Random().nextBytes(data)
+        ByteSource byteSource = ByteSource.wrap(data)
+        def source = new InputStreamVipsSource(vips, byteSource)
+        
+        // Use a large request (1MB)
+        long requested = 1024 * 1024
+        Pointer buf = new com.sun.jna.Memory(requested)
+
+        when:
+        long readCount = source.handleRead(buf, requested)
+
+        then:
+        // BUFFER_SIZE is 64KB
+        readCount <= 64 * 1024
+        readCount > 0
+        
+        cleanup:
+        source?.close()
+    }
+
     def "test InputStreamVipsSource with InputStream respects READ_LIMIT"() {
         given:
         if (!NativeLibraryDetector.isVipsAvailable()) {

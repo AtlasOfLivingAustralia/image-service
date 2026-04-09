@@ -30,11 +30,12 @@ public class JnaImageLibraryFactory implements ImageLibraryFactory {
             return null;
         }
         
-        IImageThumbnailer cliFallback = commandExecutor.isInstalled(tool) ? 
-                new StreamingImageThumbnailer(commandExecutor, tool) : 
-                new ImageThumbnailer();
+        IImageThumbnailer effectiveFallback = fallback != null ? fallback : 
+                (commandExecutor.isInstalled(tool) ? 
+                        new StreamingImageThumbnailer(commandExecutor, tool) : 
+                        new ImageThumbnailer());
                 
-        return new JnaStreamingImageThumbnailer(cliFallback);
+        return new JnaStreamingImageThumbnailer(effectiveFallback);
     }
 
     @Override
@@ -44,11 +45,12 @@ public class JnaImageLibraryFactory implements ImageLibraryFactory {
         }
         
         int tileSize = config != null ? config.getTileSize() : 256;
-        IImageTiler cliFallback = commandExecutor.isInstalled(tool) ? 
-                new StreamingImageTiler(commandExecutor, tool, 120, tileSize) : 
-                new ImageTiler(config);
+        IImageTiler effectiveFallback = fallback != null ? fallback : 
+                (commandExecutor.isInstalled(tool) ? 
+                        new StreamingImageTiler(commandExecutor, tool, 120, tileSize) : 
+                        new ImageTiler(config));
                 
-        return new JnaStreamingImageTiler(cliFallback, tileSize);
+        return new JnaStreamingImageTiler(effectiveFallback, tileSize);
     }
 
     @Override

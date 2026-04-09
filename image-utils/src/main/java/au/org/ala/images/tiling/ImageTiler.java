@@ -1,9 +1,7 @@
 package au.org.ala.images.tiling;
 
 import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
-import au.org.ala.images.util.FileByteSinkFactory;
 import com.google.common.io.ByteSink;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,15 +13,15 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.Closeable;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 public class ImageTiler implements IImageTiler {
 
@@ -31,10 +29,8 @@ public class ImageTiler implements IImageTiler {
 
     private int _tileSize = 256;
     private int _maxColsPerStrip = 6;
-//    private int _ioThreadCount = 2;
-//    private int _maxLevelThreads = 2;
-    private ExecutorService _levelThreadPool;
-    private ExecutorService _ioThreadPool;
+    private Executor _levelThreadPool;
+    private Executor _ioThreadPool;
     private TileFormat _tileFormat = TileFormat.JPEG;
     private Color _tileBackgroundColor = Color.gray;
     private boolean _exceptionOccurred =  false; // crude mechanism for the worker threads to communicate serious failure
@@ -112,7 +108,9 @@ public class ImageTiler implements IImageTiler {
     private Future<?> submitLevelForProcessing(int level, byte[] imageBytes, int[] pyramid, TilerSink.LevelSink levelSink) {
         int subSample = pyramid[level];
         log.debug("Submitting level {} (subsample {}) for processing", level, subSample);
-        return _levelThreadPool.submit(new TileImageTask(imageBytes, subSample, levelSink));
+        FutureTask<Void> task = new FutureTask<>(new TileImageTask(imageBytes, subSample, levelSink), null);
+        _levelThreadPool.execute(task);
+        return task;
     }
 
     private void tileImageAtSubSampleLevel(byte[] bytes, int subsample, TilerSink.LevelSink levelSink) throws IOException {
@@ -246,7 +244,7 @@ public class ImageTiler implements IImageTiler {
                 g.dispose();
                 // Shunt this off to the io writers.
                 ByteSink tileSink = columnSink.getTileSink(rows - y - 1);
-                _ioThreadPool.submit(new ImageTiler.SaveTileTask(tileSink, destTile));
+                _ioThreadPool.execute(new ImageTiler.SaveTileTask(tileSink, destTile));
             }
         }
     }

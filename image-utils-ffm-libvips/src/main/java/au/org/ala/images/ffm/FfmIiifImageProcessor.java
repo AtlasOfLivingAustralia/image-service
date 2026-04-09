@@ -23,8 +23,12 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
     private final IiifImageProcessor fallback;
 
     public FfmIiifImageProcessor(IiifImageProcessor fallback) {
+        this(NativeLibraryDetectorFFM.getVipsLibrary(), fallback);
+    }
+
+    public FfmIiifImageProcessor(VipsLibraryFFM vips, IiifImageProcessor fallback) {
+        this.vips = vips;
         this.fallback = fallback;
-        this.vips = NativeLibraryDetectorFFM.getVipsLibrary();
     }
 
     @Override
@@ -153,8 +157,7 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
             MemorySegment outPtr = tempArena.allocate(ValueLayout.ADDRESS);
             int result = vips.vipsCrop(image, outPtr, x, y, w, h);
             if (result != 0) {
-                log.warn("vips_crop failed: {}", vips.vipsErrorBuffer());
-                return image;
+                throw new RuntimeException("vips_crop failed: " + vips.vipsErrorBuffer());
             }
             return outPtr.get(ValueLayout.ADDRESS, 0);
         }
@@ -206,8 +209,7 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
             MemorySegment outPtr = tempArena.allocate(ValueLayout.ADDRESS);
             int result = vips.vipsResize(image, outPtr, scaleW);
             if (result != 0) {
-                log.warn("vips_resize failed: {}", vips.vipsErrorBuffer());
-                return image;
+                throw new RuntimeException("vips_resize failed: " + vips.vipsErrorBuffer());
             }
             return outPtr.get(ValueLayout.ADDRESS, 0);
         }
@@ -226,10 +228,11 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
                 MemorySegment outPtr = tempArena.allocate(ValueLayout.ADDRESS);
                 // VIPS_DIRECTION_HORIZONTAL = 0
                 int result = vips.vipsFlip(current, outPtr, 0);
-                if (result == 0) {
-                    if (current != image) vips.gObjectUnref(current);
-                    current = outPtr.get(ValueLayout.ADDRESS, 0);
+                if (result != 0) {
+                    throw new RuntimeException("vips_flip failed: " + vips.vipsErrorBuffer());
                 }
+                if (current != image) vips.gObjectUnref(current);
+                current = outPtr.get(ValueLayout.ADDRESS, 0);
             }
         }
 
@@ -247,12 +250,11 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
                     result = vips.vipsRot(current, outPtr, 3);
                 }
 
-                if (result == 0) {
-                    if (current != image) vips.gObjectUnref(current);
-                    current = outPtr.get(ValueLayout.ADDRESS, 0);
-                } else {
-                    log.warn("Native FFM rotation failed or unsupported for {} degrees", deg);
+                if (result != 0) {
+                    throw new RuntimeException("Native FFM rotation failed or unsupported for " + deg + " degrees: " + vips.vipsErrorBuffer());
                 }
+                if (current != image) vips.gObjectUnref(current);
+                current = outPtr.get(ValueLayout.ADDRESS, 0);
             }
         }
 
@@ -269,23 +271,26 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
                 MemorySegment outPtr = tempArena.allocate(ValueLayout.ADDRESS);
                 // VIPS_INTERPRETATION_B_W = 2
                 int result = vips.vipsColourspace(image, outPtr, 2);
-                if (result == 0) {
-                    return outPtr.get(ValueLayout.ADDRESS, 0);
+                if (result != 0) {
+                    throw new RuntimeException("vips_colourspace failed: " + vips.vipsErrorBuffer());
                 }
+                return outPtr.get(ValueLayout.ADDRESS, 0);
             }
         } else if (quality == IiifImageProcessor.Quality.BITONAL) {
             try (Arena tempArena = Arena.ofConfined()) {
                 MemorySegment grayPtr = tempArena.allocate(ValueLayout.ADDRESS);
-                if (vips.vipsColourspace(image, grayPtr, 2) == 0) {
-                    MemorySegment gray = grayPtr.get(ValueLayout.ADDRESS, 0);
-                    MemorySegment outPtr = tempArena.allocate(ValueLayout.ADDRESS);
-                    // VIPS_OPERATION_RELATIONAL_MORE = 4
-                    if (vips.vipsRelationalConst(gray, outPtr, 4, new double[]{128.0d}) == 0) {
-                        vips.gObjectUnref(gray);
-                        return outPtr.get(ValueLayout.ADDRESS, 0);
-                    }
-                    vips.gObjectUnref(gray);
+                if (vips.vipsColourspace(image, grayPtr, 2) != 0) {
+                    throw new RuntimeException("vips_colourspace failed (for BITONAL): " + vips.vipsErrorBuffer());
                 }
+                MemorySegment gray = grayPtr.get(ValueLayout.ADDRESS, 0);
+                MemorySegment outPtr = tempArena.allocate(ValueLayout.ADDRESS);
+                // VIPS_OPERATION_RELATIONAL_MORE = 4
+                if (vips.vipsRelationalConst(gray, outPtr, 4, new double[]{128.0d}) != 0) {
+                    vips.gObjectUnref(gray);
+                    throw new RuntimeException("vips_relational_const failed (for BITONAL): " + vips.vipsErrorBuffer());
+                }
+                vips.gObjectUnref(gray);
+                return outPtr.get(ValueLayout.ADDRESS, 0);
             }
         }
 

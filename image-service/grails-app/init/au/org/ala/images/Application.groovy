@@ -7,15 +7,15 @@ import au.org.ala.images.thumb.DelegatingImageThumbnailer
 import au.org.ala.images.tiling.DelegatingImageTiler
 import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.tiling.TileFormat
-import com.google.common.util.concurrent.ThreadFactoryBuilder
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
+import org.springframework.core.task.TaskExecutor
 
 import java.awt.Color
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.Executor
 
 //@EnableConfigurationProperties(ImageOptimisationConfig)
 class Application extends GrailsAutoConfiguration {
@@ -42,8 +42,14 @@ class Application extends GrailsAutoConfiguration {
     boolean tilingIoVirtualThreads
 
     @Bean
-    ExecutorService analyticsExecutor() {
-        return Executors.newSingleThreadExecutor()
+    TaskExecutor analyticsExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
+        executor.setCorePoolSize(1)
+        executor.setMaxPoolSize(1)
+        executor.setThreadNamePrefix("analytics-")
+        executor.setWaitForTasksToCompleteOnShutdown(true)
+        executor.setAwaitTerminationSeconds(10)
+        return executor
     }
 
     @Bean
@@ -70,18 +76,36 @@ class Application extends GrailsAutoConfiguration {
     }
 
     @Bean
-    ExecutorService tilingIoPool() {
-        return tilingIoVirtualThreads ? Executors.newVirtualThreadPerTaskExecutor() :
-                Executors.newFixedThreadPool(tilingIoThreads, new ThreadFactoryBuilder().setNameFormat("tiling-io-pool-%d").build())
+    TaskExecutor tilingIoPool() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
+        if (tilingIoVirtualThreads) {
+            executor.setThreadFactory(Thread.ofVirtual().name("tiling-io-pool-", 0).factory())
+            executor.setCorePoolSize(0)
+            executor.setMaxPoolSize(Integer.MAX_VALUE)
+            executor.setQueueCapacity(0)
+        } else {
+            executor.setCorePoolSize(tilingIoThreads)
+            executor.setMaxPoolSize(tilingIoThreads)
+            executor.setThreadNamePrefix("tiling-io-pool-")
+        }
+        executor.setWaitForTasksToCompleteOnShutdown(true)
+        executor.setAwaitTerminationSeconds(10)
+        return executor
     }
 
     @Bean
-    ExecutorService tilingWorkPool() {
-        return Executors.newFixedThreadPool(tilingLevelThreads, new ThreadFactoryBuilder().setNameFormat("tiling-work-pool-%d").build())
+    TaskExecutor tilingWorkPool() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
+        executor.setCorePoolSize(tilingLevelThreads)
+        executor.setMaxPoolSize(tilingLevelThreads)
+        executor.setThreadNamePrefix("tiling-work-pool-")
+        executor.setWaitForTasksToCompleteOnShutdown(true)
+        executor.setAwaitTerminationSeconds(10)
+        return executor
     }
 
     @Bean
-    ImageTilerConfig imageTilerConfig(ExecutorService tilingIoPool, ExecutorService tilingWorkPool) {
+    ImageTilerConfig imageTilerConfig(Executor tilingIoPool, Executor tilingWorkPool) {
         def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, 256, 6, TileFormat.JPEG)
         config.setTileBackgroundColor(new Color(221, 221, 221))
         return config

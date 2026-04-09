@@ -4,14 +4,10 @@ import au.org.ala.images.jna.InputStreamVipsSource
 import au.org.ala.images.jna.OutputStreamVipsTarget
 import au.org.ala.images.jna.NativeLibraryDetector
 import au.org.ala.images.jna.VipsLibrary
-import au.org.ala.images.thumb.IImageThumbnailer
-import au.org.ala.images.thumb.ThumbDefinition
-import au.org.ala.images.thumb.ThumbnailingResult
 import au.org.ala.images.util.ByteSinkFactory
 import com.google.common.io.ByteSink
 import com.google.common.io.ByteSource
 import com.sun.jna.Pointer
-import com.sun.jna.ptr.LongByReference
 import com.sun.jna.ptr.PointerByReference
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
@@ -163,21 +159,21 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
         if (thumbDef.square && thumbDef.centreCrop) {
             // Centre crop to square - use height parameter and crop
             // VIPS_INTERESTING_CENTRE = 1
-            return vips.vips_thumbnail_image(inputImage, outRef.pointer, size,
+            return vips.vips_thumbnail_image(inputImage, outRef, size,
                     "height", size,
                     "crop", 1,
                     null)
         } else if (thumbDef.square) {
             // Fit within square with background
-            return vips.vips_thumbnail_image(inputImage, outRef.pointer, size,
+            return vips.vips_thumbnail_image(inputImage, outRef, size,
                     "height", size,
                     null)
         } else if (thumbDef.width != -1) {
             // Specific width
-            return vips.vips_thumbnail_image(inputImage, outRef.pointer, thumbDef.width, null)
+            return vips.vips_thumbnail_image(inputImage, outRef, thumbDef.width, null)
         } else {
             // Default: fit within size x size
-            return vips.vips_thumbnail_image(inputImage, outRef.pointer, size, null)
+            return vips.vips_thumbnail_image(inputImage, outRef, size, null)
         }
     }
 

@@ -23,7 +23,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -44,8 +44,8 @@ public class ImageTiler3 implements IImageTiler{
     private boolean _exceptionOccurred =  false; // crude mechanism for the worker threads to communicate serious failure
     private ZoomFactorStrategy _zoomFactorStrategy = new DefaultZoomFactorStrategy(_tileSize);
 
-    private ExecutorService levelThreadPool;
-    private ExecutorService ioThreadPool;
+    private Executor levelThreadPool;
+    private Executor ioThreadPool;
 
     private static final GraphicsEnvironment GRAPHICS_ENV =
             GraphicsEnvironment.getLocalGraphicsEnvironment();

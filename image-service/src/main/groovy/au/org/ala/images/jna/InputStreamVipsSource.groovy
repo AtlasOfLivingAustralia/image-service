@@ -2,7 +2,6 @@ package au.org.ala.images.jna
 
 import com.google.common.io.ByteSource
 import com.google.common.io.ByteStreams
-import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
@@ -153,11 +152,8 @@ class InputStreamVipsSource implements AutoCloseable {
         }
 
         try {
-            // Read from InputStream in chunks
-            int toRead = (int) Math.min(length, (long) Integer.MAX_VALUE)
-            if (toRead > javaBuffer.length) {
-                javaBuffer = new byte[toRead]
-            }
+            // Read from InputStream in chunks, capped by our internal buffer size
+            int toRead = (int) Math.min(length, (long) javaBuffer.length)
 
             int bytesRead = inputStream.read(javaBuffer, 0, toRead)
 
