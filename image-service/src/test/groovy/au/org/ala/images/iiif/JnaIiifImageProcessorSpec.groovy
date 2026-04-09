@@ -110,8 +110,11 @@ class JnaIiifImageProcessorSpec extends Specification {
         def bytes = ByteSource.wrap(new byte[0])
         def out = new ByteArrayOutputStream()
         def result = new IiifImageProcessor.Result(10, 10, "image/jpeg")
+        Pointer source = Mock(Pointer)
 
         // Mock vips_image_new_from_source to fail
+        vips.vips_source_custom_new() >> source
+        vips.g_signal_connect_data(*_) >> 1L
         vips.vips_image_new_from_source(_, _, _) >> Pointer.NULL
         vips.vips_error_buffer() >> "Could not load image"
 
@@ -183,6 +186,7 @@ class JnaIiifImageProcessorSpec extends Specification {
         Pointer rotatedImage = Mock(Pointer)
 
         vips.vips_source_custom_new() >> source
+        vips.g_signal_connect_data(*_) >> 1L
         vips.vips_image_new_from_source(source, _, _) >> image
         vips.vips_image_get_width(image) >> 100
         vips.vips_image_get_height(image) >> 100
@@ -200,7 +204,8 @@ class JnaIiifImageProcessorSpec extends Specification {
             args[1].setValue(rotatedImage)
             return 0
         }
-        0 * vips.vips_similarity(*_)
+        0 * vips.vips_rotate(*_)
+        0 * fallback.process(*_)
     }
 
     def "test rotation of 360 or -360 is ignored"() {
@@ -216,6 +221,7 @@ class JnaIiifImageProcessorSpec extends Specification {
         Pointer target = Mock(Pointer)
 
         vips.vips_source_custom_new() >> source
+        vips.g_signal_connect_data(*_) >> 1L
         vips.vips_image_new_from_source(source, _, _) >> image
         vips.vips_image_get_width(image) >> 100
         vips.vips_image_get_height(image) >> 100
@@ -229,5 +235,6 @@ class JnaIiifImageProcessorSpec extends Specification {
         then:
         0 * vips.vips_rot(*_)
         0 * vips.vips_similarity(*_)
+        0 * fallback.process(*_)
     }
 }

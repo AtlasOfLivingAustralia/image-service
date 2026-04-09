@@ -48,7 +48,7 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             vipsSource = new InputStreamVipsSource(vips, imageBytes)
 
             // Load image
-            image = vips.vips_image_new_from_source(vipsSource.getSource(), "", null)
+            image = vips.vips_image_new_from_source(vipsSource.getSource(), "", (Object) null)
             if (image == null || image == Pointer.NULL) {
                 throw new IOException("Failed to load image: ${vips.vips_error_buffer()}")
             }
@@ -152,7 +152,7 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         h = Math.max(1, Math.min(h, srcH - y))
 
         PointerByReference out = new PointerByReference()
-        int result = vips.vips_crop(image, out, x, y, w, h)
+        int result = vips.vips_crop(image, out, x, y, w, h, (Object) null)
         if (result != 0) {
             throw new RuntimeException("vips_crop failed: " + vips.vips_error_buffer())
         }
@@ -231,7 +231,7 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         if (rotation.mirror) {
             PointerByReference out = new PointerByReference()
             // VIPS_DIRECTION_HORIZONTAL = 0
-            int result = vips.vips_flip(current, out, 0, null)
+            int result = vips.vips_flip(current, out, 0, (Object) null)
             if (result != 0) {
                 throw new RuntimeException("vips_flip failed: " + vips.vips_error_buffer())
             }
@@ -244,14 +244,14 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             PointerByReference out = new PointerByReference()
             int result
             if (deg == 90) {
-                result = vips.vips_rot(current, out, 1, null)
+                result = vips.vips_rot(current, out, 1, (Object) null)
             } else if (deg == 180) {
-                result = vips.vips_rot(current, out, 2, null)
+                result = vips.vips_rot(current, out, 2, (Object) null)
             } else if (deg == 270) {
-                result = vips.vips_rot(current, out, 3, null)
+                result = vips.vips_rot(current, out, 3, (Object) null)
             } else {
                 // Arbitrary rotation - use vips_rotate which may be slower but is needed for non-right-angle rotations
-                result = vips.vips_rotate(current, out, deg, null)
+                result = vips.vips_rotate(current, out, deg, (Object) null)
             }
 
             if (result != 0) {
@@ -272,7 +272,7 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         if (quality == IiifImageProcessor.Quality.GRAY) {
             PointerByReference out = new PointerByReference()
             // VIPS_INTERPRETATION_B_W = 2
-            int result = vips.vips_colourspace(image, out, 2, null)
+            int result = vips.vips_colourspace(image, out, 2, (Object) null)
             if (result != 0) {
                 throw new RuntimeException("vips_colourspace failed: " + vips.vips_error_buffer())
             }
@@ -282,12 +282,12 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             // Convert to gray first then threshold
             Pointer gray = null
             PointerByReference grayRef = new PointerByReference()
-            if (vips.vips_colourspace(image, grayRef, 2, null) != 0) {
+            if (vips.vips_colourspace(image, grayRef, 2, (Object) null) != 0) {
                 throw new RuntimeException("vips_colourspace failed (for BITONAL): " + vips.vips_error_buffer())
             }
             gray = grayRef.getValue()
             // VIPS_OPERATION_RELATIONAL_MORE = 4
-            if (vips.vips_relational_const(gray, out, 4, [128.0] as double[], null) != 0) {
+            if (vips.vips_relational_const(gray, out, 4, [128.0] as double[], (Object) null) != 0) {
                 vips.g_object_unref(gray)
                 throw new RuntimeException("vips_relational_const failed (for BITONAL): " + vips.vips_error_buffer())
             }

@@ -192,9 +192,10 @@ interface VipsLibrary extends Library {
      * @param top top coordinate
      * @param width width of region
      * @param height height of region
+     * @param varargs variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_crop(Pointer input, PointerByReference out, int left, int top, int width, int height)
+    int vips_crop(Pointer input, PointerByReference out, int left, int top, int width, int height, Object... varargs)
 
     /**
      * Rotate an image.
