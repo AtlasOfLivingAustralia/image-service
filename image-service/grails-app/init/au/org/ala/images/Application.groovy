@@ -32,13 +32,13 @@ class Application extends GrailsAutoConfiguration {
     @Value('${images.preferJna:true}')
     boolean preferJna
 
-    @Value('${tiling.ioThreads:2}')
+    @Value('${imageservice.tiling.io.threads:${tiling.ioThreads:2}}')
     int tilingIoThreads
 
-    @Value('${tiling.levelThreads:2}')
+    @Value('${imageservice.tiling.level.threads:${tiling.levelThreads:2}}')
     int tilingLevelThreads
 
-    @Value('${tiling.ioVirtualThreads:true}')
+    @Value('${imageservice.tiling.io.virtualThreads:${tiling.ioVirtualThreads:true}}')
     boolean tilingIoVirtualThreads
 
     @Bean
@@ -79,13 +79,22 @@ class Application extends GrailsAutoConfiguration {
     TaskExecutor tilingIoPool() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
         if (tilingIoVirtualThreads) {
-            executor.setThreadFactory(Thread.ofVirtual().name("tiling-io-pool-", 0).factory())
-            executor.setCorePoolSize(0)
-            executor.setMaxPoolSize(Integer.MAX_VALUE)
-            executor.setQueueCapacity(0)
+            try {
+                executor.setThreadFactory(Thread.ofVirtual().name("tiling-io-pool-", 0).factory())
+                executor.setCorePoolSize(0)
+                executor.setMaxPoolSize(Integer.MAX_VALUE)
+                executor.setQueueCapacity(0)
+            } catch (NoSuchMethodError | Exception e) {
+                // Fallback if not on Java 21+ or other issues with virtual threads
+                int poolSize = Math.max(1, tilingIoThreads)
+                executor.setCorePoolSize(poolSize)
+                executor.setMaxPoolSize(poolSize)
+                executor.setThreadNamePrefix("tiling-io-pool-")
+            }
         } else {
-            executor.setCorePoolSize(tilingIoThreads)
-            executor.setMaxPoolSize(tilingIoThreads)
+            int poolSize = Math.max(1, tilingIoThreads)
+            executor.setCorePoolSize(poolSize)
+            executor.setMaxPoolSize(poolSize)
             executor.setThreadNamePrefix("tiling-io-pool-")
         }
         executor.setWaitForTasksToCompleteOnShutdown(true)
@@ -96,8 +105,9 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     TaskExecutor tilingWorkPool() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
-        executor.setCorePoolSize(tilingLevelThreads)
-        executor.setMaxPoolSize(tilingLevelThreads)
+        int poolSize = Math.max(1, tilingLevelThreads)
+        executor.setCorePoolSize(poolSize)
+        executor.setMaxPoolSize(poolSize)
         executor.setThreadNamePrefix("tiling-work-pool-")
         executor.setWaitForTasksToCompleteOnShutdown(true)
         executor.setAwaitTerminationSeconds(10)

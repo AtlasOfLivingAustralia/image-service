@@ -10,7 +10,7 @@ import grails.testing.services.ServiceUnitTest
 import org.grails.plugins.testing.GrailsMockMultipartFile
 import spock.lang.Specification
 
-import java.util.concurrent.ExecutorService
+import org.springframework.core.task.TaskExecutor
 
 class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<ImageStoreService>, DataTest {
 
@@ -19,8 +19,8 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
             delegatingImageThumbnailer(Mock(DelegatingImageThumbnailer))
             delegatingImageTiler(Mock(DelegatingImageTiler))
             imageTilerConfig(Mock(ImageTilerConfig))
-            tilingIoPool(Mock(ExecutorService))
-            tilingWorkPool(Mock(ExecutorService))
+            tilingIoPool(Mock(TaskExecutor))
+            tilingWorkPool(Mock(TaskExecutor))
             commandExecutor(Mock(CommandExecutor))
         }
         service.auditService = Mock(AuditService)

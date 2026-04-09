@@ -3,6 +3,8 @@ package au.org.ala.images
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryVariant
+import co.elastic.clients.json.JsonData
+
 import java.text.SimpleDateFormat
 import java.util.regex.Pattern
 
