@@ -49,10 +49,10 @@ class OutputStreamVipsTarget implements AutoCloseable {
 
         // Connect the "write" signal
         long writeHandlerId = vips.g_signal_connect_data(target, "write", writeCallback,
-                                                          Pointer.NULL, Pointer.NULL, 0)
+                                                          Pointer.NULL, (VipsLibrary.GClosureNotify) null, 0)
 
         if (writeHandlerId == 0) {
-            log.warn("Failed to connect write callback to VipsTargetCustom")
+            throw new IOException("Failed to connect write callback to VipsTargetCustom")
         }
 
         log.debug("Created OutputStreamVipsTarget with write handler: {}", writeHandlerId)

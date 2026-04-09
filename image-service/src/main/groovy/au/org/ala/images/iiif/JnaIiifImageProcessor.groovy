@@ -19,6 +19,8 @@ import java.awt.Rectangle
 @CompileStatic
 class JnaIiifImageProcessor implements IiifImageProcessor {
 
+    private static final double EPS = 1e-10
+
     private final VipsLibrary vips
     private final IiifImageProcessor fallback
 
@@ -195,13 +197,13 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             scaleH = Math.min(1.0d, (double) scaleH)
         }
 
-        if (scaleW == 1.0 && scaleH == 1.0) {
+        if (Math.abs(scaleW - 1.0d) < EPS && Math.abs(scaleH - 1.0d) < EPS) {
             return image
         }
 
         PointerByReference out = new PointerByReference()
         int result
-        if (scaleW == scaleH) {
+        if (Math.abs(scaleW - scaleH) < EPS) {
             result = vips.vips_resize(image, out, (double) scaleW, (Object) null)
         } else {
             // For now, let's just do proportional to stay simple, or use vips_resize twice? No.
@@ -218,7 +220,7 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         if (rotation == null) {
             return image
         }
-        def deg = ((rotation.degrees % 360.0) + 360.0) % 360.0
+        double deg = ((rotation.degrees % 360.0) + 360.0) % 360.0
         if (deg == 0.0 && !rotation.mirror) {
             return image
         }
@@ -248,8 +250,8 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             } else if (deg == 270) {
                 result = vips.vips_rot(current, out, 3, null)
             } else {
-                // Arbitrary rotation - use vips_similarity
-                result = vips.vips_similarity(current, out, "angle", deg, null)
+                // Arbitrary rotation - use vips_rotate which may be slower but is needed for non-right-angle rotations
+                result = vips.vips_rotate(current, out, deg, null)
             }
 
             if (result != 0) {

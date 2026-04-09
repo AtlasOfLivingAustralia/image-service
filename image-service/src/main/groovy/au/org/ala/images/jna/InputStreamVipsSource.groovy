@@ -111,12 +111,12 @@ class InputStreamVipsSource implements AutoCloseable {
         // Connect the callbacks to the source
         // g_signal_connect_data(instance, signal_name, callback, data, destroy_notify, flags)
         long readHandlerId = vips.g_signal_connect_data(source, "read", readCallback,
-                                                         Pointer.NULL, Pointer.NULL, 0)
+                                                         Pointer.NULL, (VipsLibrary.GClosureNotify) null, 0)
         long seekHandlerId = vips.g_signal_connect_data(source, "seek", seekCallback,
-                                                         Pointer.NULL, Pointer.NULL, 0)
+                                                         Pointer.NULL, (VipsLibrary.GClosureNotify) null, 0)
 
         if (readHandlerId == 0) {
-            log.warn("Failed to connect read callback to VipsSourceCustom")
+            throw new IOException("Failed to connect read callback to VipsSourceCustom")
         }
         if (seekHandlerId == 0) {
             log.debug("Failed to connect seek callback to VipsSourceCustom (may not be supported)")

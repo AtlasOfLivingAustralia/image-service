@@ -56,6 +56,15 @@ interface VipsLibrary extends Library {
     }
 
     /**
+     * Callback for GClosureNotify.
+     * @param data user data to pass to callback
+     * @param closure closure pointer
+     */
+    interface GClosureNotify extends Callback {
+        void invoke(Pointer data, Pointer closure)
+    }
+
+    /**
      * Initialize the VIPS library. Must be called before using any other VIPS functions.
      * @param argv0 program name (can be null)
      * @return 0 on success
@@ -303,10 +312,12 @@ interface VipsLibrary extends Library {
      * @param detailed_signal signal name (e.g., "read", "seek")
      * @param c_handler the callback function
      * @param data user data to pass to callback
+     * @param destroy_data callback to call when the handler is disconnected (can be null)
+     * @param connect_flags signal connection flags
      * @return handler id
      */
     long g_signal_connect_data(Pointer instance, String detailed_signal, Callback c_handler,
-                               Pointer data, Pointer destroy_data, int connect_flags)
+                               Pointer data, GClosureNotify destroy_data, int connect_flags)
 
     /**
      * Get the GType for VipsSourceCustom.
