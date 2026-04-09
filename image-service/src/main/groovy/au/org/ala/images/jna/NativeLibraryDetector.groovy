@@ -134,13 +134,17 @@ class NativeLibraryDetector {
      * Should be called on application shutdown.
      */
     static void shutdown() {
-        if (vipsInstance != null) {
-            try {
+        try {
+            if (vipsInstance != null) {
                 vipsInstance.vips_shutdown()
                 log.info("libvips shutdown complete")
-            } catch (Exception e) {
-                log.warn("Error during libvips shutdown", e)
             }
+        } catch (Exception e) {
+            log.warn("Error during libvips shutdown", e)
+        } finally {
+            vipsInstance = null
+            vipsNativeLibrary = null
+            vipsAvailable = false
         }
     }
 }

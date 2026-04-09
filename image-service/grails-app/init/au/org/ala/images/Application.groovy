@@ -9,6 +9,7 @@ import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.tiling.TileFormat
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
+import groovy.util.logging.Slf4j
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
@@ -18,6 +19,7 @@ import java.awt.Color
 import java.util.concurrent.Executor
 
 //@EnableConfigurationProperties(ImageOptimisationConfig)
+@Slf4j
 class Application extends GrailsAutoConfiguration {
     static void main(String[] args) {
         GrailsApp.run(Application, args)
@@ -85,6 +87,7 @@ class Application extends GrailsAutoConfiguration {
                 executor.setMaxPoolSize(Integer.MAX_VALUE)
                 executor.setQueueCapacity(0)
             } catch (NoSuchMethodError | Exception e) {
+                log.warn("Unable to use virtual threads for tiling IO pool, falling back to regular thread pool. Reason: {}", e.toString())
                 // Fallback if not on Java 21+ or other issues with virtual threads
                 int poolSize = Math.max(1, tilingIoThreads)
                 executor.setCorePoolSize(poolSize)

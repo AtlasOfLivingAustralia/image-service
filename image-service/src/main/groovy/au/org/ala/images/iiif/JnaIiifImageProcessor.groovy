@@ -33,7 +33,7 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
 
     @Override
     IiifImageProcessor.Result process(ByteSource imageBytes, IiifImageProcessor.Region region, IiifImageProcessor.Size size, IiifImageProcessor.Rotation rotation, IiifImageProcessor.Quality quality, IiifImageProcessor.Format format, OutputStream out) throws IOException {
-        if (!vips) {
+        if (vips == null) {
             return fallback.process(imageBytes, region, size, rotation, quality, format, out)
         }
 
@@ -215,7 +215,11 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
     }
 
     private Pointer applyRotation(Pointer image, IiifImageProcessor.Rotation rotation) {
-        if (rotation == null || (rotation.degrees % 360.0 == 0.0 && !rotation.mirror)) {
+        if (rotation == null) {
+            return image
+        }
+        def deg = ((rotation.degrees % 360.0) + 360.0) % 360.0
+        if (deg == 0.0 && !rotation.mirror) {
             return image
         }
 
@@ -234,7 +238,6 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         }
 
         // 2. Rotation
-        double deg = rotation.degrees % 360.0
         if (deg != 0) {
             PointerByReference out = new PointerByReference()
             int result

@@ -312,13 +312,14 @@ interface VipsLibrary extends Library {
      * Get the GType for VipsSourceCustom.
      * Used for type checking and object creation.
      */
-    Pointer vips_source_custom_get_type()
+    long vips_source_custom_get_type()
 
     /**
      * Create a new GObject of the given type.
      * @param object_type the GType
      * @param first_property_name first property name (or null)
+     * @param varargs variable arguments (property name, value, ..., null terminator)
      * @return new object pointer
      */
-    Pointer g_object_new(Pointer object_type, String first_property_name)
+    Pointer g_object_new(long object_type, String first_property_name, Object... varargs)
 }

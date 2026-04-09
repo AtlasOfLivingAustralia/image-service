@@ -216,7 +216,11 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
     }
 
     private MemorySegment applyRotation(MemorySegment image, IiifImageProcessor.Rotation rotation) throws Throwable {
-        if (rotation == null || (rotation.degrees % 360.0 == 0.0 && !rotation.mirror)) {
+        if (rotation == null) {
+            return image;
+        }
+        double deg = ((rotation.degrees % 360.0) + 360.0) % 360.0;
+        if (deg == 0.0 && !rotation.mirror) {
             return image;
         }
 
@@ -237,7 +241,6 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
         }
 
         // 2. Rotation
-        double deg = rotation.degrees % 360.0;
         if (deg != 0) {
             try (Arena tempArena = Arena.ofConfined()) {
                 MemorySegment outPtr = tempArena.allocate(ValueLayout.ADDRESS);

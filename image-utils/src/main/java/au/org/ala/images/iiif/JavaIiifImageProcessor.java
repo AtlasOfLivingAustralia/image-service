@@ -320,10 +320,11 @@ public class JavaIiifImageProcessor implements IiifImageProcessor {
     }
 
     private BufferedImage applyRotation(BufferedImage src, Rotation rotation) {
-        if (rotation == null || (rotation.degrees % 360.0 == 0.0 && !rotation.mirror)) {
+        if (rotation == null) {
             return src;
         }
 
+        double deg = ((rotation.degrees % 360.0) + 360.0) % 360.0;
         BufferedImage working = src;
 
         if (rotation.mirror) {
@@ -333,12 +334,11 @@ public class JavaIiifImageProcessor implements IiifImageProcessor {
             working = transform(working, tx);
         }
 
-        double angleRad = Math.toRadians(rotation.degrees % 360.0);
-        if (angleRad < 0) angleRad += Math.PI * 2;
-
-        if (rotation.degrees % 360.0 == 0.0) {
+        if (deg == 0.0) {
             return working;
         }
+
+        double angleRad = Math.toRadians(deg);
 
         double sin = Math.abs(Math.sin(angleRad));
         double cos = Math.abs(Math.cos(angleRad));

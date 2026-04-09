@@ -168,4 +168,66 @@ class JnaIiifImageProcessorSpec extends Specification {
         e.message.contains("partial bytes already written to output")
         0 * fallback.process(*_)
     }
+
+    def "test negative orthogonal rotations call vips_rot"() {
+        given:
+        def vips = Mock(VipsLibrary)
+        def fallback = Mock(IiifImageProcessor)
+        def processor = new JnaIiifImageProcessor(vips, fallback)
+        def bytes = ByteSource.wrap(new byte[100])
+        def out = new ByteArrayOutputStream()
+
+        Pointer image = Mock(Pointer)
+        Pointer source = Mock(Pointer)
+        Pointer target = Mock(Pointer)
+        Pointer rotatedImage = Mock(Pointer)
+
+        vips.vips_source_custom_new() >> source
+        vips.vips_image_new_from_source(source, _, _) >> image
+        vips.vips_image_get_width(image) >> 100
+        vips.vips_image_get_height(image) >> 100
+        vips.vips_target_custom_new() >> target
+        vips.vips_image_get_width(rotatedImage) >> 100
+        vips.vips_image_get_height(rotatedImage) >> 100
+        vips.vips_image_write_to_target(*_) >> 0
+
+        when:
+        processor.process(bytes, IiifImageProcessor.Region.full(), IiifImageProcessor.Size.max(false), new IiifImageProcessor.Rotation(false, -90.0), IiifImageProcessor.Quality.DEFAULT, IiifImageProcessor.Format.JPG, out)
+
+        then:
+        // -90 normalized to [0, 360) is 270, which is vips_rot constant 3
+        1 * vips.vips_rot(image, _, 3, null) >> { args ->
+            args[1].setValue(rotatedImage)
+            return 0
+        }
+        0 * vips.vips_similarity(*_)
+    }
+
+    def "test rotation of 360 or -360 is ignored"() {
+        given:
+        def vips = Mock(VipsLibrary)
+        def fallback = Mock(IiifImageProcessor)
+        def processor = new JnaIiifImageProcessor(vips, fallback)
+        def bytes = ByteSource.wrap(new byte[100])
+        def out = new ByteArrayOutputStream()
+
+        Pointer image = Mock(Pointer)
+        Pointer source = Mock(Pointer)
+        Pointer target = Mock(Pointer)
+
+        vips.vips_source_custom_new() >> source
+        vips.vips_image_new_from_source(source, _, _) >> image
+        vips.vips_image_get_width(image) >> 100
+        vips.vips_image_get_height(image) >> 100
+        vips.vips_target_custom_new() >> target
+        vips.vips_image_write_to_target(*_) >> 0
+
+        when:
+        processor.process(bytes, IiifImageProcessor.Region.full(), IiifImageProcessor.Size.max(false), new IiifImageProcessor.Rotation(false, 360.0), IiifImageProcessor.Quality.DEFAULT, IiifImageProcessor.Format.JPG, out)
+        processor.process(bytes, IiifImageProcessor.Region.full(), IiifImageProcessor.Size.max(false), new IiifImageProcessor.Rotation(false, -360.0), IiifImageProcessor.Quality.DEFAULT, IiifImageProcessor.Format.JPG, out)
+
+        then:
+        0 * vips.vips_rot(*_)
+        0 * vips.vips_similarity(*_)
+    }
 }
