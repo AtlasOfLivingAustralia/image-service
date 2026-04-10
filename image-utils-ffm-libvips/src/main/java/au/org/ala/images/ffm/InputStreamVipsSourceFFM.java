@@ -95,7 +95,7 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
             long seekHandlerId = vips.gSignalConnectData(source, "seek", seekCallbackStub, MemorySegment.NULL);
 
             if (readHandlerId == 0) {
-                log.warn("Failed to connect read callback to VipsSourceCustom");
+                throw new IOException("Failed to connect read callback to VipsSourceCustom");
             }
             if (seekHandlerId == 0) {
                 log.debug("Failed to connect seek callback to VipsSourceCustom (may not be supported)");
@@ -104,7 +104,7 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
             log.debug("Created InputStreamVipsSourceFFM with read handler: {}, seek handler: {}", readHandlerId, seekHandlerId);
 
         } catch (Throwable e) {
-            callbackArena.close();
+            close();
             throw new IOException("Failed to create VipsSource", e);
         }
     }
@@ -139,7 +139,7 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
             long seekHandlerId = vips.gSignalConnectData(source, "seek", seekCallbackStub, MemorySegment.NULL);
 
             if (readHandlerId == 0) {
-                log.warn("Failed to connect read callback to VipsSourceCustom");
+                throw new IOException("Failed to connect read callback to VipsSourceCustom");
             }
             if (seekHandlerId == 0) {
                 log.debug("Failed to connect seek callback to VipsSourceCustom (may not be supported)");
@@ -148,7 +148,7 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
             log.debug("Created InputStreamVipsSourceFFM with read handler: {}, seek handler: {}", readHandlerId, seekHandlerId);
 
         } catch (Throwable e) {
-            callbackArena.close();
+            close();
             throw new IOException("Failed to create VipsSource", e);
         }
     }

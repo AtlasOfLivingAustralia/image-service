@@ -60,11 +60,11 @@ public class OutputStreamVipsTargetFFM implements AutoCloseable {
 
             long writeHandlerId = vips.gSignalConnectData(target, "write", writeCallbackStub, MemorySegment.NULL);
             if (writeHandlerId == 0) {
-                log.warn("Failed to connect write callback to VipsTargetCustom");
+                throw new IOException("Failed to connect write callback to VipsTargetCustom");
             }
 
         } catch (Throwable e) {
-            callbackArena.close();
+            close();
             throw new IOException("Failed to create VipsTarget", e);
         }
     }

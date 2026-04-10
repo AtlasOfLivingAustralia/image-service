@@ -122,7 +122,7 @@ public class VipsLibraryFFM implements AutoCloseable {
             this.g_free = lookupFunction(libglibLookup, "g_free", FD_g_free);
             this.g_signal_connect_data = lookupFunction(libgobjectLookup, "g_signal_connect_data", FD_g_signal_connect_data);
         } catch (Throwable t) {
-            arena.close();
+            close();
             throw t;
         }
     }
