@@ -1,21 +1,24 @@
-package au.org.ala.images.jna
+package au.org.ala.images.jna;
 
-import com.sun.jna.Native
-import com.sun.jna.NativeLibrary
-import groovy.transform.CompileStatic
-import groovy.util.logging.Slf4j
+import com.sun.jna.Native;
+import com.sun.jna.NativeLibrary;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Utility to detect if native libraries are available on the system.
  * Attempts to load libraries and verify they can be initialized.
  */
-@Slf4j
-@CompileStatic
-class NativeLibraryDetector {
+public class NativeLibraryDetector {
 
-    private static volatile Boolean vipsAvailable = null
-    private static volatile VipsLibrary vipsInstance = null
-    private static volatile NativeLibrary vipsNativeLibrary = null
+    private static final Logger log = LoggerFactory.getLogger(NativeLibraryDetector.class);
+
+    private static volatile Boolean vipsAvailable = null;
+    private static volatile VipsLibrary vipsInstance = null;
+    private static volatile NativeLibrary vipsNativeLibrary = null;
 
     /**
      * Check if libvips is available on the system.
@@ -23,49 +26,49 @@ class NativeLibraryDetector {
      *
      * @return true if libvips can be loaded and initialized
      */
-    static boolean isVipsAvailable() {
+    public static boolean isVipsAvailable() {
         if (vipsAvailable != null) {
-            return vipsAvailable
+            return vipsAvailable;
         }
 
         synchronized (NativeLibraryDetector.class) {
             if (vipsAvailable != null) {
-                return vipsAvailable
+                return vipsAvailable;
             }
 
             try {
                 // Try to load the library
                 // Common library names: vips, libvips, vips-42 (version-specific)
-                VipsLibrary lib = loadVipsLibrary()
+                VipsLibrary lib = loadVipsLibrary();
                 if (lib == null) {
-                    log.info("libvips not found on system")
-                    vipsAvailable = false
-                    return false
+                    log.info("libvips not found on system");
+                    vipsAvailable = false;
+                    return false;
                 }
 
                 // Try to initialize
-                int result = lib.vips_init("image-service")
+                int result = lib.vips_init("image-service");
                 if (result != 0) {
-                    log.warn("libvips found but initialization failed: {}", lib.vips_error_buffer())
-                    lib.vips_error_clear()
-                    vipsAvailable = false
-                    return false
+                    log.warn("libvips found but initialization failed: {}", lib.vips_error_buffer());
+                    lib.vips_error_clear();
+                    vipsAvailable = false;
+                    return false;
                 }
 
                 // Success! Cache the instance
-                vipsInstance = lib
-                vipsAvailable = true
-                log.info("libvips successfully loaded and initialized")
-                return true
+                vipsInstance = lib;
+                vipsAvailable = true;
+                log.info("libvips successfully loaded and initialized");
+                return true;
 
             } catch (UnsatisfiedLinkError e) {
-                log.debug("libvips not available: {}", e.message)
-                vipsAvailable = false
-                return false
+                log.debug("libvips not available: {}", e.getMessage());
+                vipsAvailable = false;
+                return false;
             } catch (Exception e) {
-                log.warn("Error checking for libvips", e)
-                vipsAvailable = false
-                return false
+                log.warn("Error checking for libvips", e);
+                vipsAvailable = false;
+                return false;
             }
         }
     }
@@ -74,11 +77,11 @@ class NativeLibraryDetector {
      * Get the VipsLibrary instance if available.
      * @return VipsLibrary instance or null if not available
      */
-    static VipsLibrary getVipsLibrary() {
+    public static VipsLibrary getVipsLibrary() {
         if (isVipsAvailable()) {
-            return vipsInstance
+            return vipsInstance;
         }
-        return null
+        return null;
     }
 
     /**
@@ -87,64 +90,65 @@ class NativeLibraryDetector {
      */
     private static VipsLibrary loadVipsLibrary() {
         // List of possible library names to try
-        List<String> libraryNames = [
+        List<String> libraryNames = Arrays.asList(
                 "vips",           // Standard name
                 "libvips",        // With lib prefix
                 "vips-42",        // Version 8.x
                 "libvips-42",     // Version 8.x with prefix
                 "libvips.so.42",  // Specific Linux
-                "libvips.42.dylib", // Specific macOS
-        ]
+                "libvips.42.dylib" // Specific macOS
+        );
 
         for (String name : libraryNames) {
             try {
-                log.debug("Attempting to load libvips as: {}", name)
-                VipsLibrary lib = Native.load(name, VipsLibrary.class) as VipsLibrary
+                log.debug("Attempting to load libvips as: {}", name);
+                VipsLibrary lib = Native.load(name, VipsLibrary.class);
                 if (lib != null) {
-                    log.debug("Successfully loaded: {}", name)
-                    vipsNativeLibrary = NativeLibrary.getInstance(name)
-                    return lib
+                    log.debug("Successfully loaded: {}", name);
+                    vipsNativeLibrary = NativeLibrary.getInstance(name);
+                    return lib;
                 }
             } catch (UnsatisfiedLinkError e) {
-                log.trace("Failed to load {}: {}", name, e.message)
+                log.trace("Failed to load {}: {}", name, e.getMessage());
             }
         }
 
-        return null
+        return null;
     }
 
     /**
      * Get version information about the loaded library (if available).
      * @return version string or null
      */
-    static String getVipsVersion() {
+    public static String getVipsVersion() {
         if (!isVipsAvailable()) {
-            return null
+            return null;
         }
 
         if (vipsNativeLibrary != null) {
-            return "libvips (path: ${vipsNativeLibrary.file?.absolutePath})"
+            String path = vipsNativeLibrary.getFile() != null ? vipsNativeLibrary.getFile().getAbsolutePath() : "unknown";
+            return "libvips (path: " + path + ")";
         }
 
-        return "libvips (version unknown)"
+        return "libvips (version unknown)";
     }
 
     /**
      * Shutdown the VIPS library if it was initialized.
      * Should be called on application shutdown.
      */
-    static void shutdown() {
+    public static void shutdown() {
         try {
             if (vipsInstance != null) {
-                vipsInstance.vips_shutdown()
-                log.info("libvips shutdown complete")
+                vipsInstance.vips_shutdown();
+                log.info("libvips shutdown complete");
             }
         } catch (Exception e) {
-            log.warn("Error during libvips shutdown", e)
+            log.warn("Error during libvips shutdown", e);
         } finally {
-            vipsInstance = null
-            vipsNativeLibrary = null
-            vipsAvailable = false // if vips_shutdown was called then we shouldn't try to reinitialize it again
+            vipsInstance = null;
+            vipsNativeLibrary = null;
+            vipsAvailable = false; // if vips_shutdown was called then we shouldn't try to reinitialize it again
         }
     }
 }

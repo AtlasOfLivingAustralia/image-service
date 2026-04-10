@@ -1,11 +1,10 @@
-package au.org.ala.images.jna
+package au.org.ala.images.jna;
 
-import com.sun.jna.Callback
-import com.sun.jna.Library
-import com.sun.jna.Pointer
-import com.sun.jna.ptr.LongByReference
-import com.sun.jna.ptr.PointerByReference
-import groovy.transform.CompileStatic
+import com.sun.jna.Callback;
+import com.sun.jna.Library;
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
 
 /**
  * JNA interface to libvips C library.
@@ -13,8 +12,7 @@ import groovy.transform.CompileStatic
  *
  * libvips documentation: https://www.libvips.org/API/current/
  */
-@CompileStatic
-interface VipsLibrary extends Library {
+public interface VipsLibrary extends Library {
 
     // VipsImage is an opaque pointer in C, represented as Pointer in JNA
     // VipsSource and VipsSourceCustom are also opaque pointers
@@ -28,7 +26,7 @@ interface VipsLibrary extends Library {
      * @return number of bytes written, -1 for error
      */
     interface WriteCallback extends Callback {
-        long invoke(Pointer target, Pointer buffer, long length, Pointer user_data)
+        long invoke(Pointer target, Pointer buffer, long length, Pointer user_data);
     }
 
     /**
@@ -40,7 +38,7 @@ interface VipsLibrary extends Library {
      * @return number of bytes read, 0 for EOF, -1 for error
      */
     interface ReadCallback extends Callback {
-        long invoke(Pointer source, Pointer buffer, long length, Pointer user_data)
+        long invoke(Pointer source, Pointer buffer, long length, Pointer user_data);
     }
 
     /**
@@ -52,7 +50,7 @@ interface VipsLibrary extends Library {
      * @return new position, -1 for error
      */
     interface SeekCallback extends Callback {
-        long invoke(Pointer source, long offset, int whence, Pointer user_data)
+        long invoke(Pointer source, long offset, int whence, Pointer user_data);
     }
 
     /**
@@ -61,7 +59,7 @@ interface VipsLibrary extends Library {
      * @param closure closure pointer
      */
     interface GClosureNotify extends Callback {
-        void invoke(Pointer data, Pointer closure)
+        void invoke(Pointer data, Pointer closure);
     }
 
     /**
@@ -69,23 +67,23 @@ interface VipsLibrary extends Library {
      * @param argv0 program name (can be null)
      * @return 0 on success
      */
-    int vips_init(String argv0)
+    int vips_init(String argv0);
 
     /**
      * Shutdown the VIPS library and free resources.
      */
-    void vips_shutdown()
+    void vips_shutdown();
 
     /**
      * Get the last VIPS error message.
      * @return error message string
      */
-    String vips_error_buffer()
+    String vips_error_buffer();
 
     /**
      * Clear the VIPS error buffer.
      */
-    void vips_error_clear()
+    void vips_error_clear();
 
     /**
      * Load an image from a buffer in memory.
@@ -95,7 +93,7 @@ interface VipsLibrary extends Library {
      * @param args variable arguments (null-terminated) for options (e.g., "access", value)
      * @return VipsImage pointer or null on error
      */
-    Pointer vips_image_new_from_buffer(Pointer buf, long len, String options, Object... args)
+    Pointer vips_image_new_from_buffer(Pointer buf, long len, String options, Object... args);
 
     /**
      * Create a new image object from a file.
@@ -103,27 +101,27 @@ interface VipsLibrary extends Library {
      * @param args variable arguments (null-terminated) for options (e.g., "access", value)
      * @return VipsImage pointer or null on error
      */
-    Pointer vips_image_new_from_file(String filename, Object... args)
+    Pointer vips_image_new_from_file(String filename, Object... args);
 
     /**
      * Free a VipsImage.
      * @param image the image to free
      */
-    void g_object_unref(Pointer image)
+    void g_object_unref(Pointer image);
 
     /**
      * Get image width.
      * @param image the image
      * @return width in pixels
      */
-    int vips_image_get_width(Pointer image)
+    int vips_image_get_width(Pointer image);
 
     /**
      * Get image height.
      * @param image the image
      * @return height in pixels
      */
-    int vips_image_get_height(Pointer image)
+    int vips_image_get_height(Pointer image);
 
     /**
      * Thumbnail an image. This is a high-level operation that will
@@ -135,7 +133,7 @@ interface VipsLibrary extends Library {
      *                      for example {@code "height", value} to set a target height
      * @return 0 on success
      */
-    int vips_thumbnail_image(Pointer input, PointerByReference out, int width, Object... options)
+    int vips_thumbnail_image(Pointer input, PointerByReference out, int width, Object... options);
 
     /**
      * Thumbnail an image from a buffer.
@@ -146,7 +144,7 @@ interface VipsLibrary extends Library {
      * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_thumbnail_buffer(Pointer buf, long len, PointerByReference out, int width, Object... options)
+    int vips_thumbnail_buffer(Pointer buf, long len, PointerByReference out, int width, Object... options);
 
     /**
      * Save an image to a buffer.
@@ -157,7 +155,7 @@ interface VipsLibrary extends Library {
      * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_image_write_to_buffer(Pointer image, String suffix, PointerByReference buf, LongByReference len, Object... options)
+    int vips_image_write_to_buffer(Pointer image, String suffix, PointerByReference buf, LongByReference len, Object... options);
 
     /**
      * Save an image to a VipsTarget.
@@ -167,7 +165,7 @@ interface VipsLibrary extends Library {
      * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_image_write_to_target(Pointer image, String suffix, Pointer target, Object... options)
+    int vips_image_write_to_target(Pointer image, String suffix, Pointer target, Object... options);
 
     /**
      * Save image to file.
@@ -176,7 +174,7 @@ interface VipsLibrary extends Library {
      * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_image_write_to_file(Pointer image, String filename, Object... options)
+    int vips_image_write_to_file(Pointer image, String filename, Object... options);
 
     /**
      * Create Deep Zoom pyramid tiles from an image.
@@ -185,7 +183,7 @@ interface VipsLibrary extends Library {
      * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_dzsave(Pointer input, String output, Object... options)
+    int vips_dzsave(Pointer input, String output, Object... options);
 
     /**
      * Crop an image (extract a rectangular region).
@@ -198,7 +196,7 @@ interface VipsLibrary extends Library {
      * @param varargs variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_crop(Pointer input, PointerByReference out, int left, int top, int width, int height, Object... varargs)
+    int vips_crop(Pointer input, PointerByReference out, int left, int top, int width, int height, Object... varargs);
 
     /**
      * Rotate an image.
@@ -207,7 +205,7 @@ interface VipsLibrary extends Library {
      * @param angle VipsAngle (0=D0, 1=D90, 2=D180, 3=D270)
      * @return 0 on success
      */
-    int vips_rot(Pointer input, PointerByReference out, int angle, Object... varargs)
+    int vips_rot(Pointer input, PointerByReference out, int angle, Object... varargs);
 
     /**
      * Rotate an image by an arbitrary angle.
@@ -217,7 +215,7 @@ interface VipsLibrary extends Library {
      * @param varargs variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_rotate(Pointer input, PointerByReference out, double angle, Object... varargs)
+    int vips_rotate(Pointer input, PointerByReference out, double angle, Object... varargs);
 
     /**
      * Similarity transform.
@@ -226,7 +224,7 @@ interface VipsLibrary extends Library {
      * @param varargs variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_similarity(Pointer input, PointerByReference out, Object... varargs)
+    int vips_similarity(Pointer input, PointerByReference out, Object... varargs);
 
     /**
      * Flip an image.
@@ -235,7 +233,7 @@ interface VipsLibrary extends Library {
      * @param direction VipsDirection (0=HORIZONTAL, 1=VERTICAL)
      * @return 0 on success
      */
-    int vips_flip(Pointer input, PointerByReference out, int direction, Object... varargs)
+    int vips_flip(Pointer input, PointerByReference out, int direction, Object... varargs);
 
     /**
      * Change image colourspace.
@@ -244,7 +242,7 @@ interface VipsLibrary extends Library {
      * @param interpretation VipsInterpretation (e.g., 2=B_W, 22=sRGB)
      * @return 0 on success
      */
-    int vips_colourspace(Pointer input, PointerByReference out, int interpretation, Object... varargs)
+    int vips_colourspace(Pointer input, PointerByReference out, int interpretation, Object... varargs);
 
     /**
      * Perform a relational operation on an image and a constant.
@@ -255,7 +253,7 @@ interface VipsLibrary extends Library {
      * @param c constant(s) to compare against
      * @return 0 on success
      */
-    int vips_relational_const(Pointer input, PointerByReference out, int relational, double[] c, Object... varargs)
+    int vips_relational_const(Pointer input, PointerByReference out, int relational, double[] c, Object... varargs);
 
     /**
      * Resize an image.
@@ -265,13 +263,13 @@ interface VipsLibrary extends Library {
      * @param varargs variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_resize(Pointer input, PointerByReference out, double scale, Object... varargs)
+    int vips_resize(Pointer input, PointerByReference out, double scale, Object... varargs);
 
     /**
      * Free memory allocated by VIPS (e.g., for buffers).
      * @param ptr pointer to free
      */
-    void g_free(Pointer ptr)
+    void g_free(Pointer ptr);
 
     // VipsSource API (libvips 8.9+)
 
@@ -279,13 +277,13 @@ interface VipsLibrary extends Library {
      * Create a new VipsSourceCustom.
      * @return new VipsSourceCustom pointer
      */
-    Pointer vips_source_custom_new()
+    Pointer vips_source_custom_new();
 
     /**
      * Create a new VipsTargetCustom.
      * @return new VipsTargetCustom pointer
      */
-    Pointer vips_target_custom_new()
+    Pointer vips_target_custom_new();
 
     /**
      * Load an image from a VipsSource.
@@ -293,7 +291,7 @@ interface VipsLibrary extends Library {
      * @param options options string (can be empty)
      * @return VipsImage pointer or null on error
      */
-    Pointer vips_image_new_from_source(Pointer source, String options, Object... varargs)
+    Pointer vips_image_new_from_source(Pointer source, String options, Object... varargs);
 
     /**
      * Thumbnail an image from a source.
@@ -303,7 +301,7 @@ interface VipsLibrary extends Library {
      * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_thumbnail_source(Pointer source, PointerByReference out, int width, Object... options)
+    int vips_thumbnail_source(Pointer source, PointerByReference out, int width, Object... options);
 
     /**
      * Signal handlers for VipsSourceCustom.
@@ -321,13 +319,13 @@ interface VipsLibrary extends Library {
      * @return handler id
      */
     long g_signal_connect_data(Pointer instance, String detailed_signal, Callback c_handler,
-                               Pointer data, GClosureNotify destroy_data, int connect_flags)
+                               Pointer data, GClosureNotify destroy_data, int connect_flags);
 
     /**
      * Get the GType for VipsSourceCustom.
      * Used for type checking and object creation.
      */
-    long vips_source_custom_get_type()
+    long vips_source_custom_get_type();
 
     /**
      * Create a new GObject of the given type.
@@ -336,5 +334,5 @@ interface VipsLibrary extends Library {
      * @param varargs variable arguments (property name, value, ..., null terminator)
      * @return new object pointer
      */
-    Pointer g_object_new(long object_type, String first_property_name, Object... varargs)
+    Pointer g_object_new(long object_type, String first_property_name, Object... varargs);
 }

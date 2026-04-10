@@ -146,7 +146,7 @@ Java InputStream → InputStreamVipsSource → VipsSourceCustom callbacks → li
 2. Connects JNA callbacks for `read` and `seek` signals using `g_signal_connect_data`
 3. When libvips needs data, it calls the read callback
 4. Callback reads from Java InputStream in 64KB chunks
-5. Data is copied directly to native buffer without heap allocation
+5. Data is read into a reusable fixed-size Java heap buffer and then copied to the native buffer, avoiding per-chunk allocations and full-image buffering
 6. libvips processes data as it arrives (sequential mode)
 
 **Memory usage:**
