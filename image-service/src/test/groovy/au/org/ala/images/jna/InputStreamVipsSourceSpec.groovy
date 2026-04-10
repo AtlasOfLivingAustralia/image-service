@@ -80,6 +80,75 @@ class InputStreamVipsSourceSpec extends Specification {
         source?.close()
     }
 
+    def "test handleSeek re-marks the stream when reopening from ByteSource"() {
+        given:
+        if (!NativeLibraryDetector.isVipsAvailable()) {
+            return
+        }
+        VipsLibrary vips = NativeLibraryDetector.getVipsLibrary()
+        byte[] data = "0123456789".getBytes()
+        def callCount = 0
+        ByteSource byteSource = new ByteSource() {
+            @Override
+            InputStream openStream() throws IOException {
+                callCount++
+                return new ByteArrayInputStream(data) {
+                    boolean marked = false
+                    @Override
+                    void mark(int readlimit) {
+                        marked = true
+                        super.mark(readlimit)
+                    }
+                    @Override
+                    void reset() throws IOException {
+                        if (!marked) throw new IOException("Not marked!")
+                        super.reset()
+                    }
+                }
+            }
+        }
+
+        // We can't use the regular constructor because it calls mark() immediately, 
+        // and we want to control when it reopens.
+        // Actually, let's just use it and check initial state.
+        def source = new InputStreamVipsSource(vips, byteSource)
+
+        // Constructor would have opened stream and marked it (callCount = 1)
+        assert callCount == 1
+        assert ((ByteArrayInputStream)source.inputStream).marked == true
+
+        when: "Seeking backward triggers ByteSource reopening (if we force it)"
+        source.position = 5
+        // Use a dummy stream that doesn't support marks to force reopen when seeking back
+        def originalStream = source.inputStream
+        source.inputStream = new InputStream() {
+            @Override int read() { return 0 }
+            @Override boolean markSupported() { return false }
+            @Override void close() { originalStream.close() }
+        }
+
+        // Now seek to 0. It will skip reset because markSupported is false.
+        // It will fall back to ByteSource reopen.
+        source.handleSeek(0, 0)
+
+        then: "Stream is reopened"
+        callCount == 2
+        source.position == 0
+
+        when: "Seeking again (should use reset on the new stream)"
+        source.position = 5
+        source.handleSeek(0, 0)
+
+        then: "Reset succeeds if mark() was called"
+        // If mark() was NOT called, reset() will throw "Not marked!"
+        // handleSeek will catch it and reopen ByteSource a THIRD time.
+        callCount == 2
+        source.position == 0
+
+        cleanup:
+        source?.close()
+    }
+
     def "test InputStreamVipsSource with InputStream respects READ_LIMIT"() {
         given:
         if (!NativeLibraryDetector.isVipsAvailable()) {

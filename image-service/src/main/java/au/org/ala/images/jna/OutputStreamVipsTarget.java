@@ -38,25 +38,32 @@ public class OutputStreamVipsTarget implements AutoCloseable {
         this.outputStream = outputStream;
         this.javaBuffer = new byte[BUFFER_SIZE];
 
-        // Create the custom target
-        this.target = vips.vips_target_custom_new();
-        if (target == null || target == Pointer.NULL) {
-            throw new IOException("Failed to create VipsTargetCustom");
-        }
+        try {
+            // Create the custom target
+            this.target = vips.vips_target_custom_new();
+            if (target == null || target == Pointer.NULL) {
+                throw new IOException("Failed to create VipsTargetCustom");
+            }
 
-        // Create callback that delegates to this instance
-        this.writeCallback = (target1, buffer, length, user_data) -> handleWrite(buffer, length);
+            // Create callback that delegates to this instance
+            this.writeCallback = (target1, buffer, length, user_data) -> handleWrite(buffer, length);
 
-        // Connect the "write" signal
-        long writeHandlerId = vips.g_signal_connect_data(target, "write", writeCallback,
-                                                          Pointer.NULL, null, 0);
+            // Connect the "write" signal
+            long writeHandlerId = vips.g_signal_connect_data(target, "write", writeCallback,
+                                                              Pointer.NULL, null, 0);
 
-        if (writeHandlerId == 0) {
+            if (writeHandlerId == 0) {
+                throw new IOException("Failed to connect write callback to VipsTargetCustom");
+            }
+
+            log.debug("Created OutputStreamVipsTarget with write handler: {}", writeHandlerId);
+        } catch (Throwable e) {
             close();
-            throw new IOException("Failed to connect write callback to VipsTargetCustom");
+            if (e instanceof IOException) {
+                throw (IOException) e;
+            }
+            throw new IOException("Failed to create VipsTarget", e);
         }
-
-        log.debug("Created OutputStreamVipsTarget with write handler: {}", writeHandlerId);
     }
 
     /**
