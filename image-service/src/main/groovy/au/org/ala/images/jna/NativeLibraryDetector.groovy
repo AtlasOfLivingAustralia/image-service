@@ -144,7 +144,7 @@ class NativeLibraryDetector {
         } finally {
             vipsInstance = null
             vipsNativeLibrary = null
-            vipsAvailable = false
+            vipsAvailable = false // if vips_shutdown was called then we shouldn't try to reinitialize it again
         }
     }
 }

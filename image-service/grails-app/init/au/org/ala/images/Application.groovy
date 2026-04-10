@@ -21,6 +21,9 @@ import java.util.concurrent.Executor
 //@EnableConfigurationProperties(ImageOptimisationConfig)
 @Slf4j
 class Application extends GrailsAutoConfiguration {
+
+    public static final int TILE_SIZE = 256
+
     static void main(String[] args) {
         GrailsApp.run(Application, args)
     }
@@ -119,7 +122,7 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     ImageTilerConfig imageTilerConfig(Executor tilingIoPool, Executor tilingWorkPool) {
-        def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, 256, 6, TileFormat.JPEG)
+        def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
         config.setTileBackgroundColor(new Color(221, 221, 221))
         return config
     }

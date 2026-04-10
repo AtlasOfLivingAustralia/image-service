@@ -243,11 +243,11 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
         if (deg != 0) {
             PointerByReference out = new PointerByReference()
             int result
-            if (deg == 90) {
+            if (Math.abs((double) (deg - 90.0)) < EPS) {
                 result = vips.vips_rot(current, out, 1, (Object) null)
-            } else if (deg == 180) {
+            } else if (Math.abs((double) (deg - 180.0)) < EPS) {
                 result = vips.vips_rot(current, out, 2, (Object) null)
-            } else if (deg == 270) {
+            } else if (Math.abs((double) (deg - 270.0)) < EPS) {
                 result = vips.vips_rot(current, out, 3, (Object) null)
             } else {
                 // Arbitrary rotation - use vips_rotate which may be slower but is needed for non-right-angle rotations

@@ -217,7 +217,6 @@ Most Java InputStreams don't support seeking. The implementation handles this gr
 1. Ensure `g_object_unref()` is called for all VipsImage objects
 2. Call `g_free()` for buffers returned by vips operations
 3. Monitor with: `jcmd <pid> GC.heap_info`
-4. Consider calling `NativeLibraryDetector.shutdown()` periodically
 
 ## Testing
 
