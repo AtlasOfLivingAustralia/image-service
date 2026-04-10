@@ -173,9 +173,10 @@ interface VipsLibrary extends Library {
      * Save image to file.
      * @param image the image
      * @param filename output filename
+     * @param options variable arguments (null-terminated)
      * @return 0 on success
      */
-    int vips_image_write_to_file(Pointer image, String filename)
+    int vips_image_write_to_file(Pointer image, String filename, Object... options)
 
     /**
      * Create Deep Zoom pyramid tiles from an image.
