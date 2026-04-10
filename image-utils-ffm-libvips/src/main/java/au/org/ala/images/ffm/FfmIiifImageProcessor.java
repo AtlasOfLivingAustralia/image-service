@@ -72,10 +72,10 @@ public class FfmIiifImageProcessor implements IiifImageProcessor {
             }
 
             // 4. Quality
-            MemorySegment qualitiedImage = applyQuality(workingImage, quality);
-            if (qualitiedImage != workingImage) {
+            MemorySegment qualityAdjustedImage = applyQuality(workingImage, quality);
+            if (qualityAdjustedImage != workingImage) {
                 if (workingImage != image) vips.gObjectUnref(workingImage);
-                workingImage = qualitiedImage;
+                workingImage = qualityAdjustedImage;
             }
 
             // 5. Format & Output

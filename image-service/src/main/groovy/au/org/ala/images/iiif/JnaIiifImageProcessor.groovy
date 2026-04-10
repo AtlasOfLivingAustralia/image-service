@@ -74,10 +74,10 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             }
 
             // 4. Quality
-            Pointer qualitiedImage = applyQuality(workingImage, quality)
-            if (qualitiedImage != workingImage) {
+            Pointer qualityAdjustedImage = applyQuality(workingImage, quality)
+            if (qualityAdjustedImage != workingImage) {
                 if (workingImage != image) vips.g_object_unref(workingImage)
-                workingImage = qualitiedImage
+                workingImage = qualityAdjustedImage
             }
 
             // 5. Format & Output

@@ -7,6 +7,8 @@ import groovy.util.logging.Slf4j
 /**
  * Wrapper that creates a VipsTargetCustom from a Java OutputStream.
  * This allows streaming data directly from libvips to Java without buffering the entire image.
+ *
+ * This class relies on libvips not overlapping calls to the write callback, which is true for libvips 8.12.
  */
 @Slf4j
 @CompileStatic
