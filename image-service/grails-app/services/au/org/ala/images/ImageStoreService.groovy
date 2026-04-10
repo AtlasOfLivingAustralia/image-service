@@ -17,6 +17,7 @@ import au.org.ala.images.tiling.ImageTiler4
 import au.org.ala.images.tiling.ImageTiler5
 import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.tiling.ImageTilerResults
+import au.org.ala.images.tiling.TilerVersion
 import au.org.ala.images.tiling.OnDemandImageTiler
 import au.org.ala.images.tiling.TileFormat
 import au.org.ala.images.tiling.TileGenerationResult
@@ -75,11 +76,9 @@ class ImageStoreService implements MetricsSupport {
     ImageOptimisationService imageOptimisationService
     CommandExecutor commandExecutor
 
-    DelegatingImageThumbnailer delegatingImageThumbnailer
-    DelegatingImageTiler delegatingImageTiler
+    IImageThumbnailer imageThumbnailer
+    IImageTiler imageTiler
     ImageTilerConfig imageTilerConfig
-    Executor tilingIoPool
-    Executor tilingWorkPool
 
     @Value('${placeholder.sound.thumbnail}')
     Resource audioThumbnail
@@ -102,14 +101,6 @@ class ImageStoreService implements MetricsSupport {
     @Value('${image.store.lookup.cache.originalConfig:maximumSize=10000}')
     String originalLookupCacheConfig = 'maximumSize=10000'
 
-    @Value('${tiling.levelThreads:2}')
-    int tilingLevelThreads = 2
-
-    @Value('${tiling.ioVirtualThreads:true}')
-    boolean tilingIoVirtualThreads = true
-
-    @Value('${tiling.ioThreads:2}')
-    int tilingIoThreads = 2
 
     @Value('${thumbnail.concurrency.level:-1}')
     int thumbnailConcurrencyLevel = -1
@@ -126,23 +117,6 @@ class ImageStoreService implements MetricsSupport {
     @Value('${images.disableCache:false}')
     boolean disableCache = false
 
-    @Value('${images.useStreamingTiler:false}')
-    boolean useStreamingTiler = false
-
-    @Value('${images.useStreamingThumbnailer:false}')
-    boolean useStreamingThumbnailer = false
-
-    @Value('${images.streamingTool:vips}')
-    String streamingTool = 'vips'
-
-    @Value('${images.preferJna:true}')
-    boolean preferJna = true
-
-    @Value('${tiling.tiler.class:}')
-    String tilerClassName
-
-    @Value('${tiling.tiler.version:V4}')
-    TilerVersion tilerVersion
 
     @Value('${tiling.onDemand.enabled:false}')
     boolean onDemandTilingEnabled = false
@@ -542,7 +516,7 @@ class ImageStoreService implements MetricsSupport {
     private List<ThumbnailingResult> generateThumbnailsImpl(ByteSource byteSource, String imageIdentifier, StorageOperations operations, String type = null) {
         return recordTime('imagestore.thumbnail.generate', 'Time to generate thumbnails', [type: type ?: 'all', count: type == null ? '6' : '1']) {
             def ct = new CodeTimer("Generating ${type != null ? 1 : 6} thumbnails for image ${imageIdentifier}").tap { debug() }
-            def t = createThumbnailer()
+            def t = imageThumbnailer
     //        def imageIdentifier = image.imageIdentifier
             int size = grailsApplication.config.getProperty('imageservice.thumbnail.size') as Integer
             List<ThumbDefinition> thumbDefs = new ArrayList<ThumbDefinition>(type == null ? 6 : 1)
@@ -663,67 +637,9 @@ class ImageStoreService implements MetricsSupport {
         }
     }
 
-    static enum TilerVersion {
-        V1,
-        V3,
-        V4,
-        V5,
-        CUSTOM
-    }
-
-    @CompileStatic
-    private IImageThumbnailer createThumbnailer() {
-        if (useStreamingThumbnailer) {
-            return delegatingImageThumbnailer
-        } else {
-            return new ImageThumbnailer()
-        }
-    }
-
-    @CompileStatic
-    private IImageTiler createTiler(ImageTilerConfig config) {
-        if (useStreamingTiler) {
-            return delegatingImageTiler
-        }
-
-        switch (tilerVersion) {
-            case TilerVersion.V1:
-                log.trace("Tiler version V1 is deprecated, using V3 instead")
-                return new ImageTiler3(config)
-            case TilerVersion.V3:
-                log.trace("Using Tiler version V3")
-                return new ImageTiler3(config)
-            case TilerVersion.CUSTOM:
-                log.trace("Using custom Tiler class: ${tilerClassName}")
-                return loadCustomTiler(config)
-            case TilerVersion.V4:
-                log.trace("Using Tiler version V4")
-                return new ImageTiler4(config)
-            case TilerVersion.V5:
-            default:
-                log.trace("Using Tiler version V5")
-                return new ImageTiler5(config)
-
-        }
-    }
-
-    @CompileStatic
-    private IImageTiler loadCustomTiler(ImageTilerConfig config) {
-        if (!tilerClassName) {
-            throw new IllegalStateException("Tiler version is set to CUSTOM but no tiler class name has been provided")
-        }
-        try {
-            Class tilerClass = this.class.classLoader.loadClass(tilerClassName)
-            Constructor constructor = tilerClass.getConstructor(ImageTilerConfig.class)
-            return (IImageTiler) constructor.newInstance(config)
-        } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
-            log.error("Error loading custom tiler class ${tilerClassName}: ${ExceptionUtils.getStackTrace(e)}")
-            throw new IllegalStateException("Error loading custom tiler class ${tilerClassName}: ${e.message}", e)
-        }
-    }
 
     private ImageTilerResults tileImageLevel(String imageIdentifier, StorageOperations operations, int z) {
-        def tiler = createTiler(imageTilerConfig)
+        def tiler = imageTiler
         return tiler.tileImage(
                 operations.originalInputStream(imageIdentifier, null),
                 new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier)),
@@ -733,7 +649,7 @@ class ImageStoreService implements MetricsSupport {
     }
 
     private ImageTilerResults tileImage(String imageIdentifier, StorageOperations operations) {
-        def tiler = createTiler(imageTilerConfig)
+        def tiler = imageTiler
         return tiler.tileImage(
                 operations.originalInputStream(imageIdentifier, null),
                 new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier))
@@ -1014,9 +930,7 @@ class ImageStoreService implements MetricsSupport {
         return recordTime('imagestore.tile.generate.ondemand', 'Time to generate a single TMS tile on-demand', [z: z.toString(), x: x.toString(), y: y.toString()]) {
             if (tilingSemaphore.tryAcquire(tileConcurrencyTimeout, TimeUnit.SECONDS)) {
                 try {
-                    def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
-                    config.setTileBackgroundColor(new Color(221, 221, 221))
-                    def tiler = new OnDemandImageTiler(config)
+                    def tiler = new OnDemandImageTiler(imageTilerConfig)
                     def input = operations.originalInputStream(imageIdentifier, null)
                     def sink = new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier))
                     return tiler.generateTile(input, sink, z, x, y)

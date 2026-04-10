@@ -16,12 +16,11 @@ class DelegatingImageTiler implements IImageTiler {
     private final IImageTiler delegate
     private final List<String> implementationNames = []
 
-    DelegatingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig config, String tool = 'vips', boolean preferNative = true) {
+    DelegatingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig config, IImageTiler javaFallback, String tool = 'vips', boolean preferNative = true) {
         ServiceLoader<ImageLibraryFactory> loader = ServiceLoader.load(ImageLibraryFactory)
         List<ImageLibraryFactory> factories = loader.toList().findAll { it.available }.sort { -it.priority }
 
         IImageTiler bestTiler = null
-        IImageTiler javaFallback = new ImageTiler(config)
 
         for (ImageLibraryFactory factory : factories) {
             implementationNames.add(factory.implementationName)

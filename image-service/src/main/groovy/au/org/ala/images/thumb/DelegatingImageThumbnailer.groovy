@@ -18,12 +18,11 @@ class DelegatingImageThumbnailer implements IImageThumbnailer {
     private final IImageThumbnailer delegate
     private final List<String> implementationNames = []
 
-    DelegatingImageThumbnailer(CommandExecutor commandExecutor, String tool = 'vips', boolean preferNative = true) {
+    DelegatingImageThumbnailer(CommandExecutor commandExecutor, IImageThumbnailer javaFallback, String tool = 'vips', boolean preferNative = true) {
         ServiceLoader<ImageLibraryFactory> loader = ServiceLoader.load(ImageLibraryFactory)
         List<ImageLibraryFactory> factories = loader.toList().findAll { it.available }.sort { -it.priority }
 
         IImageThumbnailer bestThumbnailer = null
-        IImageThumbnailer javaFallback = new ImageThumbnailer()
 
         for (ImageLibraryFactory factory : factories) {
             implementationNames.add(factory.implementationName)

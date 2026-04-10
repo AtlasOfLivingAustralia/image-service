@@ -21,7 +21,7 @@ class DelegatingImageThumbnailerSpec extends Specification {
         }
 
         def commandExecutor = new ProcessCommandExecutor()
-        def thumbnailer = new DelegatingImageThumbnailer(commandExecutor, 'vips', true)
+        def thumbnailer = new DelegatingImageThumbnailer(commandExecutor, new ImageThumbnailer(), 'vips', true)
         
         expect:
         thumbnailer.implementationNames.any { it.contains("JNA") }
@@ -44,7 +44,7 @@ class DelegatingImageThumbnailerSpec extends Specification {
         def commandExecutor = new ProcessCommandExecutor()
         // We can't easily disable JNA/FFM here without mocking ServiceLoader or the factories,
         // but we can check that Java is at least in the list of discovered implementations.
-        def thumbnailer = new DelegatingImageThumbnailer(commandExecutor, 'non-existent-tool', false)
+        def thumbnailer = new DelegatingImageThumbnailer(commandExecutor, new ImageThumbnailer(), 'non-existent-tool', false)
         
         expect:
         thumbnailer.implementationNames.any { it.contains("Pure Java") }

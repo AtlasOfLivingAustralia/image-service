@@ -4,18 +4,28 @@ import au.org.ala.images.config.ImageOptimisationConfig
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.optimisation.ProcessCommandExecutor
 import au.org.ala.images.thumb.DelegatingImageThumbnailer
+import au.org.ala.images.thumb.IImageThumbnailer
+import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.tiling.DelegatingImageTiler
+import au.org.ala.images.tiling.IImageTiler
+import au.org.ala.images.tiling.ImageTiler3
+import au.org.ala.images.tiling.ImageTiler4
+import au.org.ala.images.tiling.ImageTiler5
 import au.org.ala.images.tiling.ImageTilerConfig
+import au.org.ala.images.tiling.TilerVersion
 import au.org.ala.images.tiling.TileFormat
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
 import groovy.util.logging.Slf4j
+import org.apache.commons.lang3.exception.ExceptionUtils
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.core.task.TaskExecutor
 
 import java.awt.Color
+import java.lang.reflect.Constructor
+import java.lang.reflect.InvocationTargetException
 import java.util.concurrent.Executor
 
 //@EnableConfigurationProperties(ImageOptimisationConfig)
@@ -36,6 +46,18 @@ class Application extends GrailsAutoConfiguration {
 
     @Value('${images.preferJna:true}')
     boolean preferJna
+
+    @Value('${images.useStreamingThumbnailer:false}')
+    boolean useStreamingThumbnailer
+
+    @Value('${images.useStreamingTiler:false}')
+    boolean useStreamingTiler
+
+    @Value('${tiling.tiler.version:V4}')
+    TilerVersion tilerVersion
+
+    @Value('${tiling.tiler.class:}')
+    String tilerClassName
 
     @Value('${imageservice.tiling.io.threads:${tiling.ioThreads:2}}')
     int tilingIoThreads
@@ -76,8 +98,13 @@ class Application extends GrailsAutoConfiguration {
     }
 
     @Bean
+    IImageThumbnailer imageThumbnailer(DelegatingImageThumbnailer delegatingImageThumbnailer) {
+        return useStreamingThumbnailer ? delegatingImageThumbnailer : new ImageThumbnailer()
+    }
+
+    @Bean
     DelegatingImageThumbnailer delegatingImageThumbnailer(CommandExecutor commandExecutor) {
-        return new DelegatingImageThumbnailer(commandExecutor, streamingTool, preferJna)
+        return new DelegatingImageThumbnailer(commandExecutor, new ImageThumbnailer(), streamingTool, preferJna)
     }
 
     @Bean
@@ -128,7 +155,48 @@ class Application extends GrailsAutoConfiguration {
     }
 
     @Bean
-    DelegatingImageTiler delegatingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig) {
-        return new DelegatingImageTiler(commandExecutor, imageTilerConfig, streamingTool, preferJna)
+    IImageTiler fallbackTiler(ImageTilerConfig config) {
+        switch (tilerVersion) {
+            case TilerVersion.V1:
+                log.trace("Tiler version V1 is deprecated, using V3 instead")
+                return new ImageTiler3(config)
+            case TilerVersion.V3:
+                log.trace("Using Tiler version V3")
+                return new ImageTiler3(config)
+            case TilerVersion.CUSTOM:
+                log.trace("Using custom Tiler class: ${tilerClassName}")
+                return loadCustomTiler(config)
+            case TilerVersion.V4:
+                log.trace("Using Tiler version V4")
+                return new ImageTiler4(config)
+            case TilerVersion.V5:
+            default:
+                log.trace("Using Tiler version V5")
+                return new ImageTiler5(config)
+        }
+    }
+
+    private IImageTiler loadCustomTiler(ImageTilerConfig config) {
+        if (!tilerClassName) {
+            throw new IllegalStateException("Tiler version is set to CUSTOM but no tiler class name has been provided")
+        }
+        try {
+            Class tilerClass = this.class.classLoader.loadClass(tilerClassName)
+            Constructor constructor = tilerClass.getConstructor(ImageTilerConfig.class)
+            return (IImageTiler) constructor.newInstance(config)
+        } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
+            log.error("Error loading custom tiler class ${tilerClassName}: ${ExceptionUtils.getStackTrace(e)}")
+            throw new IllegalStateException("Error loading custom tiler class ${tilerClassName}: ${e.message}", e)
+        }
+    }
+
+    @Bean
+    DelegatingImageTiler delegatingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig, IImageTiler fallbackTiler) {
+        return new DelegatingImageTiler(commandExecutor, imageTilerConfig, fallbackTiler, streamingTool, preferJna)
+    }
+
+    @Bean
+    IImageTiler imageTiler(DelegatingImageTiler delegatingImageTiler, IImageTiler fallbackTiler) {
+        return useStreamingTiler ? delegatingImageTiler : fallbackTiler
     }
 }

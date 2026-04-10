@@ -3,6 +3,8 @@ package au.org.ala.images
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.thumb.DelegatingImageThumbnailer
 import au.org.ala.images.tiling.DelegatingImageTiler
+import au.org.ala.images.thumb.IImageThumbnailer
+import au.org.ala.images.tiling.IImageTiler
 import au.org.ala.images.tiling.ImageTilerConfig
 import com.google.common.io.Resources
 import grails.testing.gorm.DataTest
@@ -16,11 +18,9 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
     def setup() {
         defineBeans {
-            delegatingImageThumbnailer(Mock(DelegatingImageThumbnailer))
-            delegatingImageTiler(Mock(DelegatingImageTiler))
+            imageThumbnailer(Mock(IImageThumbnailer))
+            imageTiler(Mock(IImageTiler))
             imageTilerConfig(Mock(ImageTilerConfig))
-            tilingIoPool(Mock(TaskExecutor))
-            tilingWorkPool(Mock(TaskExecutor))
             commandExecutor(Mock(CommandExecutor))
         }
         service.auditService = Mock(AuditService)
