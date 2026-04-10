@@ -1,6 +1,9 @@
 package au.org.ala.images
 
 import au.org.ala.images.config.ImageOptimisationConfig
+import au.org.ala.images.iiif.DelegatingIiifImageProcessor
+import au.org.ala.images.iiif.IiifImageProcessor
+import au.org.ala.images.iiif.JavaIiifImageProcessor
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.optimisation.ProcessCommandExecutor
 import au.org.ala.images.thumb.DelegatingImageThumbnailer
@@ -20,6 +23,7 @@ import groovy.util.logging.Slf4j
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.core.task.TaskExecutor
@@ -47,12 +51,6 @@ class Application extends GrailsAutoConfiguration {
 
     @Value('${images.preferJna:true}')
     boolean preferJna
-
-    @Value('${images.useStreamingThumbnailer:false}')
-    boolean useStreamingThumbnailer
-
-    @Value('${images.useStreamingTiler:false}')
-    boolean useStreamingTiler
 
     @Value('${tiling.tiler.version:V4}')
     TilerVersion tilerVersion
@@ -110,13 +108,20 @@ class Application extends GrailsAutoConfiguration {
     }
 
     @Bean
-    IImageThumbnailer imageThumbnailer(DelegatingImageThumbnailer delegatingImageThumbnailer) {
-        return useStreamingThumbnailer ? delegatingImageThumbnailer : new ImageThumbnailer()
+    IImageThumbnailer fallbackThumbnailer() {
+        return new ImageThumbnailer()
     }
 
-    @Bean
-    DelegatingImageThumbnailer delegatingImageThumbnailer(CommandExecutor commandExecutor) {
-        return new DelegatingImageThumbnailer(commandExecutor, new ImageThumbnailer(), streamingTool, preferJna)
+    @Bean("imageThumbnailer")
+    @ConditionalOnProperty(name = "images.useStreamingThumbnailer", havingValue = "true")
+    IImageThumbnailer streamingImageThumbnailer(CommandExecutor commandExecutor, @Qualifier("fallbackThumbnailer") IImageThumbnailer fallbackThumbnailer) {
+        return new DelegatingImageThumbnailer(commandExecutor, fallbackThumbnailer, streamingTool, preferJna)
+    }
+
+    @Bean("imageThumbnailer")
+    @ConditionalOnProperty(name = "images.useStreamingThumbnailer", havingValue = "false", matchIfMissing = true)
+    IImageThumbnailer defaultImageThumbnailer(@Qualifier("fallbackThumbnailer") IImageThumbnailer fallbackThumbnailer) {
+        return fallbackThumbnailer
     }
 
     @Bean
@@ -202,13 +207,27 @@ class Application extends GrailsAutoConfiguration {
         }
     }
 
-    @Bean
-    DelegatingImageTiler delegatingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig, IImageTiler fallbackTiler) {
+    @Bean("imageTiler")
+    @ConditionalOnProperty(name = "images.useStreamingTiler", havingValue = "true")
+    IImageTiler streamingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig, IImageTiler fallbackTiler) {
         return new DelegatingImageTiler(commandExecutor, imageTilerConfig, fallbackTiler, streamingTool, preferJna)
     }
 
-    @Bean
-    IImageTiler imageTiler(DelegatingImageTiler delegatingImageTiler, IImageTiler fallbackTiler) {
-        return useStreamingTiler ? delegatingImageTiler : fallbackTiler
+    @Bean("imageTiler")
+    @ConditionalOnProperty(name = "images.useStreamingTiler", havingValue = "false", matchIfMissing = true)
+    IImageTiler defaultImageTiler(IImageTiler fallbackTiler) {
+        return fallbackTiler
+    }
+
+    @Bean("iiifImageProcessor")
+    @ConditionalOnProperty(name = "images.useStreamingIiifProcessor", havingValue = "true", matchIfMissing = true)
+    IiifImageProcessor iiifImageProcessor() {
+        return new DelegatingIiifImageProcessor()
+    }
+
+    @Bean("iiifImageProcessor")
+    @ConditionalOnProperty(name = "images.useStreamingIiifProcessor", havingValue = "false")
+    IiifImageProcessor fallbackIiifImageProcessor() {
+        return new JavaIiifImageProcessor()
     }
 }

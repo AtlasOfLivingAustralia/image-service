@@ -440,6 +440,8 @@ images:
   # When enabled, uses external tools (vips, magick) if available, falls back to pure Java
   useStreamingTiler: false
   useStreamingThumbnailer: false
+  # When enabled, uses native libraries (vips) if available, falls back to pure Java
+  useStreamingIiifProcessor: false
   # Prefer JNA-based tiler and thumbnailer over CLI versions
   preferJna: true
   # Tool to use for streaming operations ('vips' or 'magick')

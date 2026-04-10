@@ -1,6 +1,5 @@
 package au.org.ala.images
 
-import au.org.ala.images.iiif.DelegatingIiifImageProcessor
 import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.storage.StorageOperations
 import com.github.benmanes.caffeine.cache.Cache
@@ -9,6 +8,7 @@ import com.google.common.io.ByteSource
 import grails.gorm.transactions.NotTransactional
 import groovy.util.logging.Slf4j
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 
 import javax.annotation.PostConstruct
@@ -22,6 +22,8 @@ import groovy.transform.TupleConstructor
 class IiifImageService {
 
     StorageLocationService storageLocationService
+    @Autowired
+    IiifImageProcessor iiifImageProcessor
 
     @Value('${image.store.lookup.cache.iiifConfig:maximumSize=10000,expireAfterAccess=30m}')
     String iiifCacheConfig = 'maximumSize=10000,expireAfterAccess=30m'
@@ -161,8 +163,6 @@ class IiifImageService {
         def imageInfo = operations.thumbnailImageInfo(identifier, type)
 
         if (!imageInfo.exists) {
-            IiifImageProcessor iif = new DelegatingIiifImageProcessor()
-
             def byteSource = new ByteSource() {
                 @Override
                 InputStream openStream() throws IOException {
@@ -172,7 +172,7 @@ class IiifImageService {
             // this image-utils call doesn't support a bytesinkfactory, so we're doing it ourselves
             // TODO should thumbnail_+type come from the StoragePathStrategy?
             def result = operations.thumbnailByteSinkFactory(identifier).getByteSinkForNames('thumbnail_'+type).openBufferedStream().withStream { out ->
-                iif.process(byteSource, region, size, rotation, quality, format, out)
+                iiifImageProcessor.process(byteSource, region, size, rotation, quality, format, out)
             }
             // Don't save an ImageThumbnail record for this generated thumbnail.  The thumbnail table needs to be addressable
             // through the main Image Controller.
