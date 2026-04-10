@@ -8,6 +8,7 @@ import groovy.json.JsonSlurper
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executor
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
 
 class AnalyticsService {
 
@@ -17,6 +18,7 @@ class AnalyticsService {
     def grailsApplication
 
     @Autowired
+    @Qualifier("analyticsExecutor")
     Executor analyticsExecutor
 
     def REPORT_PERIODS = [

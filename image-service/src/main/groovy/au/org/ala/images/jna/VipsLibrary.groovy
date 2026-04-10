@@ -92,16 +92,18 @@ interface VipsLibrary extends Library {
      * @param buf pointer to image data
      * @param len length of image data
      * @param options options string (can be null)
+     * @param args variable arguments (null-terminated) for options (e.g., "access", value)
      * @return VipsImage pointer or null on error
      */
-    Pointer vips_image_new_from_buffer(Pointer buf, long len, String options)
+    Pointer vips_image_new_from_buffer(Pointer buf, long len, String options, Object... args)
 
     /**
      * Create a new image object from a file.
      * @param filename path to the image file
+     * @param args variable arguments (null-terminated) for options (e.g., "access", value)
      * @return VipsImage pointer or null on error
      */
-    Pointer vips_image_new_from_file(String filename)
+    Pointer vips_image_new_from_file(String filename, Object... args)
 
     /**
      * Free a VipsImage.

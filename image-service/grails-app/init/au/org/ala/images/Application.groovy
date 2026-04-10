@@ -19,6 +19,7 @@ import grails.boot.config.GrailsAutoConfiguration
 import groovy.util.logging.Slf4j
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.core.task.TaskExecutor
@@ -74,6 +75,17 @@ class Application extends GrailsAutoConfiguration {
         executor.setCorePoolSize(1)
         executor.setMaxPoolSize(1)
         executor.setThreadNamePrefix("analytics-")
+        executor.setWaitForTasksToCompleteOnShutdown(true)
+        executor.setAwaitTerminationSeconds(10)
+        return executor
+    }
+
+    @Bean
+    TaskExecutor storageLocationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
+        executor.setCorePoolSize(1)
+        executor.setMaxPoolSize(2)
+        executor.setThreadNamePrefix("storage-")
         executor.setWaitForTasksToCompleteOnShutdown(true)
         executor.setAwaitTerminationSeconds(10)
         return executor
@@ -148,7 +160,7 @@ class Application extends GrailsAutoConfiguration {
     }
 
     @Bean
-    ImageTilerConfig imageTilerConfig(Executor tilingIoPool, Executor tilingWorkPool) {
+    ImageTilerConfig imageTilerConfig(@Qualifier("tilingIoPool") Executor tilingIoPool, @Qualifier("tilingWorkPool") Executor tilingWorkPool) {
         def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
         config.setTileBackgroundColor(new Color(221, 221, 221))
         return config

@@ -117,7 +117,7 @@ class JnaStreamingImageThumbnailer implements IImageThumbnailer {
             OutputStream outputStream = destination.openStream()
             try {
                 vipsTarget = new OutputStreamVipsTarget(vips, outputStream)
-                result = vips.vips_image_write_to_target(outputImage, suffix, vipsTarget.getTarget())
+                result = vips.vips_image_write_to_target(outputImage, suffix, vipsTarget.getTarget(), (Object) null)
 
                 if (result != 0) {
                     String error = vips.vips_error_buffer()

@@ -8,6 +8,7 @@ import groovy.util.logging.Slf4j
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 import org.javaswift.joss.client.factory.AuthenticationMethod
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 
 import java.util.concurrent.Executor
@@ -29,7 +30,8 @@ class StorageLocationService {
     int updateAclObjectThreshold = 50000
 
     @Autowired
-    Executor analyticsExecutor
+    @Qualifier("storageLocationExecutor")
+    Executor storageLocationExecutor
 
     StorageLocation createStorageLocation(json) {
         StorageLocation storageLocation
@@ -113,7 +115,7 @@ class StorageLocationService {
                 long totalObjects = Image.countByStorageLocation(storageLocation)
                 if (totalObjects < updateAclObjectThreshold) {
                     // Proceed with background ACL and cache-control update
-                    analyticsExecutor.execute {
+                    storageLocationExecutor.execute {
                         storageLocation.updateACL()
                     }
                 } else {

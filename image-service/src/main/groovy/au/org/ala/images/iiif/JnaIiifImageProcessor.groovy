@@ -83,7 +83,7 @@ class JnaIiifImageProcessor implements IiifImageProcessor {
             // 5. Format & Output
             String suffix = "." + format.getFormatName()
             vipsTarget = new OutputStreamVipsTarget(vips, out)
-            int result = vips.vips_image_write_to_target(workingImage, suffix, vipsTarget.getTarget())
+            int result = vips.vips_image_write_to_target(workingImage, suffix, vipsTarget.getTarget(), (Object) null)
             if (result != 0) {
                 throw new IOException("Failed to write image: ${vips.vips_error_buffer()}")
             }

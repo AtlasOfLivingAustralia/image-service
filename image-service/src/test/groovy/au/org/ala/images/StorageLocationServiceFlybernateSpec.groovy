@@ -10,7 +10,7 @@ class StorageLocationServiceFlybernateSpec extends FlybernateSpec implements Ser
 
     def setup() {
         defineBeans {
-            analyticsExecutor(InstanceFactoryBean, [execute: { Runnable r -> r.run() } ] as Executor, Executor)
+            storageLocationExecutor(InstanceFactoryBean, [execute: { Runnable r -> r.run() } ] as Executor, Executor)
             storageOperationsRegistry(StorageOperationsRegistry, ref('grailsApplication'))
         }
     }

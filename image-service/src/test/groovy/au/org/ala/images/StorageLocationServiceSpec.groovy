@@ -18,7 +18,7 @@ class StorageLocationServiceSpec extends Specification implements ServiceUnitTes
 
     def setup() {
         defineBeans {
-            analyticsExecutor(InstanceFactoryBean, [ execute: { Runnable r -> r.run() } ] as Executor, Executor)
+            storageLocationExecutor(InstanceFactoryBean, [ execute: { Runnable r -> r.run() } ] as Executor, Executor)
             storageOperationsRegistry(StorageOperationsRegistry, ref('grailsApplication'))
         }
     }
@@ -121,7 +121,7 @@ class StorageLocationServiceSpec extends Specification implements ServiceUnitTes
         // Replace executor with synchronous stub via getter metaclass
         boolean executed = false
         def spyExecutor = [ execute: { Runnable r -> executed = true } ] as java.util.concurrent.Executor
-        service.analyticsExecutor = spyExecutor
+        service.storageLocationExecutor = spyExecutor
 
         // enable and set threshold higher than count
         service.updateAclEnabled = true
@@ -144,7 +144,7 @@ class StorageLocationServiceSpec extends Specification implements ServiceUnitTes
         boolean executed = false
         // executor spy that would set flag if invoked
         def spyExecutor = [ execute: { Runnable r -> executed = true } ] as java.util.concurrent.Executor
-        service.analyticsExecutor = spyExecutor
+        service.storageLocationExecutor = spyExecutor
 
         service.updateAclEnabled = true
         service.updateAclObjectThreshold = 2 // less than the 3 images
@@ -164,7 +164,7 @@ class StorageLocationServiceSpec extends Specification implements ServiceUnitTes
 
         boolean executed = false
         def spyExecutor = [ execute: { Runnable r -> executed = true } ] as java.util.concurrent.Executor
-        service.analyticsExecutor = spyExecutor
+        service.storageLocationExecutor = spyExecutor
 
         service.updateAclEnabled = false
         service.updateAclObjectThreshold = 1000
