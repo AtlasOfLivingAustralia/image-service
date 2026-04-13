@@ -70,10 +70,10 @@ class Application extends GrailsAutoConfiguration {
     @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimit:${tiling.ioVirtualTaskConcurrencyLimit:0}}')
     int tilingIoVirtualTaskConcurrencyLimit
 
-    @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimit:${tiling.ioVirtualTaskConcurrencyLimitCloud:512}}')
+    @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimitCloud:${tiling.ioVirtualTaskConcurrencyLimitCloud:512}}')
     int tilingIoVirtualTaskConcurrencyLimitCloud
 
-    @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimit:${tiling.ioVirtualTaskConcurrencyLimitLocal:32}}')
+    @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimitLocal:${tiling.ioVirtualTaskConcurrencyLimitLocal:32}}')
     int tilingIoVirtualTaskConcurrencyLimitLocal
 
     @Bean
@@ -83,7 +83,7 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     TaskExecutor storageLocationExecutor() {
-        return createThreadPoolTaskExecutor("storage-", 1, 2)
+        return createThreadPoolTaskExecutor("storage-", 1)
     }
 
     @Bean
@@ -135,11 +135,11 @@ class Application extends GrailsAutoConfiguration {
                 if (concurrencyLimit <= 0) {
                     // Detect cloud storage (S3 or Swift) in configuration
                     def storageConfig = grailsApplication.config.getProperty('imageservice.storage.locations', Map, [:])
-                    boolean isCloud = storageConfig.every { k, v ->
+                    boolean isLocal = storageConfig.any { k, v ->
                         String type = v?.type?.toString()?.toLowerCase()
-                        return type == 's3' || type == 'swift'
+                        return type == 'fs' || type == 'filesystem'
                     }
-                    concurrencyLimit = isCloud ? tilingIoVirtualTaskConcurrencyLimitCloud : tilingIoVirtualTaskConcurrencyLimitLocal
+                    concurrencyLimit = isLocal ? tilingIoVirtualTaskConcurrencyLimitLocal | tilingIoVirtualTaskConcurrencyLimitCloud
                     log.info("Auto-detected tiling IO max virtual threads: {} (Cloud storage detected: {})", concurrencyLimit, isCloud)
                 }
                 // Fix: Use the local concurrencyLimit variable instead of the property
@@ -250,10 +250,11 @@ class Application extends GrailsAutoConfiguration {
         return selected
     }
 
-    private static TaskExecutor createThreadPoolTaskExecutor(String namePrefix, int coreSize, int maxSize = coreSize) {
+    private static TaskExecutor createThreadPoolTaskExecutor(String namePrefix, int coreSize, int maxSize = coreSize, int queueCapacity = Integer.MAX_VALUE) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
         executor.corePoolSize = Math.max(1, coreSize)
         executor.maxPoolSize = Math.max(1, maxSize)
+        executor.queueCapacity = Math.max(0, queueCapacity)
         executor.threadNamePrefix = namePrefix
         executor.waitForTasksToCompleteOnShutdown = true
         executor.awaitTerminationSeconds = 10
