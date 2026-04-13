@@ -1,15 +1,14 @@
 package au.org.ala.images
 
 import au.org.ala.images.config.ImageOptimisationConfig
-import au.org.ala.images.iiif.DelegatingIiifImageProcessor
+import au.org.ala.images.factory.ImageLibraryFactory
 import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.iiif.JavaIiifImageProcessor
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.optimisation.ProcessCommandExecutor
-import au.org.ala.images.thumb.DelegatingImageThumbnailer
+import au.org.ala.images.spring.SimpleAsyncTaskExecutor
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.thumb.ImageThumbnailer
-import au.org.ala.images.tiling.DelegatingImageTiler
 import au.org.ala.images.tiling.IImageTiler
 import au.org.ala.images.tiling.ImageTiler3
 import au.org.ala.images.tiling.ImageTiler4
@@ -31,6 +30,7 @@ import org.springframework.core.task.TaskExecutor
 import java.awt.Color
 import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
+import java.util.ServiceLoader
 import java.util.concurrent.Executor
 
 //@EnableConfigurationProperties(ImageOptimisationConfig)
@@ -49,8 +49,8 @@ class Application extends GrailsAutoConfiguration {
     @Value('${images.streamingTool:vips}')
     String streamingTool
 
-    @Value('${images.preferJna:true}')
-    boolean preferJna
+    @Value('${images.preferPureJavaOperations:false}')
+    boolean preferPureJavaOperations
 
     @Value('${tiling.tiler.version:V4}')
     TilerVersion tilerVersion
@@ -67,26 +67,23 @@ class Application extends GrailsAutoConfiguration {
     @Value('${imageservice.tiling.io.virtualThreads:${tiling.ioVirtualThreads:true}}')
     boolean tilingIoVirtualThreads
 
+    @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimit:${tiling.ioVirtualTaskConcurrencyLimit:0}}')
+    int tilingIoVirtualTaskConcurrencyLimit
+
+    @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimit:${tiling.ioVirtualTaskConcurrencyLimitCloud:512}}')
+    int tilingIoVirtualTaskConcurrencyLimitCloud
+
+    @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimit:${tiling.ioVirtualTaskConcurrencyLimitLocal:32}}')
+    int tilingIoVirtualTaskConcurrencyLimitLocal
+
     @Bean
     TaskExecutor analyticsExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
-        executor.setCorePoolSize(1)
-        executor.setMaxPoolSize(1)
-        executor.setThreadNamePrefix("analytics-")
-        executor.setWaitForTasksToCompleteOnShutdown(true)
-        executor.setAwaitTerminationSeconds(10)
-        return executor
+        return createThreadPoolTaskExecutor("analytics-", 1)
     }
 
     @Bean
     TaskExecutor storageLocationExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
-        executor.setCorePoolSize(1)
-        executor.setMaxPoolSize(2)
-        executor.setThreadNamePrefix("storage-")
-        executor.setWaitForTasksToCompleteOnShutdown(true)
-        executor.setAwaitTerminationSeconds(10)
-        return executor
+        return createThreadPoolTaskExecutor("storage-", 1, 2)
     }
 
     @Bean
@@ -114,8 +111,11 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean("imageThumbnailer")
     @ConditionalOnProperty(name = "images.useStreamingThumbnailer", havingValue = "true")
-    IImageThumbnailer streamingImageThumbnailer(CommandExecutor commandExecutor, @Qualifier("fallbackThumbnailer") IImageThumbnailer fallbackThumbnailer) {
-        return new DelegatingImageThumbnailer(commandExecutor, fallbackThumbnailer, streamingTool, preferJna)
+    IImageThumbnailer streamingImageThumbnailer(CommandExecutor commandExecutor, @Qualifier("fallbackThumbnailer") IImageThumbnailer fallbackThumbnailer, ImageLibraryFactory imageLibraryFactory) {
+        if (imageLibraryFactory) {
+            return imageLibraryFactory.createThumbnailer(commandExecutor, streamingTool, fallbackThumbnailer) ?: fallbackThumbnailer
+        }
+        return fallbackThumbnailer
     }
 
     @Bean("imageThumbnailer")
@@ -126,42 +126,38 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     TaskExecutor tilingIoPool() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
         if (tilingIoVirtualThreads) {
             try {
-                executor.setThreadFactory(Thread.ofVirtual().name("tiling-io-pool-", 0).factory())
-                executor.setCorePoolSize(0)
-                executor.setMaxPoolSize(Integer.MAX_VALUE)
-                executor.setQueueCapacity(0)
+                SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor("tiling-io-")
+                executor.setVirtualThreads(true)
+
+                int concurrencyLimit = tilingIoVirtualTaskConcurrencyLimit
+                if (concurrencyLimit <= 0) {
+                    // Detect cloud storage (S3 or Swift) in configuration
+                    def storageConfig = grailsApplication.config.getProperty('imageservice.storage.locations', Map, [:])
+                    boolean isCloud = storageConfig.every { k, v ->
+                        String type = v?.type?.toString()?.toLowerCase()
+                        return type == 's3' || type == 'swift'
+                    }
+                    concurrencyLimit = isCloud ? tilingIoVirtualTaskConcurrencyLimitCloud : tilingIoVirtualTaskConcurrencyLimitLocal
+                    log.info("Auto-detected tiling IO max virtual threads: {} (Cloud storage detected: {})", concurrencyLimit, isCloud)
+                }
+                // Fix: Use the local concurrencyLimit variable instead of the property
+                executor.setConcurrencyLimit(Math.max(1, concurrencyLimit))
+                executor.setTaskTerminationTimeout(10_000)
+                return executor
             } catch (NoSuchMethodError | Exception e) {
                 log.warn("Unable to use virtual threads for tiling IO pool, falling back to regular thread pool. Reason: {}", e.toString())
-                // Fallback if not on Java 21+ or other issues with virtual threads
-                int poolSize = Math.max(1, tilingIoThreads)
-                executor.setCorePoolSize(poolSize)
-                executor.setMaxPoolSize(poolSize)
-                executor.setThreadNamePrefix("tiling-io-pool-")
             }
-        } else {
-            int poolSize = Math.max(1, tilingIoThreads)
-            executor.setCorePoolSize(poolSize)
-            executor.setMaxPoolSize(poolSize)
-            executor.setThreadNamePrefix("tiling-io-pool-")
         }
-        executor.setWaitForTasksToCompleteOnShutdown(true)
-        executor.setAwaitTerminationSeconds(10)
-        return executor
+
+        // Default and fallback handled here
+        return createThreadPoolTaskExecutor("tiling-io-pool-", tilingIoThreads)
     }
 
     @Bean
     TaskExecutor tilingWorkPool() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
-        int poolSize = Math.max(1, tilingLevelThreads)
-        executor.setCorePoolSize(poolSize)
-        executor.setMaxPoolSize(poolSize)
-        executor.setThreadNamePrefix("tiling-work-pool-")
-        executor.setWaitForTasksToCompleteOnShutdown(true)
-        executor.setAwaitTerminationSeconds(10)
-        return executor
+        return createThreadPoolTaskExecutor("tiling-work-pool-", tilingLevelThreads)
     }
 
     @Bean
@@ -209,8 +205,11 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean("imageTiler")
     @ConditionalOnProperty(name = "images.useStreamingTiler", havingValue = "true")
-    IImageTiler streamingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig, IImageTiler fallbackTiler) {
-        return new DelegatingImageTiler(commandExecutor, imageTilerConfig, fallbackTiler, streamingTool, preferJna)
+    IImageTiler streamingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig, IImageTiler fallbackTiler, ImageLibraryFactory imageLibraryFactory) {
+        if (imageLibraryFactory) {
+            return imageLibraryFactory.createTiler(commandExecutor, imageTilerConfig, streamingTool, fallbackTiler) ?: fallbackTiler
+        }
+        return fallbackTiler
     }
 
     @Bean("imageTiler")
@@ -221,13 +220,43 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean("iiifImageProcessor")
     @ConditionalOnProperty(name = "images.useStreamingIiifProcessor", havingValue = "true", matchIfMissing = true)
-    IiifImageProcessor iiifImageProcessor() {
-        return new DelegatingIiifImageProcessor()
+    IiifImageProcessor iiifImageProcessor(ImageLibraryFactory imageLibraryFactory) {
+        IiifImageProcessor javaFallback = new JavaIiifImageProcessor()
+        if (imageLibraryFactory) {
+            return imageLibraryFactory.createIiifProcessor(javaFallback) ?: javaFallback
+        }
+        return javaFallback
     }
 
     @Bean("iiifImageProcessor")
     @ConditionalOnProperty(name = "images.useStreamingIiifProcessor", havingValue = "false")
     IiifImageProcessor fallbackIiifImageProcessor() {
         return new JavaIiifImageProcessor()
+    }
+
+    @Bean
+    ImageLibraryFactory imageLibraryFactory() {
+        ServiceLoader<ImageLibraryFactory> loader = ServiceLoader.load(ImageLibraryFactory)
+        List<ImageLibraryFactory> factories = loader.toList().findAll { it.available }.sort { -it.priority }
+
+        // Find the best one according to configuration. Priority 0 is typically the Pure Java implementation.
+        ImageLibraryFactory selected = factories.find { !preferPureJavaOperations || it.priority == 0 }
+
+        if (selected) {
+            log.info("Selected ImageLibraryFactory: {} (priority: {})", selected.implementationName, selected.priority)
+        } else {
+            log.warn("No suitable ImageLibraryFactory found!")
+        }
+        return selected
+    }
+
+    private static TaskExecutor createThreadPoolTaskExecutor(String namePrefix, int coreSize, int maxSize = coreSize) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
+        executor.corePoolSize = Math.max(1, coreSize)
+        executor.maxPoolSize = Math.max(1, maxSize)
+        executor.threadNamePrefix = namePrefix
+        executor.waitForTasksToCompleteOnShutdown = true
+        executor.awaitTerminationSeconds = 10
+        return executor
     }
 }

@@ -1,8 +1,6 @@
 package au.org.ala.images
 
 import au.org.ala.images.optimisation.CommandExecutor
-import au.org.ala.images.thumb.DelegatingImageThumbnailer
-import au.org.ala.images.tiling.DelegatingImageTiler
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.tiling.IImageTiler
 import au.org.ala.images.tiling.ImageTilerConfig
@@ -11,8 +9,6 @@ import grails.testing.gorm.DataTest
 import grails.testing.services.ServiceUnitTest
 import org.grails.plugins.testing.GrailsMockMultipartFile
 import spock.lang.Specification
-
-import org.springframework.core.task.TaskExecutor
 
 class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<ImageStoreService>, DataTest {
 

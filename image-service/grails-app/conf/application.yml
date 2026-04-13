@@ -442,8 +442,9 @@ images:
   useStreamingThumbnailer: false
   # When enabled, uses native libraries (vips) if available, falls back to pure Java
   useStreamingIiifProcessor: false
-  # Prefer JNA-based tiler and thumbnailer over CLI versions
-  preferJna: true
+  # Prefer pure Java tiler and thumbnailer over native code versions (vips, magick) even if native tools are available.
+  # This is useful for testing and for environments where native tools are available but not performing well, but should generally be left as false in production. Default: false
+  preferPureJavaOperations: false
   # Tool to use for streaming operations ('vips' or 'magick')
   streamingTool: 'vips'
   # Image optimisation settings
@@ -733,3 +734,6 @@ tiling:
     maxColsPerStrip: 6
     levelThreads: 2
     ioThreads: 2
+    ioVirtualTaskConcurrencyLimit: 0 # 0 means automatic limit depending on whether we're using cloud or local filesystem storage
+    ioVirtualTaskConcurrencyLimitCloud: 512 # default limit for cloud storage
+    ioVirtualTaskConcurrencyLimitLocal: 32 # default limit for local filesystem storage

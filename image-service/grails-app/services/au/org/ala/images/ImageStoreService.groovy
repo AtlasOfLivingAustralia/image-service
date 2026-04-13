@@ -2,24 +2,15 @@ package au.org.ala.images
 
 import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.images.storage.StorageOperations
-import au.org.ala.images.thumb.DelegatingImageThumbnailer
 import au.org.ala.images.thumb.IImageThumbnailer
-import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
 import au.org.ala.images.thumb.ThumbnailingResult
 import au.org.ala.images.optimisation.CommandExecutor
-import au.org.ala.images.optimisation.ProcessCommandExecutor
 import au.org.ala.images.tiling.DefaultZoomFactorStrategy
-import au.org.ala.images.tiling.DelegatingImageTiler
 import au.org.ala.images.tiling.IImageTiler
-import au.org.ala.images.tiling.ImageTiler3
-import au.org.ala.images.tiling.ImageTiler4
-import au.org.ala.images.tiling.ImageTiler5
 import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.tiling.ImageTilerResults
-import au.org.ala.images.tiling.TilerVersion
 import au.org.ala.images.tiling.OnDemandImageTiler
-import au.org.ala.images.tiling.TileFormat
 import au.org.ala.images.tiling.TileGenerationResult
 import au.org.ala.images.tiling.TilerSink
 import au.org.ala.images.util.ImageReaderUtils
@@ -29,7 +20,6 @@ import com.github.benmanes.caffeine.cache.Caffeine
 import com.google.common.io.ByteSource
 import grails.gorm.transactions.NotTransactional
 import grails.web.mapping.LinkGenerator
-import groovy.transform.CompileStatic
 import groovy.transform.Immutable
 import groovy.transform.NamedVariant
 import groovy.util.logging.Slf4j
@@ -40,27 +30,21 @@ import org.apache.commons.io.FileUtils
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.commons.lang3.tuple.Pair
 import org.apache.tika.Tika
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
 import org.springframework.web.multipart.MultipartFile
 
 import javax.annotation.PostConstruct
-import javax.annotation.PreDestroy
 import javax.imageio.IIOException
 import javax.imageio.ImageIO
 import javax.imageio.ImageReadParam
 import java.awt.Color
 import java.awt.Rectangle
 import java.awt.image.BufferedImage
-import java.lang.reflect.Constructor
-import java.lang.reflect.InvocationTargetException
 import java.nio.file.Files
 
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 
-import java.util.concurrent.Executor
-import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
@@ -74,7 +58,6 @@ class ImageStoreService implements MetricsSupport {
     LinkGenerator grailsLinkGenerator
     StorageLocationService storageLocationService
     ImageOptimisationService imageOptimisationService
-    CommandExecutor commandExecutor
 
     IImageThumbnailer imageThumbnailer
     IImageTiler imageTiler
