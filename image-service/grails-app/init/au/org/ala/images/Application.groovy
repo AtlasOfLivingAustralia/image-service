@@ -139,10 +139,9 @@ class Application extends GrailsAutoConfiguration {
                         String type = v?.type?.toString()?.toLowerCase()
                         return type == 'fs' || type == 'filesystem'
                     }
-                    concurrencyLimit = isLocal ? tilingIoVirtualTaskConcurrencyLimitLocal | tilingIoVirtualTaskConcurrencyLimitCloud
-                    log.info("Auto-detected tiling IO max virtual threads: {} (Cloud storage detected: {})", concurrencyLimit, isCloud)
+                    concurrencyLimit = isLocal ? tilingIoVirtualTaskConcurrencyLimitLocal : tilingIoVirtualTaskConcurrencyLimitCloud
+                    log.info("Auto-detected tiling IO max virtual threads: {} (Cloud storage detected: {})", concurrencyLimit, !isLocal)
                 }
-                // Fix: Use the local concurrencyLimit variable instead of the property
                 executor.setConcurrencyLimit(Math.max(1, concurrencyLimit))
                 executor.setTaskTerminationTimeout(10_000)
                 return executor
@@ -250,11 +249,13 @@ class Application extends GrailsAutoConfiguration {
         return selected
     }
 
-    private static TaskExecutor createThreadPoolTaskExecutor(String namePrefix, int coreSize, int maxSize = coreSize, int queueCapacity = Integer.MAX_VALUE) {
+    private static TaskExecutor createThreadPoolTaskExecutor(String namePrefix, int coreSize, int maxSize = coreSize, int queueCapacity = -1) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
         executor.corePoolSize = Math.max(1, coreSize)
         executor.maxPoolSize = Math.max(1, maxSize)
-        executor.queueCapacity = Math.max(0, queueCapacity)
+        if (queueCapacity >= 0) {
+            executor.queueCapacity = queueCapacity
+        }
         executor.threadNamePrefix = namePrefix
         executor.waitForTasksToCompleteOnShutdown = true
         executor.awaitTerminationSeconds = 10
