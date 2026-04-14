@@ -38,10 +38,12 @@ public interface ImageLibraryFactory {
 
     /**
      * Create an IIIF image processor.
+     * @param commandExecutor executor for CLI tools (if needed)
+     * @param tool tool name (e.g., 'vips', 'magick')
      * @param fallback fallback implementation
      * @return IIIF processor or null if not supported by this factory
      */
-    IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback);
+    IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, String tool, IiifImageProcessor fallback);
 
     /**
      * Get the priority of this factory. Higher values are preferred.

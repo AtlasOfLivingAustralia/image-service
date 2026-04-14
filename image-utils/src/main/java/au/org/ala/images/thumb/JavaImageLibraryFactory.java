@@ -29,7 +29,7 @@ public class JavaImageLibraryFactory implements ImageLibraryFactory {
     }
 
     @Override
-    public IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback) {
+    public IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, String tool, IiifImageProcessor fallback) {
         return new JavaIiifImageProcessor();
     }
 

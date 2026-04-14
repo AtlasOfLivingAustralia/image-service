@@ -219,10 +219,10 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean("iiifImageProcessor")
     @ConditionalOnProperty(name = "images.useStreamingIiifProcessor", havingValue = "true", matchIfMissing = true)
-    IiifImageProcessor iiifImageProcessor(ImageLibraryFactory imageLibraryFactory) {
+    IiifImageProcessor iiifImageProcessor(CommandExecutor commandExecutor, ImageLibraryFactory imageLibraryFactory) {
         IiifImageProcessor javaFallback = new JavaIiifImageProcessor()
         if (imageLibraryFactory) {
-            return imageLibraryFactory.createIiifProcessor(javaFallback) ?: javaFallback
+            return imageLibraryFactory.createIiifProcessor(commandExecutor, streamingTool, javaFallback) ?: javaFallback
         }
         return javaFallback
     }

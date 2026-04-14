@@ -1,1 +1,4 @@
 au.org.ala.images.thumb.JavaImageLibraryFactory
+au.org.ala.images.jna.JnaImageLibraryFactory
+au.org.ala.images.factory.VipsCliImageLibraryFactory
+au.org.ala.images.factory.MagickCliImageLibraryFactory

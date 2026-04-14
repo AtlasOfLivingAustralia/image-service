@@ -54,9 +54,9 @@ public class JnaImageLibraryFactory implements ImageLibraryFactory {
     }
 
     @Override
-    public IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback) {
+    public IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, String tool, IiifImageProcessor fallback) {
         if (!isAvailable()) {
-            return null;
+            return fallback;
         }
         return new JnaIiifImageProcessor(fallback);
     }

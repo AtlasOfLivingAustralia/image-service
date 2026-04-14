@@ -45,23 +45,23 @@ You can also run this application locally by following the instructions on its [
 ### Postgres
 There is a docker-compose YML file that can be used to run postgres locally for local development purposes.
 To use run:
-```$xslt
-docker-compose -f postgres.yml up -d
+```bash
+docker compose -f postgres.yml up -d
 ```
 And to shutdown
-```$xslt
-docker-compose -f postgres.yml kill
+```bash
+docker compose -f postgres.yml kill
 ```
 
 ### Elastic search
 There is a docker-compose YML file that can be used to run elastic search locally for local development purposes.
 To use run:
-```$xslt
-docker-compose -f elastic.yml up -d
+```$bash
+docker compose -f elastic-dc2.yml up -d
 ```
 And to shutdown
-```$xslt
-docker-compose -f elastic.yml kill
+```$bash
+docker compose -f elastic-dc2.yml kill
 ```
 
 ### Disable caching (HTTP + in-memory)
