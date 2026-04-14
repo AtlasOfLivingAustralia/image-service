@@ -1,5 +1,6 @@
 package au.org.ala.images.ffm;
 
+import java.util.Map;
 import au.org.ala.images.factory.ImageLibraryFactory;
 import au.org.ala.images.iiif.IiifImageProcessor;
 import au.org.ala.images.optimisation.CommandExecutor;
@@ -24,21 +25,21 @@ public class FfmLibraryFactoryImpl implements ImageLibraryFactory {
     }
 
     @Override
-    public boolean isAvailable() {
+    public boolean isAvailable(Map<String, String> commands) {
         return NativeLibraryDetectorFFM.isVipsAvailable();
     }
 
     @Override
-    public IImageThumbnailer createThumbnailer(CommandExecutor commandExecutor, String tool, IImageThumbnailer fallbackThumbnailer) {
-        if (!isAvailable() || !"vips".equals(tool)) {
+    public IImageThumbnailer createThumbnailer(CommandExecutor commandExecutor, Map<String, String> commands, IImageThumbnailer fallbackThumbnailer) {
+        if (!NativeLibraryDetectorFFM.isVipsAvailable()) {
             return null;
         }
         return new FfmStreamingImageThumbnailer(fallbackThumbnailer);
     }
 
     @Override
-    public IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, String tool, IImageTiler fallbackTiler) {
-        if (!isAvailable() || !"vips".equals(tool)) {
+    public IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IImageTiler fallbackTiler) {
+        if (!NativeLibraryDetectorFFM.isVipsAvailable()) {
             return null;
         }
         int tileSize = (config != null) ? config.getTileSize() : 256;
@@ -47,8 +48,8 @@ public class FfmLibraryFactoryImpl implements ImageLibraryFactory {
     }
 
     @Override
-    public IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, String tool, IiifImageProcessor fallback) {
-        if (!isAvailable()) {
+    public IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, Map<String, String> commands, IiifImageProcessor fallback) {
+        if (!NativeLibraryDetectorFFM.isVipsAvailable()) {
             return fallback;
         }
         return new FfmIiifImageProcessor(fallback);

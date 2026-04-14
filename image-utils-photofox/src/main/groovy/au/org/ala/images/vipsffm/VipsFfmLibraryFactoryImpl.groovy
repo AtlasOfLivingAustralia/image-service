@@ -25,7 +25,7 @@ class VipsFfmLibraryFactoryImpl implements ImageLibraryFactory {
     }
 
     @Override
-    boolean isAvailable() {
+    boolean isAvailable(Map<String, String> commands) {
         if (!initialized) {
             init()
         }
@@ -47,16 +47,16 @@ class VipsFfmLibraryFactoryImpl implements ImageLibraryFactory {
     }
 
     @Override
-    IImageThumbnailer createThumbnailer(CommandExecutor commandExecutor, String tool, IImageThumbnailer fallbackThumbnailer) {
-        if (!isAvailable() || tool != 'vips') {
+    IImageThumbnailer createThumbnailer(CommandExecutor commandExecutor, Map<String, String> commands, IImageThumbnailer fallbackThumbnailer) {
+        if (!isAvailable(commands)) {
             return null
         }
         return new VipsFfmStreamingImageThumbnailer(fallbackThumbnailer)
     }
 
     @Override
-    IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, String tool, IImageTiler fallbackTiler) {
-        if (!isAvailable() || tool != 'vips') {
+    IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IImageTiler fallbackTiler) {
+        if (!isAvailable(commands)) {
             return null
         }
         int tileSize = config?.tileSize ?: 256
@@ -64,7 +64,7 @@ class VipsFfmLibraryFactoryImpl implements ImageLibraryFactory {
     }
 
     @Override
-    IiifImageProcessor createIiifProcessor(IiifImageProcessor fallback) {
+    IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, Map<String, String> commands, IiifImageProcessor fallback) {
         return null
     }
 

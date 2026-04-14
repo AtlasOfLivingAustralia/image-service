@@ -1,5 +1,6 @@
-package au.org.ala.images.jna
+package au.org.ala.images.factory
 
+import au.org.ala.images.factory.JnaImageLibraryFactory
 import au.org.ala.images.factory.ImageLibraryFactory
 import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.optimisation.CommandExecutor
@@ -19,14 +20,15 @@ class JnaImageLibraryFactorySpec extends Specification {
         def factory = new JnaImageLibraryFactory()
         def commandExecutor = Mock(CommandExecutor)
         def fallback = Mock(IImageThumbnailer)
+        def commands = [vips: "vips"]
         
         // Ensure factory is "available" for the test if possible, 
         // or mock isAvailable if we can (it's a public method)
         def factorySpy = Spy(JnaImageLibraryFactory)
-        factorySpy.isAvailable() >> true
+        factorySpy.isAvailable(commands) >> true
 
         when:
-        def thumbnailer = factorySpy.createThumbnailer(commandExecutor, "vips", fallback)
+        def thumbnailer = factorySpy.createThumbnailer(commandExecutor, commands, fallback)
 
         then:
         thumbnailer instanceof au.org.ala.images.thumb.JnaStreamingImageThumbnailer
@@ -39,32 +41,33 @@ class JnaImageLibraryFactorySpec extends Specification {
         def commandExecutor = Mock(CommandExecutor)
         def fallback = Mock(IImageTiler)
         def config = new ImageTilerConfig()
+        def commands = [vips: "vips"]
         
         def factorySpy = Spy(JnaImageLibraryFactory)
-        factorySpy.isAvailable() >> true
+        factorySpy.isAvailable(commands) >> true
 
         when:
-        def tiler = factorySpy.createTiler(commandExecutor, config, "vips", fallback)
+        def tiler = factorySpy.createTiler(commandExecutor, config, commands, fallback)
 
         then:
         tiler instanceof au.org.ala.images.tiling.JnaStreamingImageTiler
         tiler.fallbackTiler == fallback
     }
 
-    def "createThumbnailer creates default fallback when null"() {
+    def "createThumbnailer with null fallback"() {
         given:
         def factory = new JnaImageLibraryFactory()
         def commandExecutor = Mock(CommandExecutor)
-        commandExecutor.isInstalled("vips") >> false
+        def commands = [vips: "vips"]
         
         def factorySpy = Spy(JnaImageLibraryFactory)
-        factorySpy.isAvailable() >> true
+        factorySpy.isAvailable(commands) >> true
 
         when:
-        def thumbnailer = factorySpy.createThumbnailer(commandExecutor, "vips", null)
+        def thumbnailer = factorySpy.createThumbnailer(commandExecutor, commands, null)
 
         then:
         thumbnailer instanceof au.org.ala.images.thumb.JnaStreamingImageThumbnailer
-        thumbnailer.fallbackThumbnailer instanceof au.org.ala.images.thumb.ImageThumbnailer
+        thumbnailer.fallbackThumbnailer == null
     }
 }

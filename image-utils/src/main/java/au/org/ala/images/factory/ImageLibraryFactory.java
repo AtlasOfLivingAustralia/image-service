@@ -1,5 +1,6 @@
 package au.org.ala.images.factory;
 
+import java.util.Map;
 import au.org.ala.images.iiif.IiifImageProcessor;
 import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.IImageThumbnailer;
@@ -13,37 +14,38 @@ public interface ImageLibraryFactory {
 
     /**
      * Check if the library is available and initialized.
+     * @param commands tool command paths (e.g., 'vips' -> '/usr/bin/vips')
      * @return true if available
      */
-    boolean isAvailable();
+    boolean isAvailable(Map<String, String> commands);
 
     /**
      * Create a thumbnailer.
      * @param commandExecutor executor for CLI tools (if needed)
-     * @param tool tool name (e.g., 'vips', 'magick')
+     * @param commands tool command paths (e.g., 'vips' -> '/usr/bin/vips')
      * @param fallback fallback implementation
      * @return thumbnailer or null if not supported by this factory
      */
-    IImageThumbnailer createThumbnailer(CommandExecutor commandExecutor, String tool, IImageThumbnailer fallback);
+    IImageThumbnailer createThumbnailer(CommandExecutor commandExecutor, Map<String, String> commands, IImageThumbnailer fallback);
 
     /**
      * Create a tiler.
      * @param commandExecutor executor for CLI tools (if needed)
      * @param config tiler configuration
-     * @param tool tool name (e.g., 'vips')
+     * @param commands tool command paths (e.g., 'vips' -> '/usr/bin/vips')
      * @param fallback fallback implementation
      * @return tiler or null if not supported by this factory
      */
-    IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, String tool, IImageTiler fallback);
+    IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IImageTiler fallback);
 
     /**
      * Create an IIIF image processor.
      * @param commandExecutor executor for CLI tools (if needed)
-     * @param tool tool name (e.g., 'vips', 'magick')
+     * @param commands tool command paths (e.g., 'vips' -> '/usr/bin/vips')
      * @param fallback fallback implementation
      * @return IIIF processor or null if not supported by this factory
      */
-    IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, String tool, IiifImageProcessor fallback);
+    IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, Map<String, String> commands, IiifImageProcessor fallback);
 
     /**
      * Get the priority of this factory. Higher values are preferred.

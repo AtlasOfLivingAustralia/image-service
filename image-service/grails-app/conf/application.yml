@@ -445,8 +445,9 @@ images:
   # Prefer pure Java tiler and thumbnailer over native code versions (vips, magick) even if native tools are available.
   # This is useful for testing and for environments where native tools are available but not performing well, but should generally be left as false in production. Default: false
   preferPureJavaOperations: false
-  # Tool to use for streaming operations ('vips' or 'magick')
-  streamingTool: 'vips'
+  # Tool commands to use for streaming operations
+  vipsCommand: 'vips'
+  magickCommand: 'magick'
   # Image optimisation settings
   optimisation:
     enabled: false

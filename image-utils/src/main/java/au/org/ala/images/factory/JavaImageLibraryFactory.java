@@ -1,9 +1,12 @@
-package au.org.ala.images.thumb;
+package au.org.ala.images.factory;
 
+import java.util.Map;
 import au.org.ala.images.factory.ImageLibraryFactory;
 import au.org.ala.images.iiif.IiifImageProcessor;
 import au.org.ala.images.iiif.JavaIiifImageProcessor;
 import au.org.ala.images.optimisation.CommandExecutor;
+import au.org.ala.images.thumb.IImageThumbnailer;
+import au.org.ala.images.thumb.ImageThumbnailer;
 import au.org.ala.images.tiling.IImageTiler;
 import au.org.ala.images.tiling.ImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
@@ -14,22 +17,22 @@ import au.org.ala.images.tiling.ImageTilerConfig;
 public class JavaImageLibraryFactory implements ImageLibraryFactory {
 
     @Override
-    public boolean isAvailable() {
+    public boolean isAvailable(Map<String, String> commands) {
         return true;
     }
 
     @Override
-    public IImageThumbnailer createThumbnailer(CommandExecutor commandExecutor, String tool, IImageThumbnailer fallback) {
+    public IImageThumbnailer createThumbnailer(CommandExecutor commandExecutor, Map<String, String> commands, IImageThumbnailer fallback) {
         return new ImageThumbnailer();
     }
 
     @Override
-    public IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, String tool, IImageTiler fallback) {
+    public IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IImageTiler fallback) {
         return new ImageTiler(config);
     }
 
     @Override
-    public IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, String tool, IiifImageProcessor fallback) {
+    public IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, Map<String, String> commands, IiifImageProcessor fallback) {
         return new JavaIiifImageProcessor();
     }
 

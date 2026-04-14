@@ -46,8 +46,11 @@ class Application extends GrailsAutoConfiguration {
 //    @Autowired
 //    ImageOptimisationConfig imageOptimisationConfig
 
-    @Value('${images.streamingTool:vips}')
-    String streamingTool
+    @Value('${images.vipsCommand:vips}')
+    String vipsCommand
+
+    @Value('${images.magickCommand:magick}')
+    String magickCommand
 
     @Value('${images.preferPureJavaOperations:false}')
     boolean preferPureJavaOperations
@@ -111,11 +114,17 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean("imageThumbnailer")
     @ConditionalOnProperty(name = "images.useStreamingThumbnailer", havingValue = "true")
-    IImageThumbnailer streamingImageThumbnailer(CommandExecutor commandExecutor, @Qualifier("fallbackThumbnailer") IImageThumbnailer fallbackThumbnailer, ImageLibraryFactory imageLibraryFactory) {
-        if (imageLibraryFactory) {
-            return imageLibraryFactory.createThumbnailer(commandExecutor, streamingTool, fallbackThumbnailer) ?: fallbackThumbnailer
+    IImageThumbnailer streamingImageThumbnailer(CommandExecutor commandExecutor, @Qualifier("fallbackThumbnailer") IImageThumbnailer fallbackThumbnailer, List<ImageLibraryFactory> availableFactories) {
+        IImageThumbnailer current = fallbackThumbnailer
+        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        // Build up from lowest priority
+        for (ImageLibraryFactory factory : availableFactories.reverse()) {
+            IImageThumbnailer thumb = factory.createThumbnailer(commandExecutor, commands, current)
+            if (thumb != null) {
+                current = thumb
+            }
         }
-        return fallbackThumbnailer
+        return current
     }
 
     @Bean("imageThumbnailer")
@@ -204,11 +213,16 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean("imageTiler")
     @ConditionalOnProperty(name = "images.useStreamingTiler", havingValue = "true")
-    IImageTiler streamingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig, IImageTiler fallbackTiler, ImageLibraryFactory imageLibraryFactory) {
-        if (imageLibraryFactory) {
-            return imageLibraryFactory.createTiler(commandExecutor, imageTilerConfig, streamingTool, fallbackTiler) ?: fallbackTiler
+    IImageTiler streamingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig, IImageTiler fallbackTiler, List<ImageLibraryFactory> availableFactories) {
+        IImageTiler current = fallbackTiler
+        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        for (ImageLibraryFactory factory : availableFactories.reverse()) {
+            IImageTiler tiler = factory.createTiler(commandExecutor, imageTilerConfig, commands, current)
+            if (tiler != null) {
+                current = tiler
+            }
         }
-        return fallbackTiler
+        return current
     }
 
     @Bean("imageTiler")
@@ -219,12 +233,16 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean("iiifImageProcessor")
     @ConditionalOnProperty(name = "images.useStreamingIiifProcessor", havingValue = "true", matchIfMissing = true)
-    IiifImageProcessor iiifImageProcessor(CommandExecutor commandExecutor, ImageLibraryFactory imageLibraryFactory) {
-        IiifImageProcessor javaFallback = new JavaIiifImageProcessor()
-        if (imageLibraryFactory) {
-            return imageLibraryFactory.createIiifProcessor(commandExecutor, streamingTool, javaFallback) ?: javaFallback
+    IiifImageProcessor iiifImageProcessor(CommandExecutor commandExecutor, List<ImageLibraryFactory> availableFactories) {
+        IiifImageProcessor current = new JavaIiifImageProcessor()
+        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        for (ImageLibraryFactory factory : availableFactories.reverse()) {
+            IiifImageProcessor proc = factory.createIiifProcessor(commandExecutor, commands, current)
+            if (proc != null) {
+                current = proc
+            }
         }
-        return javaFallback
+        return current
     }
 
     @Bean("iiifImageProcessor")
@@ -234,15 +252,21 @@ class Application extends GrailsAutoConfiguration {
     }
 
     @Bean
-    ImageLibraryFactory imageLibraryFactory() {
+    List<ImageLibraryFactory> availableFactories() {
         ServiceLoader<ImageLibraryFactory> loader = ServiceLoader.load(ImageLibraryFactory)
-        List<ImageLibraryFactory> factories = loader.toList().findAll { it.available }.sort { -it.priority }
+        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        List<ImageLibraryFactory> factories = loader.toList().findAll { it.isAvailable(commands) }.sort { -it.priority }
+        if (preferPureJavaOperations) {
+            factories = factories.findAll { it.priority == 0 }
+        }
+        return factories
+    }
 
-        // Find the best one according to configuration. Priority 0 is typically the Pure Java implementation.
-        ImageLibraryFactory selected = factories.find { !preferPureJavaOperations || it.priority == 0 }
-
+    @Bean
+    ImageLibraryFactory imageLibraryFactory(List<ImageLibraryFactory> availableFactories) {
+        ImageLibraryFactory selected = availableFactories ? availableFactories.last() : null
         if (selected) {
-            log.info("Selected ImageLibraryFactory: {} (priority: {})", selected.implementationName, selected.priority)
+            log.info("Primary ImageLibraryFactory: {} (priority: {})", selected.implementationName, selected.priority)
         } else {
             log.warn("No suitable ImageLibraryFactory found!")
         }
