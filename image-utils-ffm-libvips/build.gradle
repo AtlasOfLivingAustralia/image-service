@@ -50,6 +50,8 @@ dependencies {
     api 'org.slf4j:slf4j-api:1.7.36'
     implementation 'com.google.guava:guava:33.2.1-jre'
     compileOnly project(':image-utils')
+    testImplementation project(':image-utils')
+    testImplementation testFixtures(project(':image-utils'))
     
     testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -71,7 +73,10 @@ tasks.named('compileJava22Java', JavaCompile) {
 
 jar {
     manifest {
-        attributes 'Multi-Release': 'true'
+        attributes(
+                'Multi-Release': 'true',
+                'Enable-Native-Access': 'ALL-UNNAMED'
+        )
     }
     into('META-INF/versions/22') {
         from compileJava22Java.destinationDirectory

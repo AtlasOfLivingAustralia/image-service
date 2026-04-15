@@ -37,24 +37,17 @@ public class ImageTiler3 implements IImageTiler{
     private static final Logger log = LoggerFactory.getLogger(ImageTiler3.class);
     public static final int SLICE_SIZE = 8192;
 
-    private int _tileSize = 256;
-    private int _maxColsPerStrip = SLICE_SIZE / _tileSize ;
-    private TileFormat _tileFormat = TileFormat.JPEG;
-    private Color _tileBackgroundColor = Color.gray;
-    private boolean _exceptionOccurred =  false; // crude mechanism for the worker threads to communicate serious failure
-    private ZoomFactorStrategy _zoomFactorStrategy = new DefaultZoomFactorStrategy(_tileSize);
+    private final int _tileSize;
+    private final int _maxColsPerStrip;
+    private final TileFormat _tileFormat;
+    private final Color _tileBackgroundColor;
+    private final ZoomFactorStrategy _zoomFactorStrategy;
 
-    private Executor levelThreadPool;
-    private Executor ioThreadPool;
+    private final Executor levelThreadPool;
+    private final Executor ioThreadPool;
 
     private static final GraphicsEnvironment GRAPHICS_ENV =
             GraphicsEnvironment.getLocalGraphicsEnvironment();
-
-    static {
-        ImageIO.scanForPlugins();
-        IIORegistry.getDefaultInstance();
-        ImageIO.setUseCache(false);
-    }
 
     public ImageTiler3(ImageTilerConfig config) {
         if (config != null) {
@@ -65,19 +58,26 @@ public class ImageTiler3 implements IImageTiler{
             _tileFormat = config.getTileFormat();
             _tileBackgroundColor = config.getTileBackgroundColor();
             _zoomFactorStrategy = config.getZoomFactorStrategy();
+        } else {
+            ioThreadPool = null;
+            levelThreadPool = null;
+            _tileSize = 256;
+            _maxColsPerStrip = SLICE_SIZE / _tileSize;
+            _tileFormat = TileFormat.JPEG;
+            _tileBackgroundColor = Color.gray;
+            _zoomFactorStrategy = new DefaultZoomFactorStrategy(_tileSize);
         }
     }
 
     @Override
     public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException {
-        int zoomLevels = startTiling(imageInputStream, tilerSink, minLevel, maxLevel);
-
-        if (!_exceptionOccurred) {
+        try {
+            int zoomLevels = startTiling(imageInputStream, tilerSink, minLevel, maxLevel);
             return new ImageTilerResults(true, zoomLevels);
-        } else {
+        } catch (Exception e) {
+            log.error("Tiling operation failed", e);
             return new ImageTilerResults(false, 0);
         }
-
     }
 
     private int startTiling(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException {
@@ -118,15 +118,7 @@ public class ImageTiler3 implements IImageTiler{
                     }
                     return intStream
                             .mapToObj(level -> submitLevelForProcessing(image, coords, pyramid[level], tilerSink.getLevelSink(level)))
-                            .flatMap(future -> {
-                                try {
-                                    return future.join();
-                                } catch (Exception e) {
-                                    log.error("execution exception", e);
-                                    _exceptionOccurred = true;
-                                    return Stream.empty();
-                                }
-                            });
+                            .flatMap(CompletableFuture::join);
                 } finally {
                     if (image != null) {
                         image.flush();
@@ -134,12 +126,10 @@ public class ImageTiler3 implements IImageTiler{
                 }
             }).collect(Collectors.toList());
         }
-        try {
-            CompletableFuture.allOf(ioStream.stream().map(task -> CompletableFuture.runAsync(task, ioThreadPool)).collect(Collectors.toList()).toArray(CompletableFuture[]::new)).join();
-        } catch (Exception e) {
-            log.error("execution exception", e);
-            _exceptionOccurred = true;
-        }
+        CompletableFuture.allOf(ioStream.stream()
+                .map(task -> CompletableFuture.runAsync(task, ioThreadPool))
+                .toArray(CompletableFuture[]::new))
+                .join();
 
         log.debug("tileImage: all tiles completed");
         return zoomLevels;
@@ -263,12 +253,9 @@ public class ImageTiler3 implements IImageTiler{
             try {
                 return tileImageAtSubSampleLevel(bufferedImage, sliceCoords, subSample, levelSink);
             } catch (IOException e) {
-                _exceptionOccurred = true;
-                log.error("Exception occurred during tiling image task", e);
-                return Stream.empty();
+                throw new java.io.UncheckedIOException(e);
             }
         }, levelThreadPool);
-
     }
 
     private Stream<SaveTileTask> tileImageAtSubSampleLevel(BufferedImage bufferedImage, Point sliceCoords, int subsample, TilerSink.LevelSink levelSink) throws IOException {
@@ -409,33 +396,17 @@ public class ImageTiler3 implements IImageTiler{
 
         public void run() {
             try {
-
                 String format = _tileFormat == TileFormat.PNG ? "png" : "jpeg";
                 try (OutputStream tileStream = tileSink.openStream()) {
                     if (!ImageIO.write(image, format, tileStream)) {
-                        _exceptionOccurred = true;
+                        throw new IOException("ImageIO failed to write " + format + " tile");
                     }
                 }
-
-//                if (_tileFormat == TileFormat.JPEG) {
-//                    ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
-//                    ImageOutputStream ios = ImageIO.createImageOutputStream(file);
-//                    writer.setOutput(ios);
-//                    ImageWriteParam param = writer.getDefaultWriteParam();
-//                    param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-//                    param.setCompressionQuality(1.0F); // Highest quality
-//                    writer.write(image);
-//                    writer.dispose();
-//                    ios.close();
-//                } else {
-//                    if (!ImageIO.write(image,"png", file)) {
-//                        _exceptionOccurred = true;
-//                    }
-//                }
-
+            } catch (IOException ex) {
+                throw new java.io.UncheckedIOException(ex);
             } catch (Exception | Error ex) {
-                _exceptionOccurred = true;
                 log.error("Exception occurred saving file task", ex);
+                throw ex;
             } finally {
                 if (image != null) {
                     image.flush();

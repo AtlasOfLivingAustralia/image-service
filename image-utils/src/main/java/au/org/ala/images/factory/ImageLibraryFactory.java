@@ -5,6 +5,7 @@ import au.org.ala.images.iiif.IiifImageProcessor;
 import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.IImageThumbnailer;
 import au.org.ala.images.tiling.IImageTiler;
+import au.org.ala.images.tiling.IOnDemandImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
 
 /**
@@ -46,6 +47,16 @@ public interface ImageLibraryFactory {
      * @return IIIF processor or null if not supported by this factory
      */
     IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, Map<String, String> commands, IiifImageProcessor fallback);
+
+    /**
+     * Create an on-demand tiler.
+     * @param commandExecutor executor for CLI tools (if needed)
+     * @param config tiler configuration
+     * @param commands tool command paths (e.g., 'vips' -> '/usr/bin/vips')
+     * @param fallback fallback implementation
+     * @return on-demand tiler or null if not supported by this factory
+     */
+    IOnDemandImageTiler createOnDemandTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IOnDemandImageTiler fallback);
 
     /**
      * Get the priority of this factory. Higher values are preferred.

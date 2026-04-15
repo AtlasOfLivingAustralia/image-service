@@ -11,12 +11,28 @@ import com.google.common.io.Resources
 import spock.lang.Specification
 import spock.lang.TempDir
 import groovy.util.logging.Slf4j
+import au.org.ala.images.tiling.ImageTilerConfig
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 @Slf4j
 class JnaStreamingImageSpec extends Specification {
 
     @TempDir
     File tempDir
+
+    ExecutorService ioExecutor
+    ExecutorService levelExecutor
+
+    def setup() {
+        ioExecutor = Executors.newFixedThreadPool(2)
+        levelExecutor = Executors.newFixedThreadPool(2)
+    }
+
+    def cleanup() {
+        ioExecutor?.shutdown()
+        levelExecutor?.shutdown()
+    }
 
     def "test JnaStreamingImageThumbnailer"() {
         given:
@@ -49,7 +65,8 @@ class JnaStreamingImageSpec extends Specification {
             return
         }
 
-        def tiler = new JnaStreamingImageTiler(null)
+        def config = new ImageTilerConfig(ioExecutor, levelExecutor)
+        def tiler = new JnaStreamingImageTiler(null, config)
         def imageResource = "test.jpg"
         def inputStream = Resources.getResource(imageResource).openStream()
         def outputDir = new File(tempDir, "tiles")

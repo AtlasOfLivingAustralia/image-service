@@ -138,7 +138,9 @@ public class InputStreamVipsSourceFFM implements AutoCloseable {
             }
 
             if (bytesRead > 0) {
-                MemorySegment.copy(javaBuffer, 0, buffer, ValueLayout.JAVA_BYTE, 0, bytesRead);
+                MemorySegment boundedBuffer = buffer.reinterpret(length);
+                MemorySegment.copy(javaBuffer, 0, boundedBuffer, ValueLayout.JAVA_BYTE, 0, bytesRead);
+//                MemorySegment.copy(javaBuffer, 0, buffer, ValueLayout.JAVA_BYTE, 0, bytesRead);
                 position += bytesRead;
             }
 

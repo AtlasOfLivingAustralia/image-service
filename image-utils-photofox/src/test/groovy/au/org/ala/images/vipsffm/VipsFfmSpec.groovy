@@ -4,10 +4,13 @@ import app.photofox.vipsffm.VImage
 import app.photofox.vipsffm.VipsOption
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
+import au.org.ala.images.tiling.IOnDemandImageTiler
+import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.optimisation.CommandExecutor
 import spock.lang.Specification
 
 import java.awt.Color
+import java.util.concurrent.Executor
 
 class VipsFfmSpec extends Specification {
 
@@ -18,13 +21,28 @@ class VipsFfmSpec extends Specification {
         def mockFallback = Mock(IImageThumbnailer)
 
         when:
-        def thumbnailer = factory.createThumbnailer(mockExecutor, "vips", mockFallback)
+        def thumbnailer = factory.createThumbnailer(mockExecutor, [vips: "vips"], mockFallback)
 
         then:
         // Note: thumbnailer will be null if libvips is not installed on the system,
         // which might be the case in CI environments.
         // We'll just verify that the factory doesn't crash.
-        thumbnailer != null || !factory.isAvailable()
+        thumbnailer != null || !factory.isAvailable([vips: "vips"])
+    }
+
+    def "VipsFfmLibraryFactoryImpl creates on-demand tiler when available"() {
+        given:
+        def factory = new VipsFfmLibraryFactoryImpl()
+        def mockExecutor = Mock(CommandExecutor)
+        def mockFallback = Mock(IOnDemandImageTiler)
+        def mockPool = Mock(Executor)
+        def config = new ImageTilerConfig(mockPool, mockPool)
+
+        when:
+        def tiler = factory.createOnDemandTiler(mockExecutor, config, [vips: "vips"], mockFallback)
+
+        then:
+        tiler != null || !factory.isAvailable([vips: "vips"])
     }
 
     def "VipsFfmStreamingImageThumbnailer calculates options correctly"() {

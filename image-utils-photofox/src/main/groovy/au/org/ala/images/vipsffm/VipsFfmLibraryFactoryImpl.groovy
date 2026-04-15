@@ -6,6 +6,7 @@ import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.tiling.IImageTiler
+import au.org.ala.images.tiling.IOnDemandImageTiler
 import au.org.ala.images.tiling.ImageTilerConfig
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
@@ -59,13 +60,20 @@ class VipsFfmLibraryFactoryImpl implements ImageLibraryFactory {
         if (!isAvailable(commands)) {
             return null
         }
-        int tileSize = config?.tileSize ?: 256
-        return new VipsFfmStreamingImageTiler(fallbackTiler, tileSize)
+        return new VipsFfmStreamingImageTiler(fallbackTiler, config)
     }
 
     @Override
     IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, Map<String, String> commands, IiifImageProcessor fallback) {
         return null
+    }
+
+    @Override
+    IOnDemandImageTiler createOnDemandTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IOnDemandImageTiler fallback) {
+        if (!isAvailable(commands)) {
+            return fallback
+        }
+        return new VipsFfmOnDemandImageTiler(config, fallback)
     }
 
     @Override

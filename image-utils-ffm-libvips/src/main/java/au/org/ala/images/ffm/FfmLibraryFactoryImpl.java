@@ -6,8 +6,10 @@ import au.org.ala.images.iiif.IiifImageProcessor;
 import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.FfmStreamingImageThumbnailer;
 import au.org.ala.images.thumb.IImageThumbnailer;
+import au.org.ala.images.tiling.FfmOnDemandImageTiler;
 import au.org.ala.images.tiling.FfmStreamingImageTiler;
 import au.org.ala.images.tiling.IImageTiler;
+import au.org.ala.images.tiling.IOnDemandImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,9 +44,7 @@ public class FfmLibraryFactoryImpl implements ImageLibraryFactory {
         if (!NativeLibraryDetectorFFM.isVipsAvailable()) {
             return null;
         }
-        int tileSize = (config != null) ? config.getTileSize() : 256;
-        if (tileSize <= 0) tileSize = 256;
-        return new FfmStreamingImageTiler(fallbackTiler, tileSize);
+        return new FfmStreamingImageTiler(fallbackTiler, config);
     }
 
     @Override
@@ -53,6 +53,14 @@ public class FfmLibraryFactoryImpl implements ImageLibraryFactory {
             return fallback;
         }
         return new FfmIiifImageProcessor(fallback);
+    }
+
+    @Override
+    public IOnDemandImageTiler createOnDemandTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IOnDemandImageTiler fallback) {
+        if (!NativeLibraryDetectorFFM.isVipsAvailable()) {
+            return fallback;
+        }
+        return new FfmOnDemandImageTiler(config, fallback);
     }
 
     @Override

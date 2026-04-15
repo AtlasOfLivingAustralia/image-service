@@ -6,8 +6,10 @@ import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.IImageThumbnailer;
 import au.org.ala.images.thumb.StreamingImageThumbnailer;
 import au.org.ala.images.tiling.IImageTiler;
+import au.org.ala.images.tiling.IOnDemandImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
 import au.org.ala.images.tiling.StreamingImageTiler;
+import au.org.ala.images.tiling.VipsCliOnDemandImageTiler;
 
 /**
  * Factory for libvips CLI-based image processing implementations.
@@ -48,6 +50,15 @@ public class VipsCliImageLibraryFactory implements ImageLibraryFactory {
     public IiifImageProcessor createIiifProcessor(CommandExecutor commandExecutor, Map<String, String> commands, IiifImageProcessor fallback) {
         // Vips CLI IIIF not yet implemented in a chained way
         return null;
+    }
+
+    @Override
+    public IOnDemandImageTiler createOnDemandTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IOnDemandImageTiler fallback) {
+        String vipsCommand = commands != null ? commands.getOrDefault("vips", "vips") : "vips";
+        if (!commandExecutor.isInstalled(vipsCommand)) {
+            return fallback;
+        }
+        return new VipsCliOnDemandImageTiler(commandExecutor, vipsCommand, config, fallback);
     }
 
     @Override

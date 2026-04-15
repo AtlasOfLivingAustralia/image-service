@@ -28,22 +28,25 @@ public class DefaultZoomFactorStrategy implements ZoomFactorStrategy {
 
         int height = 0;
         int width = 0;
-        try {
-            var bis = UnsynchronizedByteArrayInputStream.builder().setByteArray(imageBytes).setOffset(0).get();
-            ImageInputStream iis = ImageIO.createImageInputStream(bis);
+        ImageReader reader = null;
+        try(ImageInputStream iis = ImageIO.createImageInputStream(
+                UnsynchronizedByteArrayInputStream.builder().setByteArray(imageBytes).setOffset(0).get())) {
             Iterator<ImageReader> iter = ImageIO.getImageReaders(iis);
 
             if (iter.hasNext()) {
-                ImageReader reader = iter.next();
+                reader = iter.next();
                 reader.setInput(iis);
 
                 height = reader.getHeight(0);
                 width = reader.getWidth(0);
-
-                reader.dispose();
             }
         } catch (Exception ex) {
+
             throw new RuntimeException(ex);
+        } finally {
+            if (reader != null) {
+                reader.dispose();
+            }
         }
 
         return getZoomFactorsOld(height, width);

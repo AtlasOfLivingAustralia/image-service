@@ -10,6 +10,9 @@ import au.org.ala.images.spring.SimpleAsyncTaskExecutor
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.thumb.ImageThumbnailer
 import au.org.ala.images.tiling.IImageTiler
+import au.org.ala.images.tiling.IOnDemandImageTiler
+import au.org.ala.images.tiling.OnDemandImageTiler
+import au.org.ala.images.tiling.ImageTiler
 import au.org.ala.images.tiling.ImageTiler3
 import au.org.ala.images.tiling.ImageTiler4
 import au.org.ala.images.tiling.ImageTiler5
@@ -27,6 +30,8 @@ import org.springframework.context.annotation.Bean
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.core.task.TaskExecutor
 
+import javax.annotation.PostConstruct
+import javax.imageio.ImageIO
 import java.awt.Color
 import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
@@ -170,9 +175,14 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     ImageTilerConfig imageTilerConfig(@Qualifier("tilingIoPool") Executor tilingIoPool, @Qualifier("tilingWorkPool") Executor tilingWorkPool) {
-        def config = new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG)
-        config.setTileBackgroundColor(new Color(221, 221, 221))
-        return config
+        return new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG, new Color(221, 221, 221))
+    }
+
+    @PostConstruct
+    void init() {
+        log.info("Initialising ImageIO settings...")
+        ImageIO.scanForPlugins()
+        ImageIO.setUseCache(false)
     }
 
     @Bean
@@ -229,6 +239,19 @@ class Application extends GrailsAutoConfiguration {
     @ConditionalOnProperty(name = "images.useStreamingTiler", havingValue = "false", matchIfMissing = true)
     IImageTiler defaultImageTiler(IImageTiler fallbackTiler) {
         return fallbackTiler
+    }
+
+    @Bean("onDemandImageTiler")
+    IOnDemandImageTiler onDemandImageTiler(CommandExecutor commandExecutor, ImageTilerConfig config, List<ImageLibraryFactory> availableFactories) {
+        IOnDemandImageTiler current = new OnDemandImageTiler(config)
+        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        for (ImageLibraryFactory factory : availableFactories.reverse()) {
+            IOnDemandImageTiler tiler = factory.createOnDemandTiler(commandExecutor, config, commands, current)
+            if (tiler != null) {
+                current = tiler
+            }
+        }
+        return current
     }
 
     @Bean("iiifImageProcessor")

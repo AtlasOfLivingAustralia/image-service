@@ -77,6 +77,8 @@ public class ImageTiler4LargeImageTest extends TestBase {
             
         } finally {
             // Cleanup
+            levelExecutor.shutdown();
+            ioExecutor.shutdown();
             FileUtils.deleteDirectory(tempDir.toFile());
         }
     }

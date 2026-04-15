@@ -11,7 +11,9 @@ import au.org.ala.images.thumb.JnaStreamingImageThumbnailer;
 import au.org.ala.images.thumb.StreamingImageThumbnailer;
 import au.org.ala.images.thumb.ImageThumbnailer;
 import au.org.ala.images.tiling.IImageTiler;
+import au.org.ala.images.tiling.IOnDemandImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
+import au.org.ala.images.tiling.JnaOnDemandImageTiler;
 import au.org.ala.images.tiling.JnaStreamingImageTiler;
 import au.org.ala.images.tiling.StreamingImageTiler;
 import au.org.ala.images.tiling.ImageTiler;
@@ -41,8 +43,7 @@ public class JnaImageLibraryFactory implements ImageLibraryFactory {
             return null;
         }
         
-        int tileSize = config != null ? config.getTileSize() : 256;
-        return new JnaStreamingImageTiler(fallback, tileSize);
+        return new JnaStreamingImageTiler(fallback, config);
     }
 
     @Override
@@ -51,6 +52,14 @@ public class JnaImageLibraryFactory implements ImageLibraryFactory {
             return fallback;
         }
         return new JnaIiifImageProcessor(fallback);
+    }
+
+    @Override
+    public IOnDemandImageTiler createOnDemandTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IOnDemandImageTiler fallback) {
+        if (!NativeLibraryDetector.isVipsAvailable()) {
+            return fallback;
+        }
+        return new JnaOnDemandImageTiler(config, fallback);
     }
 
     @Override

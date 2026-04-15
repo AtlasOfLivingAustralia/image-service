@@ -3,6 +3,8 @@ package au.org.ala.images.tiling;
 import au.org.ala.images.TestBase;
 import com.google.common.base.Stopwatch;
 import org.apache.commons.io.FileUtils;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -14,11 +16,28 @@ import java.io.File;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.junit.Assert.*;
 
 @RunWith(JUnit4.class)
 public class ImageTiler4Test extends TestBase {
+
+    private ExecutorService ioExecutor;
+    private ExecutorService levelExecutor;
+
+    @Before
+    public void setup() {
+        ioExecutor = Executors.newFixedThreadPool(2);
+        levelExecutor = Executors.newFixedThreadPool(2);
+    }
+
+    @After
+    public void tearDown() {
+        if (ioExecutor != null) ioExecutor.shutdown();
+        if (levelExecutor != null) levelExecutor.shutdown();
+    }
 
     private static final int _tileSize = 256;
 
@@ -42,7 +61,7 @@ public class ImageTiler4Test extends TestBase {
 
         println("Original image dimensions: %dx%d", originalWidth, originalHeight);
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         int tileSize = config.getTileSize();
         ImageTiler4 tiler = new ImageTiler4(config);
 
@@ -82,7 +101,7 @@ public class ImageTiler4Test extends TestBase {
         int originalWidth = originalImage.getWidth();
         int originalHeight = originalImage.getHeight();
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         ImageTiler4 tiler = new ImageTiler4(config);
 
         Path tempDir = Files.createTempDirectory("imagetiler4-extreme-test");
@@ -240,7 +259,7 @@ public class ImageTiler4Test extends TestBase {
         URL url = ImageTiler4Test.class.getResource(String.format("/images/%s", filename));
         File imageFile = new File(url.toURI());
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         ImageTiler4 tiler = new ImageTiler4(config);
 
         Path tempDir = Files.createTempDirectory("imagetiler4-small-test");

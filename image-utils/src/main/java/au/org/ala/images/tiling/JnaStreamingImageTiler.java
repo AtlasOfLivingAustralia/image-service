@@ -6,6 +6,9 @@ import au.org.ala.images.jna.VipsLibrary;
 import com.google.common.io.ByteSink;
 import com.google.common.io.Files;
 import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,6 +20,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Experimental JNA-based tiler that uses libvips directly via JNA.
@@ -31,20 +39,171 @@ public class JnaStreamingImageTiler implements IImageTiler {
     private final VipsLibrary vips;
     private final IImageTiler fallbackTiler;
     private final int tileSize;
+    private final Executor ioExecutor;
+    private final Executor levelExecutor;
 
-    public JnaStreamingImageTiler(IImageTiler fallbackTiler) {
-        this(fallbackTiler, 256);
-    }
-
-    public JnaStreamingImageTiler(IImageTiler fallbackTiler, int tileSize) {
+    public JnaStreamingImageTiler(IImageTiler fallbackTiler, ImageTilerConfig config) {
         this.fallbackTiler = fallbackTiler;
-        this.tileSize = tileSize;
+        this.tileSize = config.getTileSize();
+        this.ioExecutor = config.getIoExecutor();
+        this.levelExecutor = config.getLevelExecutor();
         this.vips = NativeLibraryDetector.getVipsLibrary();
 
         if (vips != null) {
             log.info("JnaStreamingImageTiler initialized with native libvips");
         } else {
             log.info("JnaStreamingImageTiler: libvips not available, will use fallback");
+        }
+    }
+
+    @Override
+    public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int level) throws IOException, InterruptedException {
+        // Fallback if libvips not available
+        if (vips == null) {
+            log.debug("Using fallback tiler for single level");
+            return fallbackTiler.tileImage(imageInputStream, tilerSink, level);
+        }
+
+        if (level < 0) {
+            throw new IllegalArgumentException("Invalid level: " + level);
+        }
+
+        // Reset point for fallback
+        if (imageInputStream.markSupported()) {
+            imageInputStream.mark(10 * 1024 * 1024); // 10MB mark
+        }
+
+        try {
+            return tileLevelWithVipsJna(imageInputStream, tilerSink, level);
+        } catch (Exception e) {
+            log.error("JNA single-level tiling failed, trying fallback", e);
+            if (fallbackTiler == null) {
+                throw e;
+            }
+            // Reset the input stream if possible
+            if (imageInputStream.markSupported()) {
+                try {
+                    imageInputStream.reset();
+                } catch (IOException resetEx) {
+                    log.warn("Failed to reset stream after failure", resetEx);
+                }
+            }
+            return fallbackTiler.tileImage(imageInputStream, tilerSink, level);
+        }
+    }
+
+    private ImageTilerResults tileLevelWithVipsJna(InputStream imageInputStream, TilerSink tilerSink, int level) throws IOException, InterruptedException {
+        InputStreamVipsSource vipsSource = null;
+        Pointer inputImage = null;
+        Pointer resizedImage = null;
+
+        try {
+            vipsSource = new InputStreamVipsSource(vips, imageInputStream);
+            inputImage = vips.vips_image_new_from_source(vipsSource.getSource(), "", (Object) null);
+            if (inputImage == null || inputImage == Pointer.NULL) {
+                String error = vips.vips_error_buffer();
+                vips.vips_error_clear();
+                throw new IOException("Failed to load image from source: " + error);
+            }
+
+            int width = vips.vips_image_get_width(inputImage);
+            int height = vips.vips_image_get_height(inputImage);
+
+            // Calculate maxLevel for Google layout
+            int maxLevel = (int) Math.ceil(Math.log(Math.max(width, height) / (double) tileSize) / Math.log(2));
+            if (level > maxLevel) {
+                // level is higher than original resolution??
+                // Just use maxLevel or handle as error? dzsave would probably handle it.
+                log.warn("Requested level {} is higher than calculated maxLevel {}", level, maxLevel);
+            }
+
+            double scale = Math.pow(0.5, maxLevel - level);
+            
+            PointerByReference out = new PointerByReference();
+            int result = vips.vips_resize(inputImage, out, scale, (Object) null);
+            if (result != 0) {
+                String error = vips.vips_error_buffer();
+                vips.vips_error_clear();
+                throw new IOException("vips_resize failed: " + error);
+            }
+            resizedImage = out.getValue();
+
+            int resizedWidth = vips.vips_image_get_width(resizedImage);
+            int resizedHeight = vips.vips_image_get_height(resizedImage);
+
+            int cols = (int) Math.ceil(resizedWidth / (double) tileSize);
+            int rows = (int) Math.ceil(resizedHeight / (double) tileSize);
+
+            log.debug("Tiling level {}: {}x{} (scale {}), {}x{} tiles", level, resizedWidth, resizedHeight, scale, cols, rows);
+
+            TilerSink.LevelSink levelSink = tilerSink.getLevelSink(level);
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            AtomicBoolean errorOccurred = new AtomicBoolean(false);
+
+            for (int x = 0; x < cols; x++) {
+                final int col = x;
+                TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, 0, rows);
+                
+                for (int y = 0; y < rows; y++) {
+                    final int row = y;
+                    if (errorOccurred.get()) break;
+
+                    final Pointer finalResizedImage = resizedImage;
+                    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                        if (errorOccurred.get()) return;
+
+                        try {
+                            int left = col * tileSize;
+                            int top = row * tileSize;
+                            int w = Math.min(tileSize, resizedWidth - left);
+                            int h = Math.min(tileSize, resizedHeight - top);
+
+                            PointerByReference tileOut = new PointerByReference();
+                            int cropResult = vips.vips_crop(finalResizedImage, tileOut, left, top, w, h, (Object) null);
+                            if (cropResult != 0) {
+                                throw new IOException("vips_crop failed");
+                            }
+                            Pointer tileImage = tileOut.getValue();
+
+                            try {
+                                PointerByReference bufPtr = new PointerByReference();
+                                LongByReference lenPtr = new LongByReference();
+                                int saveResult = vips.vips_image_write_to_buffer(tileImage, ".png", bufPtr, lenPtr, (Object) null);
+                                if (saveResult != 0) {
+                                    throw new IOException("vips_image_write_to_buffer failed");
+                                }
+
+                                Pointer buf = bufPtr.getValue();
+                                long len = lenPtr.getValue();
+                                byte[] data = buf.getByteArray(0, (int) len);
+                                vips.g_free(buf);
+
+                                ByteSink tileSink = columnSink.getTileSink(row);
+                                tileSink.write(data);
+                            } finally {
+                                vips.g_object_unref(tileImage);
+                            }
+                        } catch (Exception e) {
+                            log.error("Error generating tile {}/{}", col, row, e);
+                            errorOccurred.set(true);
+                        }
+                    }, levelExecutor);
+                    futures.add(future);
+                }
+            }
+
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+            if (errorOccurred.get()) {
+                throw new IOException("One or more tiles failed to generate");
+            }
+
+            return new ImageTilerResults(true, maxLevel + 1);
+
+        } finally {
+            if (resizedImage != null) vips.g_object_unref(resizedImage);
+            if (inputImage != null) vips.g_object_unref(inputImage);
+            if (vipsSource != null) vipsSource.close();
         }
     }
 

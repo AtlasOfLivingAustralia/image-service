@@ -11,14 +11,13 @@ import java.awt.image.BufferedImage;
 public class TileGenerationResult {
     
     private final Status status;
-    private final BufferedImage tile;
     private final String message;
     
     /**
      * Status codes for tile generation operations.
      */
     public enum Status {
-        /** Tile was successfully generated */
+        /** Tile was successfully generated and written to the sink */
         SUCCESS,
         
         /** The requested tile coordinates are outside the image bounds */
@@ -40,17 +39,16 @@ public class TileGenerationResult {
         INTERNAL_ERROR
     }
     
-    private TileGenerationResult(Status status, BufferedImage tile, String message) {
+    private TileGenerationResult(Status status, String message) {
         this.status = status;
-        this.tile = tile;
         this.message = message;
     }
     
     /**
-     * Create a successful result with the generated tile.
+     * Create a successful result.
      */
-    public static TileGenerationResult success(BufferedImage tile) {
-        return new TileGenerationResult(Status.SUCCESS, tile, null);
+    public static TileGenerationResult success() {
+        return new TileGenerationResult(Status.SUCCESS, null);
     }
     
     /**
@@ -60,7 +58,7 @@ public class TileGenerationResult {
         String message = String.format(
             "Tile coordinates (%d,%d) out of bounds for level %d (valid: 0-%d, 0-%d)",
             x, y, level, maxX - 1, maxY - 1);
-        return new TileGenerationResult(Status.OUT_OF_BOUNDS, null, message);
+        return new TileGenerationResult(Status.OUT_OF_BOUNDS, message);
     }
     
     /**
@@ -69,37 +67,35 @@ public class TileGenerationResult {
     public static TileGenerationResult invalidLevel(int level, int maxLevel) {
         String message = String.format(
             "Invalid level %d (valid range: 0-%d)", level, maxLevel - 1);
-        return new TileGenerationResult(Status.INVALID_LEVEL, null, message);
+        return new TileGenerationResult(Status.INVALID_LEVEL, message);
     }
     
     /**
      * Create a failure result when input is not a valid image.
      */
     public static TileGenerationResult notAnImage() {
-        return new TileGenerationResult(Status.NOT_AN_IMAGE, null, 
-            "Input stream does not contain a valid image format");
+        return new TileGenerationResult(Status.NOT_AN_IMAGE, "Input stream does not contain a valid image format");
     }
     
     /**
      * Create a failure result when no image reader is available.
      */
     public static TileGenerationResult noImageReader() {
-        return new TileGenerationResult(Status.NO_IMAGE_READER, null, 
-            "No suitable image reader found for the image format");
+        return new TileGenerationResult(Status.NO_IMAGE_READER, "No suitable image reader found for the image format");
     }
     
     /**
      * Create a failure result for I/O errors.
      */
     public static TileGenerationResult ioError(String message) {
-        return new TileGenerationResult(Status.IO_ERROR, null, message);
+        return new TileGenerationResult(Status.IO_ERROR, message);
     }
     
     /**
      * Create a failure result for unexpected internal errors.
      */
     public static TileGenerationResult internalError(String message) {
-        return new TileGenerationResult(Status.INTERNAL_ERROR, null, message);
+        return new TileGenerationResult(Status.INTERNAL_ERROR, message);
     }
     
     /**
@@ -116,14 +112,6 @@ public class TileGenerationResult {
         return status == Status.SUCCESS;
     }
     
-    /**
-     * Get the generated tile (only valid if status is SUCCESS).
-     * 
-     * @return The generated tile, or null if generation failed
-     */
-    public BufferedImage getTile() {
-        return tile;
-    }
     
     /**
      * Get a descriptive error message (only valid if status is not SUCCESS).
@@ -154,8 +142,7 @@ public class TileGenerationResult {
     @Override
     public String toString() {
         if (isSuccess()) {
-            return String.format("TileGenerationResult[SUCCESS, tile=%dx%d]", 
-                tile.getWidth(), tile.getHeight());
+            return String.format("TileGenerationResult[SUCCESS]");
         } else {
             return String.format("TileGenerationResult[%s, message=%s]", status, message);
         }

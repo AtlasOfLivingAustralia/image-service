@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'groovy'
+    id 'java-test-fixtures'
 }
 
 repositories {
@@ -44,10 +45,15 @@ dependencies {
     implementation 'net.java.dev.jna:jna-platform:5.14.0'
 
     testImplementation 'junit:junit:4.13.1'
-    testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
-    testImplementation 'org.codehaus.groovy:groovy:3.0.22'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.11.4'
+    testFixturesImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+    testFixturesImplementation 'org.apache.groovy:groovy:4.0.22'
+    testFixturesImplementation 'com.google.guava:guava:32.1.1-jre'
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+    testImplementation 'org.apache.groovy:groovy:4.0.22'
     testRuntimeOnly 'net.bytebuddy:byte-buddy:1.14.9'
     testRuntimeOnly 'org.objenesis:objenesis:3.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.withType(Test) {

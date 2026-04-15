@@ -8,6 +8,7 @@ import au.org.ala.images.thumb.ThumbnailingResult
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.tiling.DefaultZoomFactorStrategy
 import au.org.ala.images.tiling.IImageTiler
+import au.org.ala.images.tiling.IOnDemandImageTiler
 import au.org.ala.images.tiling.ImageTilerConfig
 import au.org.ala.images.tiling.ImageTilerResults
 import au.org.ala.images.tiling.OnDemandImageTiler
@@ -61,6 +62,7 @@ class ImageStoreService implements MetricsSupport {
 
     IImageThumbnailer imageThumbnailer
     IImageTiler imageTiler
+    IOnDemandImageTiler onDemandImageTiler
     ImageTilerConfig imageTilerConfig
 
     @Value('${placeholder.sound.thumbnail}')
@@ -913,10 +915,9 @@ class ImageStoreService implements MetricsSupport {
         return recordTime('imagestore.tile.generate.ondemand', 'Time to generate a single TMS tile on-demand', [z: z.toString(), x: x.toString(), y: y.toString()]) {
             if (tilingSemaphore.tryAcquire(tileConcurrencyTimeout, TimeUnit.SECONDS)) {
                 try {
-                    def tiler = new OnDemandImageTiler(imageTilerConfig)
                     def input = operations.originalInputStream(imageIdentifier, null)
                     def sink = new TilerSink.PathBasedTilerSink(operations.tilerByteSinkFactory(imageIdentifier))
-                    return tiler.generateTile(input, sink, z, x, y)
+                    return onDemandImageTiler.generateTile(input, sink, z, x, y)
                 } finally {
                     tilingSemaphore.release()
                 }

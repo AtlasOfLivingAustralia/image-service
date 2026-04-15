@@ -3,7 +3,9 @@ package au.org.ala.images.tiling;
 import au.org.ala.images.TestBase;
 import com.google.common.base.Stopwatch;
 import org.apache.commons.io.FileUtils;
+import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -15,6 +17,8 @@ import java.io.File;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -22,6 +26,21 @@ import static org.junit.Assert.assertTrue;
 
 @RunWith(JUnit4.class)
 public class ImageTilerTest extends TestBase {
+
+    private ExecutorService ioExecutor;
+    private ExecutorService levelExecutor;
+
+    @Before
+    public void setup() {
+        ioExecutor = Executors.newFixedThreadPool(2);
+        levelExecutor = Executors.newFixedThreadPool(2);
+    }
+
+    @After
+    public void tearDown() {
+        if (ioExecutor != null) ioExecutor.shutdown();
+        if (levelExecutor != null) levelExecutor.shutdown();
+    }
 
     @Test
     public void test1() throws Exception {
@@ -93,7 +112,7 @@ public class ImageTilerTest extends TestBase {
         assertTrue("Image width should exceed strip width (8192)", originalWidth > 8192);
         assertTrue("Image height should exceed strip width (8192)", originalHeight > 8192);
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         int tileSize = config.getTileSize(); // Default 256
         ImageTiler3 tiler = new ImageTiler3(config);
 
@@ -305,7 +324,7 @@ public class ImageTilerTest extends TestBase {
         println("Tiling: %s", url);
         File imageFile = new File(url.toURI());
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         ImageTiler3 tiler = new ImageTiler3(config);
 
         Path tempDir = Files.createTempDirectory("imagetests");

@@ -2,6 +2,8 @@ package au.org.ala.images.tiling;
 
 import au.org.ala.images.TestBase;
 import au.org.ala.images.util.FileByteSinkFactory;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import java.awt.image.BufferedImage;
@@ -12,40 +14,63 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.junit.Assert.*;
+
+import javax.imageio.ImageIO;
 
 /**
  * Performance tests for OnDemandImageTiler.
  */
 public class OnDemandImageTilerTest extends TestBase {
 
+    private ExecutorService ioExecutor;
+    private ExecutorService levelExecutor;
+
+    @Before
+    public void setup() {
+        ioExecutor = Executors.newFixedThreadPool(2);
+        levelExecutor = Executors.newFixedThreadPool(2);
+    }
+
+    @After
+    public void tearDown() {
+        if (ioExecutor != null) ioExecutor.shutdown();
+        if (levelExecutor != null) levelExecutor.shutdown();
+    }
+
     @Test
     public void testSingleTileGeneration() throws IOException {
         File imageFile = getImageFile("large_test_10000x10000.jpg");
 
-        ImageTilerConfig config = new ImageTilerConfig();
-        config.setTileSize(256);
-        config.setTileFormat(TileFormat.JPEG);
-
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         // Get pyramid info
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            OnDemandImageTiler.TilePyramidInfo info = tiler.getPyramidInfo(fis);
+            TilePyramidInfo info = tiler.getPyramidInfo(fis);
             System.out.println("Pyramid info for 10000x10000 image:");
             System.out.println(info);
         }
 
         // Generate a single tile at maximum zoom (level 66)
         long startTime = System.nanoTime();
-        BufferedImage tile;
+        byte[] tileBytes;
+        File outputDir = Files.createTempDirectory("testSingleTile").toFile();
+        TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            tile = tiler.generateTile(fis, 6, 0, 0).getTile();
+            TileGenerationResult result = tiler.generateTile(fis, sink, 6, 0, 0);
+            assertTrue("Tile generation should be successful", result.isSuccess());
+            File tileFile = new File(outputDir, "6/0/0.png");
+            assertTrue("Tile file should exist", tileFile.exists());
+            tileBytes = Files.readAllBytes(tileFile.toPath());
         }
         long endTime = System.nanoTime();
 
-        assertNotNull("Tile should be generated", tile);
+        assertNotNull("Tile should be generated", tileBytes);
+        BufferedImage tile = ImageIO.read(new ByteArrayInputStream(tileBytes));
         assertEquals("Tile width should be 256", 256, tile.getWidth());
         assertEquals("Tile height should be 256", 256, tile.getHeight());
 
@@ -57,10 +82,7 @@ public class OnDemandImageTilerTest extends TestBase {
     public void testMultipleTilesAtDifferentLevels() throws IOException {
         File imageFile = getImageFile("large_test_10000x10000.jpg");
 
-        ImageTilerConfig config = new ImageTilerConfig();
-        config.setTileSize(256);
-        config.setTileFormat(TileFormat.JPEG);
-
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         // Test tiles at different zoom levels
@@ -82,13 +104,19 @@ public class OnDemandImageTilerTest extends TestBase {
             int y = testCase[2];
 
             long startTime = System.nanoTime();
-            BufferedImage tile;
+            byte[] tileBytes;
+            File outputDir = Files.createTempDirectory("testMultipleTiles").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
             try (FileInputStream fis = new FileInputStream(imageFile)) {
-                tile = tiler.generateTile(fis, level, x, y).getTile();
+                TileGenerationResult result = tiler.generateTile(fis, sink, level, x, y);
+                assertTrue("Tile generation should be successful", result.isSuccess());
+                File tileFile = new File(outputDir, level + "/" + x + "/" + y + ".png");
+                assertTrue("Tile file should exist", tileFile.exists());
+                tileBytes = Files.readAllBytes(tileFile.toPath());
             }
             long endTime = System.nanoTime();
 
-            assertNotNull("Tile should be generated", tile);
+            assertNotNull("Tile should be generated", tileBytes);
             double timeMs = (endTime - startTime) / 1_000_000.0;
 
             String notes = "";
@@ -107,10 +135,7 @@ public class OnDemandImageTilerTest extends TestBase {
         // Simulate a user panning/zooming - generating multiple adjacent tiles rapidly
         File imageFile = getImageFile("large_test_10000x10000.jpg");
 
-        ImageTilerConfig config = new ImageTilerConfig();
-        config.setTileSize(256);
-        config.setTileFormat(TileFormat.JPEG);
-
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         // Generate a 3x3 grid of tiles at level 6 (typical viewport)
@@ -127,9 +152,13 @@ public class OnDemandImageTilerTest extends TestBase {
         for (int x = startX; x < startX + gridSize; x++) {
             for (int y = startY; y < startY + gridSize; y++) {
                 long tileStart = System.nanoTime();
+                File outputDir = Files.createTempDirectory("testBurstTile").toFile();
+                TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
                 try (FileInputStream fis = new FileInputStream(imageFile)) {
-                    BufferedImage tile = tiler.generateTile(fis, level, x, y).getTile();
-                    assertNotNull("Tile " + level + "," + x + "," + y + " should be generated", tile);
+                    TileGenerationResult result = tiler.generateTile(fis, sink, level, x, y);
+                    assertTrue("Tile generation should be successful", result.isSuccess());
+                    File tileFile = new File(outputDir, level + "/" + x + "/" + y + ".png");
+                    assertTrue("Tile file should exist", tileFile.exists());
                 }
                 long tileEnd = System.nanoTime();
                 individualTimes.add(tileEnd - tileStart);
@@ -158,15 +187,12 @@ public class OnDemandImageTilerTest extends TestBase {
             return;
         }
 
-        ImageTilerConfig config = new ImageTilerConfig();
-        config.setTileSize(256);
-        config.setTileFormat(TileFormat.JPEG);
-
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         // Get pyramid info
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            OnDemandImageTiler.TilePyramidInfo info = tiler.getPyramidInfo(fis);
+            TilePyramidInfo info = tiler.getPyramidInfo(fis);
             System.out.println("\nPyramid info for 20000x20000 image:");
             System.out.println(info);
         }
@@ -187,13 +213,15 @@ public class OnDemandImageTilerTest extends TestBase {
             int y = testCase[2];
 
             long startTime = System.nanoTime();
-            BufferedImage tile;
+            File outputDir = Files.createTempDirectory("testLargeImage").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
+            TileGenerationResult result;
             try (FileInputStream fis = new FileInputStream(imageFile)) {
-                tile = tiler.generateTile(fis, level, x, y).getTile();
+                result = tiler.generateTile(fis, sink, level, x, y);
             }
             long endTime = System.nanoTime();
 
-            if (tile != null) {
+            if (result.isSuccess()) {
                 double timeMs = (endTime - startTime) / 1_000_000.0;
                 System.out.printf("  %2d  | %2d | %2d | %9.2f\n", level, x, y, timeMs);
             }
@@ -204,20 +232,23 @@ public class OnDemandImageTilerTest extends TestBase {
     public void testInvalidCoordinates() throws IOException {
         File imageFile = getImageFile("large_test_10000x10000.jpg");
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
-        // Out of bounds coordinates should return null
+        // Out of bounds coordinates should return error
+        File outputDir = Files.createTempDirectory("testInvalidCoord").toFile();
+        TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            TileGenerationResult result = tiler.generateTile(fis, 6, 1000, 1000);
-            BufferedImage tile = result.getTile();
-            assertNull("Tile should be null for out of bounds coordinates", tile);
+            TileGenerationResult result = tiler.generateTile(fis, sink, 6, 1000, 1000);
+            assertFalse("Result should not be successful", result.isSuccess());
+            assertEquals(TileGenerationResult.Status.OUT_OF_BOUNDS, result.getStatus());
         }
 
-        // Invalid level should return null
+        // Invalid level should return error
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            BufferedImage tile = tiler.generateTile(fis, 7, 0, 0).getTile();
-            assertNull("Tile should be null for invalid level", tile);
+            TileGenerationResult result = tiler.generateTile(fis, sink, 7, 0, 0);
+            assertFalse("Result should not be successful", result.isSuccess());
+            assertEquals(TileGenerationResult.Status.INVALID_LEVEL, result.getStatus());
         }
     }
 
@@ -229,10 +260,7 @@ public class OnDemandImageTilerTest extends TestBase {
         System.out.println("\n=== On-Demand vs Batch Tiler Comparison (10000x10000 image) ===\n");
 
         // Test on-demand: generate 10 random tiles
-        ImageTilerConfig config = new ImageTilerConfig();
-        config.setTileSize(256);
-        config.setTileFormat(TileFormat.JPEG);
-
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler onDemandTiler = new OnDemandImageTiler(config);
 
         int[][] sampleTiles = {
@@ -244,9 +272,11 @@ public class OnDemandImageTilerTest extends TestBase {
         System.out.println("On-Demand Generation (10 tiles):");
         for (int[] coords : sampleTiles) {
             long start = System.nanoTime();
+            File outputDir = Files.createTempDirectory("testComparison").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
             try (FileInputStream fis = new FileInputStream(imageFile)) {
-                BufferedImage tile = onDemandTiler.generateTile(fis, coords[0], coords[1], coords[2]).getTile();
-                assertNotNull(tile);
+                TileGenerationResult result = onDemandTiler.generateTile(fis, sink, coords[0], coords[1], coords[2]);
+                assertTrue(result.isSuccess());
             }
             long end = System.nanoTime();
             long timeMs = (end - start) / 1_000_000;
@@ -269,10 +299,7 @@ public class OnDemandImageTilerTest extends TestBase {
         File outputDir = Files.createTempDirectory("ondemand-tile-test").toFile();
         outputDir.deleteOnExit();
 
-        ImageTilerConfig config = new ImageTilerConfig();
-        config.setTileSize(256);
-        config.setTileFormat(TileFormat.JPEG);
-
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         // Create a TilerSink
@@ -299,10 +326,7 @@ public class OnDemandImageTilerTest extends TestBase {
         File outputDir = Files.createTempDirectory("ondemand-tiles-test").toFile();
         outputDir.deleteOnExit();
 
-        ImageTilerConfig config = new ImageTilerConfig();
-        config.setTileSize(256);
-        config.setTileFormat(TileFormat.JPEG);
-
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
         TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
 
@@ -338,18 +362,21 @@ public class OnDemandImageTilerTest extends TestBase {
     public void testSuccessfulTileGeneration() throws IOException {
         File imageFile = getImageFile("large_test_10000x10000.jpg");
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            TileGenerationResult result = tiler.generateTile(fis, 6, 10, 10);
+            File outputDir = Files.createTempDirectory("testSuccess").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
+            TileGenerationResult result = tiler.generateTile(fis, sink, 6, 10, 10);
 
             assertTrue("Result should be successful", result.isSuccess());
             assertEquals("Status should be SUCCESS", TileGenerationResult.Status.SUCCESS, result.getStatus());
-            assertNotNull("Tile should not be null", result.getTile());
             assertNull("Message should be null for success", result.getMessage());
 
-            BufferedImage tile = result.getTile();
+            File tileFile = new File(outputDir, "6/10/10.png");
+            assertTrue("Tile file should exist", tileFile.exists());
+            BufferedImage tile = ImageIO.read(tileFile);
             assertEquals("Tile width should be 256", 256, tile.getWidth());
             assertEquals("Tile height should be 256", 256, tile.getHeight());
 
@@ -361,16 +388,17 @@ public class OnDemandImageTilerTest extends TestBase {
     public void testOutOfBoundsTileCoordinates() throws IOException {
         File imageFile = getImageFile("large_test_10000x10000.jpg");
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            TileGenerationResult result = tiler.generateTile(fis, 6, 1000, 1000);
+            File outputDir = Files.createTempDirectory("testOutOfBounds").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
+            TileGenerationResult result = tiler.generateTile(fis, sink, 6, 1000, 1000);
 
             assertFalse("Result should not be successful", result.isSuccess());
             assertEquals("Status should be OUT_OF_BOUNDS",
                     TileGenerationResult.Status.OUT_OF_BOUNDS, result.getStatus());
-            assertNull("Tile should be null", result.getTile());
             assertNotNull("Message should be present", result.getMessage());
             assertTrue("Should be coordinate error", result.isCoordinateError());
             assertFalse("Should not be image error", result.isImageError());
@@ -384,16 +412,17 @@ public class OnDemandImageTilerTest extends TestBase {
     public void testInvalidZoomLevel() throws IOException {
         File imageFile = getImageFile("large_test_10000x10000.jpg");
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            TileGenerationResult result = tiler.generateTile(fis, 999, 0, 0);
+            File outputDir = Files.createTempDirectory("testInvalidLevel").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
+            TileGenerationResult result = tiler.generateTile(fis, sink, 999, 0, 0);
 
             assertFalse("Result should not be successful", result.isSuccess());
             assertEquals("Status should be INVALID_LEVEL",
                     TileGenerationResult.Status.INVALID_LEVEL, result.getStatus());
-            assertNull("Tile should be null", result.getTile());
             assertNotNull("Message should be present", result.getMessage());
             assertTrue("Should be coordinate error", result.isCoordinateError());
 
@@ -406,11 +435,13 @@ public class OnDemandImageTilerTest extends TestBase {
     public void testNegativeZoomLevel() throws IOException {
         File imageFile = getImageFile("large_test_10000x10000.jpg");
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            TileGenerationResult result = tiler.generateTile(fis, -1, 0, 0);
+            File outputDir = Files.createTempDirectory("testNegativeLevel").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
+            TileGenerationResult result = tiler.generateTile(fis, sink, -1, 0, 0);
 
             assertFalse("Result should not be successful", result.isSuccess());
             assertEquals("Status should be INVALID_LEVEL",
@@ -426,15 +457,16 @@ public class OnDemandImageTilerTest extends TestBase {
         byte[] notAnImage = "This is not an image file".getBytes();
         ByteArrayInputStream bais = new ByteArrayInputStream(notAnImage);
 
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
-        TileGenerationResult result = tiler.generateTile(bais, 0, 0, 0);
+        File outputDir = Files.createTempDirectory("testNotAnImage").toFile();
+        TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
+        TileGenerationResult result = tiler.generateTile(bais, sink, 0, 0, 0);
 
         assertFalse("Result should not be successful", result.isSuccess());
         assertEquals("Status should be NOT_AN_IMAGE",
                 TileGenerationResult.Status.NOT_AN_IMAGE, result.getStatus());
-        assertNull("Tile should be null", result.getTile());
         assertNotNull("Message should be present", result.getMessage());
         assertTrue("Should be image error", result.isImageError());
         assertFalse("Should not be coordinate error", result.isCoordinateError());
@@ -446,26 +478,32 @@ public class OnDemandImageTilerTest extends TestBase {
     @Test
     public void testResultErrorClassification() throws IOException {
         File imageFile = getImageFile("large_test_10000x10000.jpg");
-        ImageTilerConfig config = new ImageTilerConfig();
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
         OnDemandImageTiler tiler = new OnDemandImageTiler(config);
 
         // Test coordinate errors
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            TileGenerationResult outOfBounds = tiler.generateTile(fis, 6, 1000, 1000);
+            File outputDir = Files.createTempDirectory("testErrorClassification1").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
+            TileGenerationResult outOfBounds = tiler.generateTile(fis, sink, 6, 1000, 1000);
             assertTrue("Out of bounds should be coordinate error", outOfBounds.isCoordinateError());
             assertFalse("Out of bounds should not be image error", outOfBounds.isImageError());
         }
 
         try (FileInputStream fis = new FileInputStream(imageFile)) {
-            TileGenerationResult invalidLevel = tiler.generateTile(fis, 999, 0, 0);
+            File outputDir = Files.createTempDirectory("testErrorClassification2").toFile();
+            TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
+            TileGenerationResult invalidLevel = tiler.generateTile(fis, sink, 999, 0, 0);
             assertTrue("Invalid level should be coordinate error", invalidLevel.isCoordinateError());
             assertFalse("Invalid level should not be image error", invalidLevel.isImageError());
         }
 
         // Test image errors
         byte[] notAnImage = "Not an image".getBytes();
+        File outputDir = Files.createTempDirectory("testErrorClassification3").toFile();
+        TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(outputDir, true));
         TileGenerationResult notImage = tiler.generateTile(
-                new ByteArrayInputStream(notAnImage), 0, 0, 0);
+                new ByteArrayInputStream(notAnImage), sink, 0, 0, 0);
         assertTrue("Not an image should be image error", notImage.isImageError());
         assertFalse("Not an image should not be coordinate error", notImage.isCoordinateError());
 

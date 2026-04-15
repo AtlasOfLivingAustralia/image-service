@@ -33,23 +33,16 @@ public class ImageTiler5 implements IImageTiler {
     private static final Logger log = LoggerFactory.getLogger(ImageTiler5.class);
     public static final int SLICE_SIZE = 8192;
 
-    private int _tileSize = 256;
-    private TileFormat _tileFormat = TileFormat.JPEG;
-    private Color _tileBackgroundColor = Color.gray;
-    private boolean _exceptionOccurred = false;
-    private ZoomFactorStrategy _zoomFactorStrategy = new DefaultZoomFactorStrategy(_tileSize);
+    private final int _tileSize;
+    private final TileFormat _tileFormat;
+    private final Color _tileBackgroundColor;
+    private final ZoomFactorStrategy _zoomFactorStrategy;
 
-    private Executor levelThreadPool;
-    private Executor ioThreadPool;
+    private final Executor levelThreadPool;
+    private final Executor ioThreadPool;
 
     private static final GraphicsEnvironment GRAPHICS_ENV =
             GraphicsEnvironment.getLocalGraphicsEnvironment();
-
-    static {
-        ImageIO.scanForPlugins();
-        IIORegistry.getDefaultInstance();
-        ImageIO.setUseCache(false);
-    }
 
     public ImageTiler5(ImageTilerConfig config) {
         if (config != null) {
@@ -68,16 +61,23 @@ public class ImageTiler5 implements IImageTiler {
                         "leading to increased memory usage. Consider using separate executor instances " +
                         "for single-threaded scenarios, or use virtual threads for massive parallelism.");
             }
+        } else {
+            ioThreadPool = null;
+            levelThreadPool = null;
+            _tileSize = 256;
+            _tileFormat = TileFormat.JPEG;
+            _tileBackgroundColor = Color.gray;
+            _zoomFactorStrategy = new DefaultZoomFactorStrategy(_tileSize);
         }
     }
 
     @Override
     public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException {
-        int zoomLevels = startTiling(imageInputStream, tilerSink, minLevel, maxLevel);
-
-        if (!_exceptionOccurred) {
+        try {
+            int zoomLevels = startTiling(imageInputStream, tilerSink, minLevel, maxLevel);
             return new ImageTilerResults(true, zoomLevels);
-        } else {
+        } catch (Exception e) {
+            log.error("Tiling operation failed", e);
             return new ImageTilerResults(false, 0);
         }
     }
@@ -133,12 +133,7 @@ public class ImageTiler5 implements IImageTiler {
         }
 
         // Wait for all processing to complete
-        try {
-            allProcessing.join();
-        } catch (Exception e) {
-            log.error("Error processing zoom levels", e);
-            _exceptionOccurred = true;
-        }
+        allProcessing.join();
 
         log.debug("tileImage: all tiles completed");
         return zoomLevels;
@@ -230,7 +225,6 @@ public class ImageTiler5 implements IImageTiler {
             return allLevels.whenComplete((result, error) -> {
                 if (error != null) {
                     log.error("Error processing extreme zoom levels", error);
-                    _exceptionOccurred = true;
                 }
                 reader.dispose();
                 try {
@@ -271,7 +265,6 @@ public class ImageTiler5 implements IImageTiler {
             }
         } catch (IOException e) {
             log.error("Error reading image at subsample {}", subsample, e);
-            _exceptionOccurred = true;
             return CompletableFuture.failedFuture(e);
         }
 
@@ -357,7 +350,7 @@ public class ImageTiler5 implements IImageTiler {
                             writeTile(tileResult.tileSink, tileResult.image);
                         } catch (IOException e) {
                             log.error("Error writing tile {},{}", finalCol, finalRow, e);
-                            _exceptionOccurred = true;
+                            throw new java.io.UncheckedIOException(e);
                         } finally {
                             tileResult.image.flush();
                         }
@@ -517,14 +510,13 @@ public class ImageTiler5 implements IImageTiler {
                     }
                 }
 
-                // Return future that completes when all slices are done
+                // Wait for all slices to complete, then cleanup
                 CompletableFuture<Void> allSlices = sliceChain;
 
                 // Chain resource cleanup after all slices complete
                 return allSlices.whenComplete((result, error) -> {
                     if (error != null) {
                         log.error("Error processing slices", error);
-                        _exceptionOccurred = true;
                     }
                     reader.dispose();
                     try {
@@ -569,9 +561,8 @@ public class ImageTiler5 implements IImageTiler {
             return allTiles.thenRun(slice::flush);
         } catch (Exception e) {
             log.error("Error processing slice {},{}", sliceCoords.x, sliceCoords.y, e);
-            _exceptionOccurred = true;
             slice.flush();
-            return CompletableFuture.completedFuture(null);
+            return CompletableFuture.failedFuture(e);
         }
     }
 
@@ -722,7 +713,7 @@ public class ImageTiler5 implements IImageTiler {
                                 writeTile(tileResult.tileSink, tileResult.image);
                             } catch (IOException e) {
                                 log.error("Error writing tile", e);
-                                _exceptionOccurred = true;
+                                throw new java.io.UncheckedIOException(e);
                             } finally {
                                 tileResult.image.flush();
                             }
@@ -765,13 +756,13 @@ public class ImageTiler5 implements IImageTiler {
             String format = _tileFormat == TileFormat.PNG ? "png" : "jpeg";
             try (OutputStream tileStream = tileSink.openStream()) {
                 if (!ImageIO.write(image, format, tileStream)) {
-                    _exceptionOccurred = true;
                     log.error("Failed to write tile");
+                    throw new IOException("Failed to write tile");
                 }
             }
         } catch (Exception | Error ex) {
-            _exceptionOccurred = true;
             log.error("Exception occurred saving tile", ex);
+            throw ex;
         }
     }
 

@@ -7,6 +7,8 @@ import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.IImageThumbnailer;
 import au.org.ala.images.thumb.StreamingImageThumbnailer;
 import au.org.ala.images.tiling.IImageTiler;
+import au.org.ala.images.tiling.IOnDemandImageTiler;
+import au.org.ala.images.tiling.MagickCliOnDemandImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
 
 /**
@@ -60,6 +62,15 @@ public class MagickCliImageLibraryFactory implements ImageLibraryFactory {
             return new StreamingIiifImageProcessor(commandExecutor, actualTool);
         }
         return null;
+    }
+
+    @Override
+    public IOnDemandImageTiler createOnDemandTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IOnDemandImageTiler fallback) {
+        String magickCommand = commands != null ? (commands.containsKey("magick") ? commands.get("magick") : (commands.containsKey("convert") ? commands.get("convert") : "magick")) : "magick";
+        if (!commandExecutor.isInstalled(magickCommand)) {
+            return fallback;
+        }
+        return new MagickCliOnDemandImageTiler(commandExecutor, magickCommand, config, fallback);
     }
 
     @Override

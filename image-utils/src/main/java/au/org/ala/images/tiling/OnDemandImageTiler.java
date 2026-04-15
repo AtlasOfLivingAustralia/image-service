@@ -14,6 +14,7 @@ import javax.imageio.spi.IIORegistry;
 import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.awt.image.BufferedImageOp;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -26,23 +27,17 @@ import java.util.Iterator;
  * Use Cases:
  * - Web tile servers with caching (tiles generated on first request, then cached)
  */
-public class OnDemandImageTiler {
+public class OnDemandImageTiler implements IOnDemandImageTiler {
 
     private static final Logger log = LoggerFactory.getLogger(OnDemandImageTiler.class);
 
-    private int tileSize = 256;
-    private TileFormat tileFormat = TileFormat.JPEG;
-    private Color tileBackgroundColor = Color.gray;
-    private ZoomFactorStrategy zoomFactorStrategy;
+    private final int tileSize;
+    private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
+    private final ZoomFactorStrategy zoomFactorStrategy;
 
     private static final GraphicsEnvironment GRAPHICS_ENV =
             GraphicsEnvironment.getLocalGraphicsEnvironment();
-
-    static {
-        ImageIO.scanForPlugins();
-        IIORegistry.getDefaultInstance();
-        ImageIO.setUseCache(false);
-    }
 
     public OnDemandImageTiler(ImageTilerConfig config) {
         if (config != null) {
@@ -50,22 +45,28 @@ public class OnDemandImageTiler {
             this.tileFormat = config.getTileFormat();
             this.tileBackgroundColor = config.getTileBackgroundColor();
             this.zoomFactorStrategy = config.getZoomFactorStrategy();
-        }
-        if (this.zoomFactorStrategy == null) {
-            this.zoomFactorStrategy = new DefaultZoomFactorStrategy(tileSize);
+        } else {
+            this.tileSize = 256;
+            this.tileFormat = TileFormat.JPEG;
+            this.tileBackgroundColor = Color.gray;
+            this.zoomFactorStrategy = new DefaultZoomFactorStrategy(this.tileSize);
         }
     }
 
     /**
-     * Generate a single tile at the specified coordinates with detailed result status.
+     * Generate a single tile at the specified coordinates and write it to the TilerSink.
+     * This method combines tile generation with immediate writing to the sink.
      *
      * @param imageInputStream Input stream for the source image
+     * @param tilerSink Sink to write the generated tile to
      * @param level Zoom level (0 = most zoomed out, higher = more zoomed in)
      * @param x Tile X coordinate at this zoom level (column)
      * @param y Tile Y coordinate at this zoom level (row)
-     * @return TileGenerationResult containing the tile or failure reason
+     * @return TileGenerationResult indicating success or failure reason
      */
-    public TileGenerationResult generateTile(InputStream imageInputStream, int level, int x, int y) {
+    @Override
+    public TileGenerationResult generateTile(InputStream imageInputStream, TilerSink tilerSink,
+                                                       int level, int x, int y) {
         long startTime = System.nanoTime();
 
         try (ImageInputStream iis = ImageIO.createImageInputStream(imageInputStream)) {
@@ -121,11 +122,30 @@ public class OnDemandImageTiler {
 
                 BufferedImage tile = generateTileInternal(reader, imageWidth, imageHeight, subsample, x, y);
 
-                long endTime = System.nanoTime();
-                log.debug("Generated tile ({},{}) at level {} in {} ms",
-                        x, y, level, (endTime - startTime) / 1_000_000);
+                try {
+                    // Write to sink
+                    TilerSink.LevelSink levelSink = tilerSink.getLevelSink(level);
+                    TilerSink.ColumnSink columnSink = levelSink.getColumnSink(x, 0, 1);
+                    ByteSink byteSink = columnSink.getTileSink(y);
 
-                return TileGenerationResult.success(tile);
+                    // Write the tile
+                    try (OutputStream os = byteSink.openStream()) {
+                        if (tileFormat == TileFormat.PNG) {
+                            ImageIO.write(tile, "png", os);
+                        } else {
+                            ImageIO.write(tile, "jpg", os);
+                        }
+                    }
+
+                    long endTime = System.nanoTime();
+                    log.debug("Generated and wrote tile ({},{}) at level {} in {} ms",
+                            x, y, level, (endTime - startTime) / 1_000_000);
+
+                    return TileGenerationResult.success();
+
+                } finally {
+                    tile.flush();
+                }
 
             } catch (IOException e) {
                 log.error("I/O error reading image for tile generation", e);
@@ -139,53 +159,6 @@ public class OnDemandImageTiler {
         } catch (IOException e) {
             log.error("Failed to create ImageInputStream", e);
             return TileGenerationResult.ioError(e.getMessage());
-        }
-    }
-
-    /**
-     * Generate a single tile at the specified coordinates and write it to the TilerSink.
-     * This method combines tile generation with immediate writing to the sink.
-     *
-     * @param imageInputStream Input stream for the source image
-     * @param tilerSink Sink to write the generated tile to
-     * @param level Zoom level (0 = most zoomed out, higher = more zoomed in)
-     * @param x Tile X coordinate at this zoom level (column)
-     * @param y Tile Y coordinate at this zoom level (row)
-     * @return TileGenerationResult indicating success or failure reason
-     */
-    public TileGenerationResult generateTile(InputStream imageInputStream, TilerSink tilerSink,
-                                                       int level, int x, int y) {
-        // Generate the tile
-        TileGenerationResult result = generateTile(imageInputStream, level, x, y);
-
-        if (!result.isSuccess()) {
-            return result;
-        }
-
-        BufferedImage tile = result.getTile();
-
-        try {
-            // Write to sink
-            TilerSink.LevelSink levelSink = tilerSink.getLevelSink(level);
-            TilerSink.ColumnSink columnSink = levelSink.getColumnSink(x, 0, 1);
-            ByteSink byteSink = columnSink.getTileSink(y);
-
-            // Write the tile
-            try (OutputStream os = byteSink.openStream()) {
-                if (tileFormat == TileFormat.PNG) {
-                    ImageIO.write(tile, "png", os);
-                } else {
-                    ImageIO.write(tile, "jpg", os);
-                }
-            }
-
-            return TileGenerationResult.success(tile);
-
-        } catch (IOException e) {
-            log.error("Failed to write tile to sink", e);
-            return TileGenerationResult.ioError("Failed to write tile: " + e.getMessage());
-        } finally {
-            tile.flush();
         }
     }
 
@@ -248,7 +221,7 @@ public class OnDemandImageTiler {
         // Resize if needed (handles edge cases where subsampling doesn't align perfectly)
         BufferedImage resized;
         if (sourceRegion.getWidth() != targetWidth || sourceRegion.getHeight() != targetHeight) {
-            resized = Scalr.resize(sourceRegion, targetWidth, targetHeight);
+            resized = Scalr.resize(sourceRegion, Scalr.Method.QUALITY, targetWidth, targetHeight);
             sourceRegion.flush();
         } else {
             resized = sourceRegion;
@@ -316,63 +289,6 @@ public class OnDemandImageTiler {
             } finally {
                 reader.dispose();
             }
-        }
-    }
-
-    /**
-     * Information about the tile pyramid structure.
-     */
-    public static class TilePyramidInfo {
-        private final int imageWidth;
-        private final int imageHeight;
-        private final int[] pyramid;
-        private final int tileSize;
-
-        public TilePyramidInfo(int imageWidth, int imageHeight, int[] pyramid, int tileSize) {
-            this.imageWidth = imageWidth;
-            this.imageHeight = imageHeight;
-            this.pyramid = pyramid;
-            this.tileSize = tileSize;
-        }
-
-        public int getImageWidth() {
-            return imageWidth;
-        }
-
-        public int getImageHeight() {
-            return imageHeight;
-        }
-
-        public int getLevels() {
-            return pyramid.length;
-        }
-
-        public int getSubsampleForLevel(int level) {
-            return pyramid[level];
-        }
-
-        public int getTilesXForLevel(int level) {
-            int subsample = pyramid[level];
-            int levelWidth = (int) Math.ceil((double) imageWidth / subsample);
-            return (int) Math.ceil((double) levelWidth / tileSize);
-        }
-
-        public int getTilesYForLevel(int level) {
-            int subsample = pyramid[level];
-            int levelHeight = (int) Math.ceil((double) imageHeight / subsample);
-            return (int) Math.ceil((double) levelHeight / tileSize);
-        }
-
-        @Override
-        public String toString() {
-            StringBuilder sb = new StringBuilder();
-            sb.append(String.format("Image: %dx%d, Levels: %d, TileSize: %d\n", 
-                    imageWidth, imageHeight, pyramid.length, tileSize));
-            for (int i = 0; i < pyramid.length; i++) {
-                sb.append(String.format("  Level %d: subsample=%d, tiles=%dx%d\n",
-                        i, pyramid[i], getTilesXForLevel(i), getTilesYForLevel(i)));
-            }
-            return sb.toString();
         }
     }
 }

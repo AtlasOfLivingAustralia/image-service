@@ -91,7 +91,8 @@ public class OutputStreamVipsTargetFFM implements AutoCloseable {
             long offset = 0;
             while (remaining > 0) {
                 int toWrite = (int) Math.min(remaining, (long) BUFFER_SIZE);
-                MemorySegment.copy(buffer, ValueLayout.JAVA_BYTE, offset, javaBuffer, 0, toWrite);
+                MemorySegment boundedBuffer = buffer.reinterpret(length);
+                MemorySegment.copy(boundedBuffer, ValueLayout.JAVA_BYTE, offset, javaBuffer, 0, toWrite);
                 outputStream.write(javaBuffer, 0, toWrite);
                 bytesWritten += toWrite;
                 remaining -= toWrite;

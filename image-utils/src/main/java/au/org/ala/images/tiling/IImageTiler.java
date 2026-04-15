@@ -31,4 +31,17 @@ public interface IImageTiler {
      * @throws InterruptedException If the tiling operation is interrupted.
      */
     ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException, InterruptedException;
+
+    /**
+     * Tile the image from the input stream for a single zoom level and write tiles to the provided sink.
+     * @param imageInputStream An input stream of the image to be tiled. Should be bufferable and support mark/reset.
+     * @param tilerSink The sink to write the tiles to.
+     * @param level The zoom level to generate.
+     * @return The results of the tiling operation.
+     * @throws IOException If an error occurs during tiling.
+     * @throws InterruptedException If the tiling operation is interrupted.
+     */
+    default ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int level) throws IOException, InterruptedException {
+        return tileImage(imageInputStream, tilerSink, level, level);
+    }
 }

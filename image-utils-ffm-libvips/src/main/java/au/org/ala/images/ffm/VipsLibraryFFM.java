@@ -26,6 +26,7 @@ public class VipsLibraryFFM implements AutoCloseable {
 
     private final Map<List<MemoryLayout>, MethodHandle> handleCache = new ConcurrentHashMap<>();
     private final MemorySegment vips_thumbnail_image_symbol;
+    private final MemorySegment vips_dzsave_symbol;
 
     // Method handles for libvips functions
     private final MethodHandle vips_init;
@@ -107,6 +108,7 @@ public class VipsLibraryFFM implements AutoCloseable {
             this.vips_image_get_height = lookupFunction(libvipsLookup, "vips_image_get_height", FD_vips_image_get_height);
             this.vips_thumbnail_image = lookupFunction(libvipsLookup, "vips_thumbnail_image", FD_vips_thumbnail_image);
             this.vips_thumbnail_image_symbol = libvipsLookup.find("vips_thumbnail_image").get();
+            this.vips_dzsave_symbol = libvipsLookup.find("vips_dzsave").get();
             this.vips_image_write_to_buffer = lookupFunction(libvipsLookup, "vips_image_write_to_buffer", FD_vips_image_write_to_buffer);
             this.vips_image_write_to_target = lookupFunction(libvipsLookup, "vips_image_write_to_target", FD_vips_image_write_to_target);
             this.vips_dzsave = lookupFunction(libvipsLookup, "vips_dzsave", FD_vips_dzsave);
@@ -255,6 +257,43 @@ public class VipsLibraryFFM implements AutoCloseable {
         try (Arena tempArena = Arena.ofConfined()) {
             MemorySegment pathSegment = FFMShim.allocateFrom(tempArena, outputPath);
             return (int) vips_dzsave.invokeExact(input, pathSegment, MemorySegment.NULL);
+        }
+    }
+
+    /**
+     * Variadic version of vipsDzsave that supports additional options.
+     */
+    public int vipsDzsave(MemorySegment input, String outputPath, Object... options) throws Throwable {
+        if (options == null || options.length == 0) {
+            return vipsDzsave(input, outputPath);
+        }
+
+        List<MemoryLayout> layouts = new ArrayList<>();
+        layouts.add(ValueLayout.ADDRESS);  // input
+        layouts.add(ValueLayout.ADDRESS);  // outputPath
+
+        for (Object opt : options) {
+            layouts.add(inferLayout(opt));
+        }
+        layouts.add(ValueLayout.ADDRESS); // Terminating NULL
+
+        MethodHandle mh = handleCache.computeIfAbsent(layouts, l -> {
+            FunctionDescriptor fd = FunctionDescriptor.of(ValueLayout.JAVA_INT, l.toArray(new MemoryLayout[0]));
+            // Variadic arguments start at index 2 (after input and outputPath)
+            return linker.downcallHandle(vips_dzsave_symbol, fd, Linker.Option.firstVariadicArg(2));
+        });
+
+        Object[] args = new Object[options.length + 3];
+        args[0] = input;
+
+        try (Arena tempArena = Arena.ofConfined()) {
+            args[1] = FFMShim.allocateFrom(tempArena, outputPath);
+            for (int i = 0; i < options.length; i++) {
+                args[i + 2] = convertArg(tempArena, options[i]);
+            }
+            args[args.length - 1] = MemorySegment.NULL;
+
+            return (int) mh.invokeWithArguments(args);
         }
     }
 

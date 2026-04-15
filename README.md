@@ -20,22 +20,31 @@ The main **Grails 6** web application. It provides the RESTful API for image upl
 ### [image-utils](./image-utils/README.md)
 A shared **Java 11** core library that defines the common interfaces (`IImageThumbnailer`, `IImageTiler`) and provides a baseline pure Java implementation for image processing.
 
-### [image-service-ffm](./image-service-ffm/README.md)
+### [image-utils-ffm-libvips](./image-service-ffm/README.md)
 A high-performance image processing implementation using the **Java FFM API** (introduced in Java 22). It uses `jextract`-generated bindings for `libvips`.
 
-### [image-service-vips-ffm](./image-service-vips-ffm/README.md)
+### [image-service-photofox](./image-service-vips-ffm/README.md)
 An alternative FFM implementation that leverages the [lopcode/vips-ffm](https://github.com/lopcode/vips-ffm) library for a more idiomatic Java wrapper around `libvips`.
 
 ## Building and Running
 
-The project supports a multi-version Java build strategy.
+The root gradle project includes the `image-utils` and `image-service` modules.  To build and run the image-service, follow the instructions in the [image-service README](./image-service/README.md).
 
-*   **Java 21**: The base project can be built and run on Java 21, which will use the JNA or CLI-based `libvips` integration.
-*   **Java 22+**: When built with Java 22 or newer, the FFM-based modules are automatically included, providing enhanced performance for image processing.
+The repo also includes nested gradle projects for:
+*   `image-service-ffm-libsvips` - FFM-based implementation using `jextract` bindings for `libvips`
+*   `image-service-photofox` - FFM-based implementation using the `lopcode/vips-ffm` library
 
-To build all projects:
+Both these modules require Java 22+ to build but *currently* the Grails 6 web application only supports Java 21.
+
+To build the main projects:
 ```bash
 ./gradlew build
+```
+
+To build the FFM based submodules:
+```bash
+./gradlew :image-service-ffm-libsvips:build
+./gradlew :image-service-photofox:build
 ```
 
 ## Dependencies
@@ -46,9 +55,13 @@ The native image processing implementations (JNA and FFM) require **libvips** to
 
 ## Deployment
 
-The image-service is designed to be extensible. FFM-based libraries can be added to the runtime classpath during deployment on Java 22+ hosts to automatically upgrade performance without code changes.
+The image-utils modules are designed to be extensible.  The `image-utils` provides a Service Provider for loading the
+implementation at runtime. The `image-service` module is configured to include and use the JNA-based implementation by 
+default.
 
-For more information, see:
-*   [FFM Implementation Comparison](./FFM_IMPLEMENTATIONS_COMPARISON.md)
-*   [Multi-Version Build Guide](./FFM_MULTI_VERSION_BUILD.md)
-*   [Streaming JNA Implementation](./STREAMING_JNA_IMPLEMENTATION.md)
+Other image-utils clients can drop the `image-utils-photofox` module into the classpath and it will be found as the
+highest priority implementation by the service provider.
+
+The `image-utils-ffm-libvips` module includes support for the Java 21 FFM preview, so it can be used in the 
+`image-service` application *if* the `image-service` is run with the JVM enable preview flag switch on (e.g. `--enable-preview`).
+When present on the classpath the ffm-libvips implementation has a higher priority than the JNA-based implementation.
