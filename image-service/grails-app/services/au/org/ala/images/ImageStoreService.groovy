@@ -31,6 +31,8 @@ import org.apache.commons.io.FileUtils
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.commons.lang3.tuple.Pair
 import org.apache.tika.Tika
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
 import org.springframework.web.multipart.MultipartFile
@@ -60,10 +62,12 @@ class ImageStoreService implements MetricsSupport {
     StorageLocationService storageLocationService
     ImageOptimisationService imageOptimisationService
 
+    @Autowired @Qualifier('imageThumbnailer')
     IImageThumbnailer imageThumbnailer
+    @Autowired @Qualifier('imageTiler')
     IImageTiler imageTiler
+    @Autowired @Qualifier('onDemandImageTiler')
     IOnDemandImageTiler onDemandImageTiler
-    ImageTilerConfig imageTilerConfig
 
     @Value('${placeholder.sound.thumbnail}')
     Resource audioThumbnail
