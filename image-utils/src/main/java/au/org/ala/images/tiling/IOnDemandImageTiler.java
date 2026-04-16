@@ -1,11 +1,14 @@
 package au.org.ala.images.tiling;
 
+import com.google.errorprone.annotations.ThreadSafe;
+
 import java.io.IOException;
 import java.io.InputStream;
 
 /**
  * Interface for on-demand tile generation.
  */
+@ThreadSafe
 public interface IOnDemandImageTiler {
 
     /**

@@ -2,6 +2,7 @@ package au.org.ala.images.thumb;
 
 import au.org.ala.images.util.ByteSinkFactory;
 import com.google.common.io.ByteSource;
+import com.google.errorprone.annotations.ThreadSafe;
 
 import java.io.IOException;
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.List;
 /**
  * Interface for image thumbnailers that can generate thumbnails of various sizes.
  */
+@ThreadSafe
 public interface IImageThumbnailer {
 
     /**

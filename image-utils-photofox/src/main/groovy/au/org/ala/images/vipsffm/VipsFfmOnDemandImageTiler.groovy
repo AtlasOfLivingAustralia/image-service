@@ -1,11 +1,9 @@
 package au.org.ala.images.vipsffm
 
 import app.photofox.vipsffm.VImage
-import app.photofox.vipsffm.VipsOption
 import au.org.ala.images.tiling.DefaultZoomFactorStrategy
 import au.org.ala.images.tiling.IOnDemandImageTiler
 import au.org.ala.images.tiling.ImageTilerConfig
-import au.org.ala.images.tiling.OnDemandImageTiler
 import au.org.ala.images.tiling.TileFormat
 import au.org.ala.images.tiling.TileGenerationResult
 import au.org.ala.images.tiling.TilePyramidInfo
@@ -15,9 +13,6 @@ import com.google.common.io.ByteSink
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
-import javax.imageio.ImageIO
-import java.awt.Color
-import java.awt.image.BufferedImage
 import java.lang.foreign.Arena
 
 /**

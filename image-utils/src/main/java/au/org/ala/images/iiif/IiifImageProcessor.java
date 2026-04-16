@@ -1,6 +1,8 @@
 package au.org.ala.images.iiif;
 
 import com.google.common.io.ByteSource;
+import com.google.errorprone.annotations.ThreadSafe;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Objects;
@@ -9,6 +11,7 @@ import java.util.Objects;
  * Minimal IIIF Image API 3.0 style processor that applies operations in the required order:
  * Region → Size → Rotation (with optional mirroring first) → Quality → Format.
  */
+@ThreadSafe
 public interface IiifImageProcessor {
 
     /**

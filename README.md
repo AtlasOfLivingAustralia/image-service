@@ -20,10 +20,10 @@ The main **Grails 6** web application. It provides the RESTful API for image upl
 ### [image-utils](./image-utils/README.md)
 A shared **Java 11** core library that defines the common interfaces (`IImageThumbnailer`, `IImageTiler`) and provides a baseline pure Java implementation for image processing.
 
-### [image-utils-ffm-libvips](./image-service-ffm/README.md)
+### [image-utils-ffm-libvips](./image-service-ffm-libvips/README.md)
 A high-performance image processing implementation using the **Java FFM API** (introduced in Java 22). It uses `jextract`-generated bindings for `libvips`.
 
-### [image-service-photofox](./image-service-vips-ffm/README.md)
+### [image-service-photofox](./image-service-photofox/README.md)
 An alternative FFM implementation that leverages the [lopcode/vips-ffm](https://github.com/lopcode/vips-ffm) library for a more idiomatic Java wrapper around `libvips`.
 
 ## Building and Running
@@ -31,7 +31,7 @@ An alternative FFM implementation that leverages the [lopcode/vips-ffm](https://
 The root gradle project includes the `image-utils` and `image-service` modules.  To build and run the image-service, follow the instructions in the [image-service README](./image-service/README.md).
 
 The repo also includes nested gradle projects for:
-*   `image-service-ffm-libsvips` - FFM-based implementation using `jextract` bindings for `libvips`
+*   `image-service-ffm-libvips` - FFM-based implementation using `jextract` bindings for `libvips`
 *   `image-service-photofox` - FFM-based implementation using the `lopcode/vips-ffm` library
 
 Both these modules require Java 22+ to build but *currently* the Grails 6 web application only supports Java 21.
@@ -43,7 +43,7 @@ To build the main projects:
 
 To build the FFM based submodules:
 ```bash
-./gradlew :image-service-ffm-libsvips:build
+./gradlew :image-service-ffm-libvips:build
 ./gradlew :image-service-photofox:build
 ```
 

@@ -5,14 +5,11 @@ import au.org.ala.images.jna.NativeLibraryDetector;
 import au.org.ala.images.jna.OutputStreamVipsTarget;
 import au.org.ala.images.jna.VipsLibrary;
 import com.google.common.io.ByteSink;
-import com.google.common.io.ByteStreams;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.*;
 
 /**

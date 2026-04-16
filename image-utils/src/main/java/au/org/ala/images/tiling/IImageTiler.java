@@ -1,6 +1,7 @@
 package au.org.ala.images.tiling;
 
 import au.org.ala.images.util.FileByteSinkFactory;
+import com.google.errorprone.annotations.ThreadSafe;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -10,6 +11,7 @@ import java.io.InputStream;
 /**
  * Interface for image tilers that can tile images into smaller tiles for various zoom levels.
  */
+@ThreadSafe
 public interface IImageTiler {
 
     default ImageTilerResults tileImage(File imageFile, File destinationDirectory) throws IOException, InterruptedException {
