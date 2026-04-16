@@ -287,13 +287,12 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     ImageLibraryFactory imageLibraryFactory(List<ImageLibraryFactory> availableFactories) {
-        ImageLibraryFactory selected = availableFactories ? availableFactories.last() : null
-        if (selected) {
-            log.info("Primary ImageLibraryFactory: {} (priority: {})", selected.implementationName, selected.priority)
-        } else {
+        if (!availableFactories) {
             log.warn("No suitable ImageLibraryFactory found!")
+            throw new IllegalStateException("No suitable ImageLibraryFactory found")
         }
-        return selected
+        ImageLibraryFactory selected = availableFactories.head()
+        log.info("Primary ImageLibraryFactory: {} (priority: {})", selected.implementationName, selected.priority)
     }
 
     private static TaskExecutor createThreadPoolTaskExecutor(String namePrefix, int coreSize, int maxSize = coreSize, int queueCapacity = -1) {
