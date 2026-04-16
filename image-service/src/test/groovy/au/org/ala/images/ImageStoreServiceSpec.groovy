@@ -3,6 +3,7 @@ package au.org.ala.images
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.tiling.IImageTiler
+import au.org.ala.images.tiling.IOnDemandImageTiler
 import au.org.ala.images.tiling.ImageTilerConfig
 import com.google.common.io.Resources
 import grails.testing.gorm.DataTest
@@ -12,15 +13,23 @@ import spock.lang.Specification
 
 class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<ImageStoreService>, DataTest {
 
+    IImageThumbnailer imageThumbnailer = Mock(IImageThumbnailer)
+    IImageTiler imageTiler = Mock(IImageTiler)
+    IOnDemandImageTiler onDemandImageTiler = Mock(IOnDemandImageTiler)
+
     def setup() {
         defineBeans {
-            imageThumbnailer(Mock(IImageThumbnailer))
-            imageTiler(Mock(IImageTiler))
+            imageThumbnailer(imageThumbnailer)
+            imageTiler(imageTiler)
+            onDemandImageTiler(onDemandImageTiler)
             imageTilerConfig(Mock(ImageTilerConfig))
             commandExecutor(Mock(CommandExecutor))
         }
         service.auditService = Mock(AuditService)
         service.storageLocationService = Mock(StorageLocationService)
+        service.imageThumbnailer = imageThumbnailer
+        service.imageTiler = imageTiler
+        service.onDemandImageTiler = onDemandImageTiler
     }
 
     def "test store tiles zip"() {
