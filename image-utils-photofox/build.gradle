@@ -1,0 +1,96 @@
+plugins {
+    id 'groovy'
+    id 'java-library'
+    id 'maven-publish'
+}
+
+// Share version and group from parent gradle.properties if present
+def parentPropertiesFile = new File(rootDir.parentFile, 'gradle.properties')
+if (parentPropertiesFile.exists()) {
+    def parentProps = new Properties()
+    parentPropertiesFile.withInputStream { parentProps.load(it) }
+    if (parentProps.version) version = parentProps.version
+    if (parentProps.group) group = parentProps.group
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://nexus.ala.org.au/content/groups/public/" }
+    maven { url "https://jitpack.io" }
+}
+
+java {
+    sourceCompatibility = JavaVersion.toVersion("22")
+    targetCompatibility = JavaVersion.toVersion("22")
+}
+//configurations {
+//    mockitoAgent
+//}
+
+dependencies {
+    implementation localGroovy()
+    api 'org.slf4j:slf4j-api:1.7.36'
+    implementation 'com.google.guava:guava:33.2.1-jre'
+    compileOnly project(':image-utils')
+    testImplementation project(':image-utils')
+    testImplementation testFixtures(project(':image-utils'))
+
+    // The photofox vips-ffm library
+    implementation 'app.photofox.vips-ffm:vips-ffm-core:1.9.5'
+
+    // Testing
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+    // 2. Required for mocking ANY concrete class (not just interfaces)
+    testImplementation 'net.bytebuddy:byte-buddy:1.14.12'
+    // 3. Required specifically for mocking FINAL classes via Spock 2.4+
+    testImplementation(libs.mockito)
+//    mockitoAgent(libs.mockito) {
+//        transitive = false
+//    }
+//    testImplementation 'org.mockito:mockito-core:5.11.0'
+    // Optional: Required if your classes don't have default constructors
+    testImplementation 'org.objenesis:objenesis:3.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    jvmArgs = [
+//        '--enable-preview',
+        '--enable-native-access=ALL-UNNAMED',
+//        "-javaagent:${configurations.mockitoAgent.asPath}",
+        "-XX:+EnableDynamicAgentLoading"
+    ]
+    testLogging {
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
+}
+
+compileGroovy {
+//    options.compilerArgs << '--enable-preview'
+}
+
+tasks.withType(JavaCompile).configureEach {
+//    options.compilerArgs << '--enable-preview'
+}
+
+publishing {
+    repositories {
+        maven {
+            name 'Nexus'
+            url "https://nexus.ala.org.au/content/repositories/${project.version.endsWith('-SNAPSHOT') ? 'snapshots' : 'releases' }"
+            credentials {
+                username = System.getenv('TRAVIS_DEPLOY_USERNAME')
+                password = System.getenv('TRAVIS_DEPLOY_PASSWORD')
+            }
+        }
+    }
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            artifactId = 'image-utils-photofox'
+        }
+    }
+}

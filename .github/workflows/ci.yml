@@ -3,101 +3,123 @@ name: CI Build and Deploy
 on:
   push:
     branches:
-      # Corresponds to 'branches: only:'
       - master
       - develop
       - 'feature/**'
       - 'hotfix/**'
   pull_request:
-    # Runs on pull requests to these branches
     branches:
       - master
       - develop
 
 env:
-  # Corresponds to 'env: global:'
   JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
   GRADLE_OPTS_BASE: -Dgrails.env=ghactions
   TRAVIS_DEPLOY_USERNAME: ${{ secrets.TRAVIS_DEPLOY_USERNAME }}
   TRAVIS_DEPLOY_PASSWORD: ${{ secrets.TRAVIS_DEPLOY_PASSWORD }}
 
 jobs:
-  build:
-    # GitHub Actions defaults to the latest Ubuntu runner (equivalent to a recent 'dist: noble')
+  image-utils-build:
+    name: image-utils (JDK 11)
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Set up JDK 11
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+          cache: 'gradle'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Build and Test image-utils
+        run: ./gradlew :image-utils:build
+        env:
+          GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
+      - name: Publish image-utils (on push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: ./gradlew :image-utils:publish
+        env:
+          GRADLE_OPTS: -Dgrails.env=production
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v6
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'
 
-    # --- Environment Setup (Replaces 'language:', 'jdk:', and 'before_install:') ---
+  image-service-build:
+    name: image-service (JDK 21)
+    needs: [image-utils-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
+      - name: Start ElasticSearch
+        run: docker compose -f image-service/elastic-dc2.yml up -d
+      - name: Wait for services to be ready
+        run: sleep 10
+      - name: Build and Test
+        run: ./gradlew :image-service:clean :image-service:build
+        env:
+          GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }} # Added Grails env flag
+      - name: Publish image-service (on push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: ./gradlew :image-service:publish
+        env:
+          GRADLE_OPTS: -Dgrails.env=production
+      - name: Stop ElasticSearch
+        if: always()
+        run: docker compose -f image-service/elastic-dc2.yml down
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v6
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'
 
-    - name: Set up Java 21
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '21'
-
-    # --- Setup Gradle action, (includes replacment for 'cache: directories:' and 'before_cache:') ---
-
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v5
-      # uses: gradle/actions/setup-gradle@v5.0.0 # use this for act
-
-    - name: Start ElasticSearch with Docker Compose
-      run: docker compose -f elastic-dc2.yml up -d
-
-    - name: Wait for services to be ready
-      run: |
-        # Simple check to wait for the ElasticSearch service to be ready
-        # You might need a more robust check based on your application's requirements
-        echo "Waiting for ElasticSearch..."
-        sleep 10 
-
-      # --- Install/Build Phase (Replaces 'install:' and 'travis_wait') ---
-
-    - name: Clean build
-      # We don't need 'travis_wait 30' as GitHub Actions handles timeouts differently.
-      # Run with the base environment option.
-      run: ./gradlew clean
-      env:
-        GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
-
-    - name: Assemble project
-      run: ./gradlew assemble
-      env:
-        GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
-
-    - name: Test project
-      run: ./gradlew check
-      env:
-        GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
-
-    # --- Failure Reporting (Replaces 'after_failure:') ---
-
-    - name: Publish Unit Test Report
-      id: unit-test-report
-      uses: mikepenz/action-junit-report@v5
-      if: failure()
-      with:
-        report_paths: '**/build/test-results/test/*.xml'
-
-    - name: Publish Integration Test Report
-      id: integration-test-report
-      uses: mikepenz/action-junit-report@v5
-      if: failure()
-      with:
-        report_paths: '**/build/test-results/integrationTest/*.xml'
-
-      # --- Deployment/Success Phase (Replaces 'after_success:') ---
-
-    - name: Publish (on successful master/develop/feature/hotfix push, not PR)
-      if: github.event_name == 'push' && success()
-      run: ./gradlew publish --stacktrace
-      env:
-        GRADLE_OPTS: -Dgrails.env=production
-
-      # --- Cleanup Phase (Replaces 'after_script:') ---
-
-    - name: Stop Docker Compose services
-      if: always() # Run even if previous steps fail
-      run: docker compose -f elastic.yml down
+  ffm-libs-build:
+    name: FFM Libraries (JDK 25)
+    needs: [image-utils-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
+      - name: Build FFM libraries
+        run: |
+          cd image-utils-ffm-libvips
+          chmod +x gradlew
+          ./gradlew build
+          cd ../image-utils-photofox
+          chmod +x gradlew
+          ./gradlew build
+      - name: Publish FFM libraries (on push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: |
+          cd image-utils-ffm-libvips
+          ./gradlew publish
+          cd ../image-utils-photofox
+          ./gradlew publish
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v6
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'

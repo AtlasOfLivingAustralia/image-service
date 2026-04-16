@@ -1,0 +1,112 @@
+plugins {
+    id 'groovy'
+    id 'java-library'
+    id 'maven-publish'
+}
+
+// Share version and group from parent gradle.properties if present
+def parentPropertiesFile = new File(rootDir.parentFile, 'gradle.properties')
+if (parentPropertiesFile.exists()) {
+    def parentProps = new Properties()
+    parentPropertiesFile.withInputStream { parentProps.load(it) }
+    if (parentProps.version) version = parentProps.version
+    if (parentProps.group) group = parentProps.group
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://nexus.ala.org.au/content/groups/public/" }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java21']
+        }
+    }
+    java22 {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java22']
+        }
+    }
+}
+
+// Inherit classpaths for java22 sourceSet
+configurations {
+    java22CompileClasspath.extendsFrom compileClasspath
+    java22RuntimeClasspath.extendsFrom runtimeClasspath
+    jextract
+}
+
+dependencies {
+    implementation localGroovy()
+    api 'org.slf4j:slf4j-api:1.7.36'
+    implementation 'com.google.guava:guava:33.2.1-jre'
+    compileOnly project(':image-utils')
+    testImplementation project(':image-utils')
+    testImplementation testFixtures(project(':image-utils'))
+    
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    jextract 'org.openjdk.jextract:jextract:22.0.1'
+}
+
+tasks.named('compileJava', JavaCompile) {
+    options.compilerArgs << '--enable-preview'
+}
+
+tasks.named('compileJava22Java', JavaCompile) {
+    description = 'Compile Java 22 stable classes'
+    options.release = 22
+    // Use JDK 25 compiler to target Java 22 stable
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+jar {
+    manifest {
+        attributes(
+                'Multi-Release': 'true',
+                'Enable-Native-Access': 'ALL-UNNAMED'
+        )
+    }
+    into('META-INF/versions/22') {
+        from compileJava22Java.destinationDirectory
+    }
+    dependsOn compileJava22Java
+}
+
+test {
+    useJUnitPlatform()
+    jvmArgs = [
+        '--enable-preview',
+        '--enable-native-access=ALL-UNNAMED'
+    ]
+}
+
+publishing {
+    repositories {
+        maven {
+            name 'Nexus'
+            url "https://nexus.ala.org.au/content/repositories/${project.version.endsWith('-SNAPSHOT') ? 'snapshots' : 'releases' }"
+            credentials {
+                username = System.getenv('TRAVIS_DEPLOY_USERNAME')
+                password = System.getenv('TRAVIS_DEPLOY_PASSWORD')
+            }
+        }
+    }
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            artifactId = 'image-utils-ffm-libvips'
+        }
+    }
+}
