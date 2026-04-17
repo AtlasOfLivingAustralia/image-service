@@ -662,7 +662,7 @@ images:
         inPlace: true
       mozjpeg:
         cmd: "cjpeg"
-        inPlace: false
+        stdout: true
       oxipng:
         cmd: "oxipng"
         inPlace: true
