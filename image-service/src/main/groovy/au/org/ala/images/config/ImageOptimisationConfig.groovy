@@ -100,7 +100,7 @@ class ImageOptimisationConfig {
             // JPEG
             jpegtran: Tool.stdout('jpegtran'),
             jpegoptim: Tool.process('jpegoptim', true),
-            mozjpeg: Tool.process('cjpeg', false),
+            mozjpeg: Tool.stdout('cjpeg'),
             // Java SPI example tool
             javaResize: Tool.java(ImageResizeTool),
             // PNG

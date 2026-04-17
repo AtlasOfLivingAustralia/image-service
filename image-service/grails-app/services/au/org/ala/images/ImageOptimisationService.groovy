@@ -149,23 +149,22 @@ class ImageOptimisationService implements MetricsSupport {
                     boolean alwaysAccept = step.alwaysAccept
 
                     List<String> confArgs = step.args
-                    Map<String, String> tokens = buildTokens(current, workDir, format, [:], outExt)
-                    List<String> baseArgs = confArgs.collect { substitute(it, tokens) }
-//                    List<String> baseArgs = []
-//                    for (def a : confArgs) { baseArgs << substitute(String.valueOf(a), tokens) }
-
                     File outFile = inPlace ? current : new File(workDir, "${stageName}_step${i}" + (outExt ?: extensionFor(format, current)))
+                    Map<String, String> tokens = buildTokens(current, workDir, format, [:], outExt)
+                    tokens[TOKEN_OUT] = outFile.absolutePath
+                    List<String> baseArgs = confArgs.collect { substitute(it, tokens) }
+
                     if (stdout) {
                         // stdout tools: only add input file if not already specified
-                        if (!baseArgs.any { it.contains(current.absolutePath) } && !baseArgs.any { it.contains(TOKEN_IN) }) baseArgs << current.absolutePath
+                        if (!baseArgs.any { it.contains(current.absolutePath) } && !confArgs.any { it.contains(TOKEN_IN) }) baseArgs << current.absolutePath
                         // Output comes from stdout, no output file argument needed
                     } else if (!inPlace) {
                         // Regular tools: add input and output files if not specified
-                        if (!baseArgs.any { it.contains(current.absolutePath) } && !baseArgs.any { it.contains(TOKEN_IN) }) baseArgs << current.absolutePath
-                        if (!baseArgs.any { it.contains(outFile.absolutePath) } && !baseArgs.any { it.contains(TOKEN_OUT) }) baseArgs << outFile.absolutePath
+                        if (!baseArgs.any { it.contains(current.absolutePath) } && !confArgs.any { it.contains(TOKEN_IN) }) baseArgs << current.absolutePath
+                        if (!baseArgs.any { it.contains(outFile.absolutePath) } && !confArgs.any { it.contains(TOKEN_OUT) }) baseArgs << outFile.absolutePath
                     } else {
                         // inPlace tools: only add input file if not already specified
-                        if (!baseArgs.any { it.contains(current.absolutePath) } && !baseArgs.any { it.contains(TOKEN_IN) }) baseArgs << current.absolutePath
+                        if (!baseArgs.any { it.contains(current.absolutePath) } && !confArgs.any { it.contains(TOKEN_IN) }) baseArgs << current.absolutePath
                     }
 
                     long before = current.length()
