@@ -700,9 +700,10 @@ class ImageController implements MetricsSupport {
                     def payload = [:]
                     imageService.addImageInfoToMap(imageInstance, payload, false, false)
                     def jsonStr = payload as JSON
-                    if (params.callback) {
+                    def callback = params.callback as String
+                    if (callback?.matches('[A-Za-z0-9_]+')) {
                         response.setContentType("text/javascript")
-                        render("${params.callback}(${jsonStr})")
+                        render("${callback}(${jsonStr})")
                     } else {
                         response.addHeader("Access-Control-Allow-Origin", "*")
                         response.setContentType("application/json")
@@ -858,9 +859,10 @@ class ImageController implements MetricsSupport {
         withFormat {
             json {
                 def jsonStr = results as JSON
-                if (params.callback) {
+                def callback = params.callback as String
+                if (callback?.matches('[A-Za-z0-9_]+')) {
                     response.setContentType("text/javascript")
-                    render("${params.callback}(${jsonStr})")
+                    render("${callback}(${jsonStr})")
                 } else {
                     response.setContentType("application/json")
                     render(jsonStr)

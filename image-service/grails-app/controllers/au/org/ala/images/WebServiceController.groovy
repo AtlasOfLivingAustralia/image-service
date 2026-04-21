@@ -367,6 +367,7 @@ class WebServiceController implements MetricsSupport {
     @SSO
     def scheduleInboxPoll() {
         def results = [success:true]
+        // TODO params.userId is a hack to allow legacy API key users to specify the userId in the request until we remove legacy API key support
         def userId =  authService.getUserId() ?: params.userId
         results.importBatchId = imageService.schedulePollInbox(userId)
         renderResults(results)
@@ -932,9 +933,10 @@ class WebServiceController implements MetricsSupport {
         withFormat {
             json {
                 def jsonStr = results as JSON
-                if (params.callback) {
+                def callback = params.callback as String
+                if (callback?.matches('[A-Za-z0-9_]+')) {
                     response.setContentType("text/javascript")
-                    render("${params.callback}(${jsonStr})")
+                    render("${callback}(${jsonStr})")
                 } else {
                     if (sendAccessControlAllowOriginHeader) {
                         response.addHeader("Access-Control-Allow-Origin", "*")

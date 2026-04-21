@@ -54,6 +54,18 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         1 *  service.auditService.log(uuid, 'Image tiles stored from zip file (outsourced job?)', 'N/A')
     }
 
+    def "test storeTileZipInputStream prevents Zip Slip"() {
+        given:
+        def image = Mock(Image)
+        image.imageIdentifier >> "123"
+
+        when:
+        service.storeTileZipInputStream(image, "../../etc/passwd", "text/plain", 10, null)
+
+        then:
+        thrown(IllegalArgumentException)
+    }
+
     def "thumbnailImageInfo coalesces concurrent loads for same key when cache is enabled"() {
         given:
         service.initSemaphores()

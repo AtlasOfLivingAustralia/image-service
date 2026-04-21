@@ -5,11 +5,14 @@ import grails.web.mapping.LinkGenerator
 import groovy.util.logging.Slf4j
 import org.apache.commons.io.ByteOrderMark
 import org.apache.commons.io.FileUtils
+import org.apache.commons.io.FilenameUtils
 import org.apache.commons.io.input.BOMInputStream
 import grails.web.servlet.mvc.GrailsParameterMap
 import grails.plugins.csv.CSVMapReader
 import org.springframework.web.multipart.MultipartFile
 
+import java.nio.file.Path
+import java.nio.file.Paths
 import java.util.regex.Pattern
 
 @Slf4j
@@ -47,12 +50,12 @@ class ImageStagingService {
         }
 
         def userdir = getStagingDirectory(userId)
-        def originalFilename = file.originalFilename
+        def filename = FilenameUtils.getName(file.originalFilename)
 
-        def newFile = new File(combine(userdir, originalFilename));
+        def newFile = new File(combine(userdir, filename));
         file.transferTo(newFile);
         // If we get here the transfer was successful, so we can create a record for it in the database
-        def stagedFile = new StagedFile(userId: userId, filename: originalFilename, dateStaged: new Date())
+        def stagedFile = new StagedFile(userId: userId, filename: filename, dateStaged: new Date())
         stagedFile.save(failOnError: true, flush: true)
         return stagedFile
     }
@@ -71,7 +74,16 @@ class ImageStagingService {
     }
 
     public static String combine(String path1, String path2) {
-        new File(new File(path1), path2).getPath()
+        Path base = Paths.get(path1).toAbsolutePath().normalize()
+        String childPath = path2
+        if (childPath.startsWith("/") || childPath.startsWith("\\")) {
+            childPath = childPath.substring(1)
+        }
+        Path combined = base.resolve(childPath).toAbsolutePath().normalize()
+        if (!combined.startsWith(base)) {
+            throw new RuntimeException("Path traversal attempt: " + path2)
+        }
+        return combined.toString()
     }
 
     public String getStagedFileLocalPath(StagedFile stagedFile) {
@@ -111,7 +123,7 @@ class ImageStagingService {
     def uploadDataFile(String userId, MultipartFile multipartFile) {
         def f = new File(getStagingDataFile(userId))
         if (!f.parentFile.exists()) {
-            f.mkdirs()
+            f.parentFile.mkdirs()
         }
         if (f.exists()) {
             // delete any existing file first
