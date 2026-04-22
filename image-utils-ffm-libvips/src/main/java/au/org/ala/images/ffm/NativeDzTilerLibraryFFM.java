@@ -86,7 +86,7 @@ public class NativeDzTilerLibraryFFM {
             MemorySegment userData
     ) throws IOException {
         try (Arena callArena = Arena.ofConfined()) {
-            MemorySegment subsamplesSegment = callArena.allocateArray(ValueLayout.JAVA_INT, subsamples);
+            MemorySegment subsamplesSegment = FFMShim.allocateArray(callArena, ValueLayout.JAVA_INT, subsamples);
             MemorySegment suffixSegment = suffix != null ? FFMShim.allocateFrom(callArena, suffix) : MemorySegment.NULL;
             MemorySegment errorOut = callArena.allocate(ValueLayout.ADDRESS);
             errorOut.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL);

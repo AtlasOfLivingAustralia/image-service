@@ -20,4 +20,8 @@ public class FFMShim {
     public static MemorySegment allocateFrom(Arena arena, ValueLayout.OfDouble layout, double[] array) {
         return arena.allocateArray(layout, array);
     }
+
+    public static MemorySegment allocateArray(Arena arena, ValueLayout.OfInt layout, int[] array) {
+        return arena.allocateArray(layout, array);
+    }
 }
