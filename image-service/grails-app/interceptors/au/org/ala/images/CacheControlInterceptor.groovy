@@ -25,6 +25,10 @@ class CacheControlInterceptor implements Interceptor {
     }
 
     boolean after() {
+        if (!isNoCacheInterceptorEnabled()) {
+            return true
+        }
+
         if (isCacheableAction() || hasNoCacheOptOutAnnotation()) {
             return true
         }
@@ -75,6 +79,15 @@ class CacheControlInterceptor implements Interceptor {
         boolean isGzip = contentType in GZIP_CONTENT_TYPES
         boolean isCsvGzipAttachment = contentDisposition?.toLowerCase(Locale.ENGLISH)?.contains('.csv.gz')
         isGzip && isCsvGzipAttachment
+    }
+
+    protected boolean isNoCacheInterceptorEnabled() {
+        Boolean enabled = grailsApplication?.config?.getProperty('images.nocacheInterceptor.enabled', Boolean, null)
+        isNoCacheEnabled(enabled)
+    }
+
+    protected static boolean isNoCacheEnabled(Boolean enabled) {
+        enabled == null || enabled
     }
 
     protected boolean isCacheableAction() {

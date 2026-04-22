@@ -40,6 +40,21 @@ class CacheControlInterceptorUnitSpec extends Specification {
         !CacheControlInterceptor.isNoCacheOptOut(NoOptOut, 'index')
     }
 
+    void "should default no-cache interceptor toggle to enabled"() {
+        expect:
+        CacheControlInterceptor.isNoCacheEnabled(null)
+    }
+
+    void "should honour explicit no-cache interceptor toggle values"() {
+        expect:
+        CacheControlInterceptor.isNoCacheEnabled(enabled) == expected
+
+        where:
+        enabled | expected
+        true    | true
+        false   | false
+    }
+
     @NoCacheOptOut
     private static class ControllerOptOut {
         def index() {}
