@@ -7,6 +7,7 @@ import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.FfmStreamingImageThumbnailer;
 import au.org.ala.images.thumb.IImageThumbnailer;
 import au.org.ala.images.tiling.FfmOnDemandImageTiler;
+import au.org.ala.images.tiling.FfmNativeDzStreamingImageTiler;
 import au.org.ala.images.tiling.FfmStreamingImageTiler;
 import au.org.ala.images.tiling.IImageTiler;
 import au.org.ala.images.tiling.IOnDemandImageTiler;
@@ -21,6 +22,7 @@ import org.slf4j.LoggerFactory;
 public class FfmLibraryFactoryImpl implements ImageLibraryFactory {
 
     private static final Logger log = LoggerFactory.getLogger(FfmLibraryFactoryImpl.class);
+    private static final String NATIVE_DZ_TILER_FFM_FLAG = "nativeDzTilerFfmEnabled";
 
     public FfmLibraryFactoryImpl() {
         log.debug("FfmLibraryFactoryImpl instantiated");
@@ -44,6 +46,11 @@ public class FfmLibraryFactoryImpl implements ImageLibraryFactory {
         if (!NativeLibraryDetectorFFM.isVipsAvailable()) {
             return null;
         }
+
+        if (Boolean.parseBoolean(commands.getOrDefault(NATIVE_DZ_TILER_FFM_FLAG, "false"))) {
+            return new FfmNativeDzStreamingImageTiler(fallbackTiler, config);
+        }
+
         return new FfmStreamingImageTiler(fallbackTiler, config);
     }
 

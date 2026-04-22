@@ -12,6 +12,7 @@ public class ImageTilerConfig {
     private final TileFormat _tileFormat;
     private final Color _tileBackgroundColor;
     private final ZoomFactorStrategy _zoomFactorStrategy;
+    private final int _vipsConcurrency;
 
     public ImageTilerConfig(Executor ioExecutor, Executor levelExecutor) {
         this(ioExecutor, levelExecutor, 256, 6, TileFormat.JPEG, new Color(221, 221, 221));
@@ -22,6 +23,10 @@ public class ImageTilerConfig {
     }
 
     public ImageTilerConfig(Executor ioExecutor, Executor levelExecutor, int tileSize, int maxColumnsPerStrip, TileFormat tileFormat, Color tileBackgroundColor) {
+        this(ioExecutor, levelExecutor, tileSize, maxColumnsPerStrip, tileFormat, tileBackgroundColor, 0);
+    }
+
+    public ImageTilerConfig(Executor ioExecutor, Executor levelExecutor, int tileSize, int maxColumnsPerStrip, TileFormat tileFormat, Color tileBackgroundColor, int vipsConcurrency) {
         this._tileSize = tileSize;
         this._maxColumnsPerStrip = maxColumnsPerStrip;
         this._tileFormat = tileFormat;
@@ -29,6 +34,7 @@ public class ImageTilerConfig {
         this._ioExecutor = ioExecutor;
         this._levelExecutor = levelExecutor;
         this._zoomFactorStrategy = new DefaultZoomFactorStrategy(_tileSize);
+        this._vipsConcurrency = vipsConcurrency;
     }
 
     public int getTileSize() {
@@ -51,5 +57,9 @@ public class ImageTilerConfig {
 
     public Executor getLevelExecutor() {
         return _levelExecutor;
+    }
+
+    public int getVipsConcurrency() {
+        return _vipsConcurrency;
     }
 }

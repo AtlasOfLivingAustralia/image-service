@@ -47,6 +47,31 @@ To build the FFM based submodules:
 ./gradlew :image-service-photofox:build
 ```
 
+## Benchmark test toggle (CI and local)
+
+Benchmark specs/tests are disabled by default in test tasks and only run when `runBenchmarks` is enabled.
+
+Disable benchmarks explicitly (recommended for CI):
+```bash
+./gradlew test -PrunBenchmarks=false
+```
+
+Enable benchmarks explicitly:
+```bash
+./gradlew test -PrunBenchmarks=true
+```
+
+For nested builds, use each module wrapper from its directory:
+```bash
+cd image-utils-ffm-libvips && ./gradlew test -PrunBenchmarks=true
+cd image-utils-photofox && ./gradlew test -PrunBenchmarks=true
+```
+
+Equivalent JVM system property is also supported:
+```bash
+./gradlew test -DrunBenchmarks=true
+```
+
 ## Dependencies
 
 The native image processing implementations (JNA and FFM) require **libvips** to be installed on the host system.

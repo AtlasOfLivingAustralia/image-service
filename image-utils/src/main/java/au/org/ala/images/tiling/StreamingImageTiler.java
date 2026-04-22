@@ -2,33 +2,63 @@ package au.org.ala.images.tiling;
 
 import au.org.ala.images.optimisation.CommandExecutor;
 import com.google.common.io.ByteSink;
-import com.google.common.io.Files;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Streaming tiler that uses external tools (vips) to generate tiles without loading
- * the full image into memory. Streams bytes through the tool's stdin/stdout.
+ * CLI-based streaming tiler that uses vips per-tile pipeline stages.
+ * <p>
+ * Mirrors the geometry of {@link JnaStreamingImageTiler}: for each zoom level the source
+ * image is resized once to a native-format intermediate, then individual tiles are
+ * extracted with TMS bottom-up (y=0 is bottom) row numbering — identical to every
+ * other tiler in this package.
+ * <p>
+ * Pipeline per tile:
+ * <pre>
+ *   subsample == 1:  vips extract_area &lt;srcFile&gt; .stdout&lt;suffix&gt; left top w h
+ *   subsample  &gt; 1:  vips resize       &lt;srcFile&gt; level-N.v scale
+ *                    vips extract_area  level-N.v .stdout&lt;suffix&gt; left top w h
+ * </pre>
  */
 public class StreamingImageTiler implements IImageTiler {
 
     private static final Logger log = LoggerFactory.getLogger(StreamingImageTiler.class);
 
-    private final CommandExecutor commandExecutor;
-    private final String tool; // 'vips' primarily
-    private final long timeoutSeconds;
-    private final int tileSize;
+    private static final long HEADER_TIMEOUT_SECONDS = 10;
+    private static final long TILE_TIMEOUT_SECONDS   = 60;
+    private static final long RESIZE_TIMEOUT_SECONDS = 120;
 
+    private final CommandExecutor commandExecutor;
+    private final String vipsCommand;
+    private final int tileSize;
+    private final TileFormat tileFormat;
+    private final ZoomFactorStrategy zoomFactorStrategy;
+
+    // ── Constructors ────────────────────────────────────────────────────────────
+
+    /** Preferred constructor: vips binary, all settings from config. */
+    public StreamingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig config) {
+        this(commandExecutor, "vips", config);
+    }
+
+    public StreamingImageTiler(CommandExecutor commandExecutor, String vipsCommand, ImageTilerConfig config) {
+        this.commandExecutor    = commandExecutor;
+        this.vipsCommand        = vipsCommand;
+        this.tileSize           = config.getTileSize();
+        this.tileFormat         = config.getTileFormat();
+        this.zoomFactorStrategy = config.getZoomFactorStrategy();
+    }
+
+    /** Legacy constructor kept for existing call-site compatibility. */
     public StreamingImageTiler(CommandExecutor commandExecutor) {
         this(commandExecutor, "vips", 120, 256);
     }
@@ -37,152 +67,251 @@ public class StreamingImageTiler implements IImageTiler {
         this(commandExecutor, tool, 120, 256);
     }
 
-    public StreamingImageTiler(CommandExecutor commandExecutor, String tool, long timeoutSeconds, int tileSize) {
-        this.commandExecutor = commandExecutor;
-        this.tool = tool;
-        this.timeoutSeconds = timeoutSeconds;
-        this.tileSize = tileSize;
+    public StreamingImageTiler(CommandExecutor commandExecutor, String tool,
+                               @SuppressWarnings("unused") long ignoredTimeout, int tileSize) {
+        this.commandExecutor    = commandExecutor;
+        this.vipsCommand        = tool;
+        this.tileSize           = tileSize;
+        this.tileFormat         = TileFormat.JPEG;
+        this.zoomFactorStrategy = new DefaultZoomFactorStrategy(tileSize);
     }
 
+    // ── IImageTiler ─────────────────────────────────────────────────────────────
+
     @Override
-    public ImageTilerResults tileImage(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException, InterruptedException {
+    public ImageTilerResults tileImage(InputStream imageInputStream,
+                                       TilerSink tilerSink,
+                                       int minLevel,
+                                       int maxLevel) throws IOException, InterruptedException {
         if (minLevel < 0 || maxLevel < 0 || minLevel > maxLevel) {
             throw new IllegalArgumentException("Invalid min/max levels");
         }
 
-        Path tempOutDirPath = java.nio.file.Files.createTempDirectory("tile-out-");
-        File tempOutDir = tempOutDirPath.toFile();
-
+        // Buffer the entire source to a temp file so it can be re-read per level/tile.
+        Path srcTmp = Files.createTempFile("sit-src-", ".img");
         try {
-            if ("vips".equals(tool)) {
-                return tileWithVips(imageInputStream, tempOutDir, tilerSink, minLevel, maxLevel);
-            } else {
-                throw new IllegalArgumentException("Unsupported tool: " + tool);
-            }
+            copyToFile(imageInputStream, srcTmp);
+            return tileFromFile(srcTmp.toFile(), tilerSink, minLevel, maxLevel);
         } finally {
-            deleteDirectory(tempOutDir);
+            silentDelete(srcTmp.toFile());
         }
     }
 
-    private ImageTilerResults tileWithVips(InputStream inputStream, File outputDir, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException {
-        // Use vips dzsave to generate Deep Zoom tiles from stdin
-        // Format: vips dzsave stdin output --tile-size 256 --depth onetile
-        List<String> args = new ArrayList<>();
-        args.add("dzsave");
-        args.add("stdin");
-        args.add(new File(outputDir, "tiles").getAbsolutePath());
-        args.add("--tile-size");
-        args.add(String.valueOf(tileSize));
-        args.add("--overlap");
-        args.add("0");
-        args.add("--suffix");
-        args.add(".png");
-        args.add("--depth");
-        args.add("onetile");
-        args.add("--layout");
-        args.add("google");  // Use Google Maps tile layout (z/x/y)
+    // ── Core logic ──────────────────────────────────────────────────────────────
 
-        CommandExecutor.ExecResult result = commandExecutor.exec("vips", args, outputDir, inputStream, timeoutSeconds, null);
+    private ImageTilerResults tileFromFile(File srcFile,
+                                           TilerSink tilerSink,
+                                           int minLevel,
+                                           int maxLevel) throws IOException {
+        // 1. Read image dimensions once.
+        int[] dims        = readImageDimensions(srcFile);
+        int origWidth     = dims[0];
+        int origHeight    = dims[1];
 
-        if (result.exitCode != 0) {
-            log.error("vips dzsave failed with exit code {}: {}", result.exitCode, result.stderr);
-            return new ImageTilerResults(false, 0);
+        int[] pyramid     = zoomFactorStrategy.getZoomFactors(origHeight, origWidth);
+        int zoomLevels    = pyramid.length;
+        int finalMaxLevel = Math.min(maxLevel, zoomLevels - 1);
+
+        if (minLevel > finalMaxLevel) {
+            log.debug("StreamingImageTiler: requested levels {}-{} but only {} available",
+                    minLevel, maxLevel, zoomLevels);
+            return new ImageTilerResults(true, zoomLevels);
         }
 
-        // Parse the generated tiles and copy them to the tiler sink
-        // For 'google' layout, tiles are directly in the base directory
-        File tilesDir = new File(outputDir, "tiles");
-        if (!tilesDir.exists() || !tilesDir.isDirectory()) {
-            // Some versions/layouts might still use _files suffix
-            tilesDir = new File(outputDir, "tiles_files");
-        }
+        String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg";
 
-        if (!tilesDir.exists() || !tilesDir.isDirectory()) {
-            log.error("vips did not create expected tiles directory: {}", tilesDir.getAbsolutePath());
-            return new ImageTilerResults(false, 0);
-        }
+        for (int level = minLevel; level <= finalMaxLevel; level++) {
+            int subsample   = pyramid[level];
+            int levelWidth;
+            int levelHeight;
 
-        // Copy tiles from vips output to tiler sink
-        int maxZoomLevel = 0;
-        File[] levelDirs = tilesDir.listFiles(File::isDirectory);
-        if (levelDirs != null) {
-            for (File levelDir : levelDirs) {
-                int level;
-                try {
-                    level = Integer.parseInt(levelDir.getName());
-                } catch (NumberFormatException e) {
-                    continue;
-                }
-                
-                if (level < minLevel || level > maxLevel) {
-                    continue;
-                }
-                maxZoomLevel = Math.max(maxZoomLevel, level);
+            // 2. Produce a level-resolution intermediate in vips native format (.v)
+            //    — lossless and fast for subsequent per-tile extract_area calls.
+            //    Re-use the original file when subsample == 1 (no resize needed).
+            File levelFile    = srcFile;
+            boolean ownLevel  = false;
+            if (subsample > 1) {
+                levelFile = File.createTempFile("sit-lvl" + level + "-", ".v");
+                ownLevel  = true;
+                resizeToFile(srcFile, levelFile, 1.0 / subsample);
+                int[] levelDims = readImageDimensions(levelFile);
+                levelWidth = levelDims[0];
+                levelHeight = levelDims[1];
+            } else {
+                levelWidth = origWidth;
+                levelHeight = origHeight;
+            }
 
+            int cols = (int) Math.ceil((double) levelWidth  / tileSize);
+            int rows = (int) Math.ceil((double) levelHeight / tileSize);
+
+            log.debug("StreamingImageTiler level {}: {}x{} (subsample {}), {}x{} tiles",
+                    level, levelWidth, levelHeight, subsample, cols, rows);
+
+            try {
                 TilerSink.LevelSink levelSink = tilerSink.getLevelSink(level);
 
-                // Group files by column
-                Map<Integer, List<File>> columnFiles = new TreeMap<>();
-                File[] colDirs = levelDir.listFiles(File::isDirectory);
-                if (colDirs != null) {
-                    for (File colDir : colDirs) {
-                        int col;
-                        try {
-                            col = Integer.parseInt(colDir.getName());
-                        } catch (NumberFormatException e) {
-                            continue;
-                        }
-                        
-                        File[] rowFilesArr = colDir.listFiles(File::isFile);
-                        if (rowFilesArr != null) {
-                            List<File> rowFiles = new ArrayList<>();
-                            for (File f : rowFilesArr) {
-                                rowFiles.add(f);
-                            }
-                            Collections.sort(rowFiles, (f1, f2) -> f1.getName().compareTo(f2.getName()));
-                            columnFiles.put(col, rowFiles);
-                        }
+                for (int col = 0; col < cols; col++) {
+                    TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, 0, 1);
+
+                    for (int tmsRow = 0; tmsRow < rows; tmsRow++) {
+                        // TMS origin is bottom-left: row 0 = bottom of image.
+                        // Convert to image-space top coordinate (matches JnaStreamingImageTiler.generateSingleTile).
+                        int left   = col * tileSize;
+                        int top    = Math.max(0, levelHeight - (tmsRow + 1) * tileSize);
+                        int bottom = levelHeight - tmsRow * tileSize;
+                        int w      = Math.min(tileSize, levelWidth  - left);
+                        int h      = bottom - top;
+
+                        ByteSink tileSink = columnSink.getTileSink(tmsRow);
+                        extractTile(levelFile, tileSink, suffix, left, top, w, h, level, col, tmsRow);
                     }
                 }
-
-                // Process each column
-                for (Map.Entry<Integer, List<File>> entry : columnFiles.entrySet()) {
-                    int col = entry.getKey();
-                    List<File> rowFiles = entry.getValue();
-                    TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, 0, Integer.MAX_VALUE);
-
-                    for (File rowFile : rowFiles) {
-                        int row;
-                        try {
-                            row = Integer.parseInt(rowFile.getName().replace(".png", ""));
-                        } catch (NumberFormatException e) {
-                            continue;
-                        }
-                        ByteSink tileSink = columnSink.getTileSink(row);
-
-                        // Copy tile to sink
-                        Files.asByteSource(rowFile).copyTo(tileSink);
-                    }
+            } finally {
+                if (ownLevel) {
+                    silentDelete(levelFile);
                 }
             }
         }
 
-        return new ImageTilerResults(true, maxZoomLevel + 1);
+        return new ImageTilerResults(true, zoomLevels);
     }
 
-    private void deleteDirectory(File dir) {
-        if (dir.exists()) {
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    if (f.isDirectory()) {
-                        deleteDirectory(f);
-                    } else {
-                        f.delete();
-                    }
-                }
+    // ── vips helpers ────────────────────────────────────────────────────────────
+
+    /** Read image width × height from {@code vips header} output. */
+    private int[] readImageDimensions(File file) throws IOException {
+        List<String> errors = new ArrayList<>();
+
+        CommandExecutor.ExecResult headerRes = commandExecutor.exec(
+                vipsCommand,
+                Arrays.asList("header", file.getAbsolutePath()),
+                null, (InputStream) null, HEADER_TIMEOUT_SECONDS, (OutputStream) null);
+        if (headerRes.exitCode == 0) {
+            int[] parsed = parseDimensionsFromWxH(headerRes.stdout);
+            if (parsed != null) {
+                return parsed;
             }
-            dir.delete();
+            errors.add("" + vipsCommand + " header: unparseable output: " + headerRes.stdout);
+        } else {
+            errors.add("" + vipsCommand + " header failed: " + headerRes.stderr);
+        }
+
+        String vipsHeaderCommand = resolveVipsHeaderCommand(vipsCommand);
+        CommandExecutor.ExecResult widthRes = commandExecutor.exec(
+                vipsHeaderCommand,
+                Arrays.asList("-f", "width", file.getAbsolutePath()),
+                null, (InputStream) null, HEADER_TIMEOUT_SECONDS, (OutputStream) null);
+        CommandExecutor.ExecResult heightRes = commandExecutor.exec(
+                vipsHeaderCommand,
+                Arrays.asList("-f", "height", file.getAbsolutePath()),
+                null, (InputStream) null, HEADER_TIMEOUT_SECONDS, (OutputStream) null);
+        if (widthRes.exitCode == 0 && heightRes.exitCode == 0) {
+            Integer width = parseFirstNumber(widthRes.stdout);
+            Integer height = parseFirstNumber(heightRes.stdout);
+            if (width != null && height != null) {
+                return new int[]{ width, height };
+            }
+            errors.add(vipsHeaderCommand + ": unparseable output (width='" + widthRes.stdout + "', height='" + heightRes.stdout + "')");
+        } else {
+            errors.add(vipsHeaderCommand + " failed: width='" + widthRes.stderr + "', height='" + heightRes.stderr + "'");
+        }
+
+        throw new IOException("Unable to read image dimensions via libvips CLI. Attempts: " + String.join(" | ", errors));
+    }
+
+    private static int[] parseDimensionsFromWxH(String output) {
+        Pattern p = Pattern.compile("(\\d+)x(\\d+)");
+        Matcher m = p.matcher(output == null ? "" : output);
+        if (!m.find()) {
+            return null;
+        }
+        return new int[]{ Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)) };
+    }
+
+    private static Integer parseFirstNumber(String output) {
+        Pattern p = Pattern.compile("(\\d+)");
+        Matcher m = p.matcher(output == null ? "" : output);
+        if (!m.find()) {
+            return null;
+        }
+        return Integer.parseInt(m.group(1));
+    }
+
+    private static String resolveVipsHeaderCommand(String vipsCmd) {
+        if (vipsCmd == null || vipsCmd.isEmpty()) {
+            return "vipsheader";
+        }
+        File cmdFile = new File(vipsCmd);
+        String name = cmdFile.getName();
+        String parent = cmdFile.getParent();
+        if ("vips".equals(name)) {
+            return parent == null ? "vipsheader" : new File(parent, "vipsheader").getPath();
+        }
+        return "vipsheader";
+    }
+
+    /**
+     * Resize {@code src} by {@code scale} and write to {@code dst} in vips native
+     * format (.v) for lossless, fast subsequent tile extractions.
+     */
+    private void resizeToFile(File src, File dst, double scale) throws IOException {
+        CommandExecutor.ExecResult res = commandExecutor.exec(
+                vipsCommand,
+                Arrays.asList("resize", src.getAbsolutePath(), dst.getAbsolutePath(),
+                        Double.toString(scale)),
+                null, (InputStream) null, RESIZE_TIMEOUT_SECONDS, (OutputStream) null);
+        if (res.exitCode != 0) {
+            throw new IOException("vips resize failed (scale=" + scale + "): " + res.stderr);
+        }
+    }
+
+    /**
+     * Extract a single tile region from {@code levelFile} and stream the encoded
+     * bytes directly into {@code tileSink} via the OS stdout pipe — zero extra heap copy.
+     */
+    private void extractTile(File levelFile,
+                              ByteSink tileSink,
+                              String suffix,
+                              int left, int top, int width, int height,
+                              int level, int col, int tmsRow) throws IOException {
+        List<String> args = Arrays.asList(
+                "extract_area",
+                levelFile.getAbsolutePath(),
+                ".stdout" + suffix,
+                String.valueOf(left),
+                String.valueOf(top),
+                String.valueOf(width),
+                String.valueOf(height)
+        );
+        try (OutputStream os = tileSink.openStream()) {
+            CommandExecutor.ExecResult res = commandExecutor.exec(
+                    vipsCommand, args, null, (InputStream) null, TILE_TIMEOUT_SECONDS, os);
+            if (res.exitCode != 0) {
+                throw new IOException(String.format(
+                        "vips extract_area failed at level %d tile %d/%d: %s",
+                        level, col, tmsRow, res.stderr));
+            }
+        }
+    }
+
+    // ── Utilities ────────────────────────────────────────────────────────────────
+
+    private static void copyToFile(InputStream in, Path dest) throws IOException {
+        try (OutputStream out = new BufferedOutputStream(
+                new FileOutputStream(dest.toFile()), 256 * 1024)) {
+            byte[] buf = new byte[256 * 1024];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                out.write(buf, 0, n);
+            }
+        }
+    }
+
+    private static void silentDelete(File f) {
+        if (f != null && f.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
         }
     }
 }

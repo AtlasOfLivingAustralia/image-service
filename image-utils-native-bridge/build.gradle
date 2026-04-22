@@ -1,0 +1,145 @@
+plugins {
+    id 'cpp-library'
+    id 'base'
+    id 'com.google.osdetector' version '1.7.3'
+}
+
+def bridgeName = 'ala_vips_dztiler'
+def nativeLibFileName = osdetector.os == 'osx' ? "lib${bridgeName}.dylib" : "lib${bridgeName}.so"
+
+def nativeOs = osdetector.os == 'osx' ? 'macos' : osdetector.os
+def nativeArch = osdetector.arch == 'aarch_64' ? 'aarch64' : osdetector.arch
+def nativeClassifier = "${nativeOs}-${nativeArch}"
+
+def nativeBridgeBuildType = providers.gradleProperty('nativeBridgeBuildType').orElse('debug').get().trim().toLowerCase()
+if (!(nativeBridgeBuildType in ['debug', 'release'])) {
+    throw new GradleException("Invalid -PnativeBridgeBuildType='${nativeBridgeBuildType}'. Supported values: debug, release")
+}
+
+def nativeBridgeImplementation = providers.gradleProperty('nativeBridgeImplementation').orElse('c').get().trim().toLowerCase()
+if (!(nativeBridgeImplementation in ['c', 'rust'])) {
+    throw new GradleException("Invalid -PnativeBridgeImplementation='${nativeBridgeImplementation}'. Supported values: c, rust")
+}
+
+def cargoProfileDir = nativeBridgeBuildType == 'release' ? 'release' : 'debug'
+def cargoProfileArgs = nativeBridgeBuildType == 'release' ? ['--release'] : []
+
+def rustTargetTriple = (nativeOs == 'linux' && nativeArch == 'x86_64') ? 'x86_64-unknown-linux-gnu' :
+        (nativeOs == 'linux' && nativeArch == 'aarch64') ? 'aarch64-unknown-linux-gnu' :
+                (nativeOs == 'macos' && nativeArch == 'x86_64') ? 'x86_64-apple-darwin' :
+                        (nativeOs == 'macos' && nativeArch == 'aarch64') ? 'aarch64-apple-darwin' : null
+
+if (rustTargetTriple == null) {
+    throw new GradleException("Unsupported host for native Rust bridge build: ${nativeClassifier}")
+}
+
+def cargoTargetDir = layout.buildDirectory.dir('cargo-target')
+def cargoLibFile = cargoTargetDir.map { it.file("${rustTargetTriple}/${cargoProfileDir}/${nativeLibFileName}") }
+
+tasks.register('cargoBuildNativeBridge', Exec) {
+    group = 'build'
+    description = "Builds the Rust native dz tiler bridge with Cargo (buildType=${nativeBridgeBuildType})."
+
+    workingDir = projectDir
+    environment 'CARGO_TARGET_DIR', cargoTargetDir.get().asFile.absolutePath
+    commandLine(['cargo', 'build', '--lib', '--target', rustTargetTriple] + cargoProfileArgs)
+
+    inputs.files(
+            file('Cargo.toml'),
+            file('build.rs'),
+            fileTree(dir: 'src', include: ['**/*.rs']),
+            fileTree(dir: 'src/main/c', include: ['**/*.c', '**/*.h']),
+            fileTree(dir: 'src/main/cpp', include: ['**/*.cpp'])
+    )
+    outputs.file(cargoLibFile)
+}
+
+def linkBuildTypeToken = nativeBridgeBuildType.capitalize()
+
+// Define pkg-config as a lazy provider (runs once, results cached)
+def pkgConfigCFlagsProvider = providers.exec {
+    commandLine 'pkg-config', '--cflags', 'vips', 'glib-2.0', 'gobject-2.0'
+}.standardOutput.asText.map { it.trim().split(/\s+/).findAll { !it.isEmpty() } }
+
+def pkgConfigLibsProvider = providers.exec {
+    commandLine 'pkg-config', '--libs', 'vips', 'glib-2.0', 'gobject-2.0'
+}.standardOutput.asText.map { it.trim().split(/\s+/).findAll { !it.isEmpty() } }
+
+
+library {
+    baseName = bridgeName
+    linkage = [Linkage.SHARED]
+
+    targetMachines = [
+            machines.linux.x86_64,
+            machines.linux.architecture('aarch64'),
+            machines.macOS.x86_64,
+            machines.macOS.architecture('aarch64')
+    ]
+
+    source.from(file('src/main/cpp'))
+    privateHeaders.from(file('src/main/c'))
+
+    binaries.configureEach { binary ->
+        // Access the names via the family/architecture identity
+        def machineOs = targetMachine.operatingSystemFamily.name
+        def machineArch = targetMachine.architecture.name
+
+        // targetMachine arch typically uses 'x86-64' (with a dash)
+        // while osdetector uses 'x86_64' (with underscore)
+        def normalizedArch = (machineArch == 'x86-64') ? 'x86_64' : machineArch
+
+        def isHost = (machineOs == nativeOs && normalizedArch == nativeArch)
+
+        if (!isHost) {
+            // Modern C++ plugin way to 'skip' this variant
+            binary.compileTask.get().enabled = false
+            binary.linkTask.get().enabled = false
+            return
+        }
+
+        // 1. Add compiler arguments directly to the binary
+        binary.compileTask.get().compilerArgs.addAll(['-std=c11', '-O2', '-fPIC', '-x', 'c'])
+
+        // Use the provider for pkg-config flags
+        binary.compileTask.get().compilerArgs.addAll(pkgConfigCFlagsProvider)
+
+        // 2. Add linker arguments directly to the binary
+        binary.linkTask.get().linkerArgs.addAll(pkgConfigLibsProvider)
+    }
+}
+
+def hostLinkTaskName = (nativeOs == 'linux' && nativeArch == 'x86_64') ? "link${linkBuildTypeToken}LinuxX86-64" :
+        (nativeOs == 'linux' && nativeArch == 'aarch64') ? "link${linkBuildTypeToken}LinuxAarch64" :
+        (nativeOs == 'macos' && nativeArch == 'x86_64') ? "link${linkBuildTypeToken}MacosX86-64" :
+        (nativeOs == 'macos' && nativeArch == 'aarch64') ? "link${linkBuildTypeToken}MacosAarch64" : null
+
+tasks.register('stageNativeBridge', Copy) {
+    group = 'build'
+    description = "Stages the selected native bridge implementation (implementation=${nativeBridgeImplementation}, buildType=${nativeBridgeBuildType})."
+
+    if (nativeBridgeImplementation == 'rust') {
+        dependsOn tasks.named('cargoBuildNativeBridge')
+        from(cargoLibFile)
+    } else {
+        if (hostLinkTaskName != null) {
+            if (!tasks.names.contains(hostLinkTaskName)) {
+                throw new GradleException("Expected task '${hostLinkTaskName}' was not found for host ${nativeClassifier} (buildType=${nativeBridgeBuildType})")
+            }
+            dependsOn tasks.named(hostLinkTaskName)
+            from(tasks.named(hostLinkTaskName).flatMap { it.linkedFile })
+        }
+    }
+
+    into layout.buildDirectory.dir("native/${nativeClassifier}")
+}
+
+tasks.register('stageNativeBridgeRust', Copy) {
+    group = 'build'
+    description = "Stages the Rust-built native bridge with the expected folder structure (buildType=${nativeBridgeBuildType}, experimental)."
+
+    dependsOn tasks.named('cargoBuildNativeBridge')
+    from(cargoLibFile)
+
+    into layout.buildDirectory.dir("native/${nativeClassifier}")
+}

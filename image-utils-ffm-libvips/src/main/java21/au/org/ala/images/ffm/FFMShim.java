@@ -11,6 +11,9 @@ public class FFMShim {
     }
 
     public static String getString(MemorySegment segment, long offset) {
+        if (segment == null || segment.address() == 0 || segment.byteSize() == 0) {
+            return "";
+        }
         return segment.getUtf8String(offset);
     }
 

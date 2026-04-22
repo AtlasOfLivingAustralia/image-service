@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -219,5 +220,153 @@ public class ProcessCommandExecutor implements CommandExecutor {
         res.stdout = out.toString();
         res.stderr = err.toString();
         return res;
+    }
+
+    @Override
+    public PipelineResult execPipeline(List<PipelineStage> stages,
+                                       File workingDir,
+                                       InputStream stdinStream,
+                                       long timeoutSeconds,
+                                       OutputStream stdoutStream) {
+        PipelineResult result = new PipelineResult();
+        result.stdout = "";
+        result.stderr = "";
+
+        if (stages == null || stages.isEmpty()) {
+            result.exitCode = -1;
+            result.stderr = "No pipeline stages provided";
+            result.stageExitCodes = Collections.emptyList();
+            return result;
+        }
+
+        List<ProcessBuilder> builders = new ArrayList<>();
+        for (PipelineStage stage : stages) {
+            List<String> command = new ArrayList<>();
+            command.add(stage.cmd);
+            if (stage.args != null) {
+                command.addAll(stage.args);
+            }
+            ProcessBuilder pb = new ProcessBuilder(command);
+            if (workingDir != null) {
+                pb.directory(workingDir);
+            }
+            pb.redirectErrorStream(false);
+            builders.add(pb);
+        }
+
+        List<Process> processes;
+        try {
+            processes = ProcessBuilder.startPipeline(builders);
+        } catch (IOException e) {
+            result.exitCode = -1;
+            result.stderr = "Failed to start pipeline: " + e.getMessage();
+            result.stageExitCodes = Collections.emptyList();
+            return result;
+        }
+
+        ExecutorService pool = Executors.newFixedThreadPool(stages.size() + 2);
+        List<Future<String>> stderrTasks = new ArrayList<>();
+        for (Process process : processes) {
+            stderrTasks.add(pool.submit(() -> {
+                try {
+                    return IOUtils.toString(process.getErrorStream(), Charset.defaultCharset());
+                } catch (IOException e) {
+                    log.error("Error reading process error stream", e);
+                    return "";
+                }
+            }));
+        }
+
+        Process first = processes.get(0);
+        Process last = processes.get(processes.size() - 1);
+        StringBuilder stdoutCapture = new StringBuilder();
+
+        Future<?> stdinTask = pool.submit(() -> {
+            try (OutputStream processStdin = first.getOutputStream()) {
+                if (stdinStream != null) {
+                    IOUtils.copy(stdinStream, processStdin);
+                }
+            } catch (IOException e) {
+                log.debug("Error writing pipeline stdin: {}", e.getMessage());
+            }
+        });
+
+        Future<?> stdoutTask = pool.submit(() -> {
+            try (InputStream processStdout = last.getInputStream()) {
+                if (stdoutStream != null) {
+                    IOUtils.copy(processStdout, stdoutStream);
+                } else {
+                    stdoutCapture.append(IOUtils.toString(processStdout, Charset.defaultCharset()));
+                }
+            } catch (IOException e) {
+                log.error("Error reading pipeline stdout", e);
+            }
+        });
+
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        List<Integer> stageExitCodes = new ArrayList<>();
+
+        try {
+            for (Process process : processes) {
+                long remainingNanos = deadlineNanos - System.nanoTime();
+                if (remainingNanos <= 0 || !process.waitFor(remainingNanos, TimeUnit.NANOSECONDS)) {
+                    destroyProcesses(processes);
+                    stdinTask.cancel(true);
+                    stdoutTask.cancel(true);
+                    stderrTasks.forEach(task -> task.cancel(true));
+                    result.exitCode = -1;
+                    result.stderr = "Timed out after " + timeoutSeconds + "s";
+                    result.stdout = stdoutCapture.toString();
+                    result.stageExitCodes = stageExitCodes;
+                    return result;
+                }
+                stageExitCodes.add(process.exitValue());
+            }
+
+            stdinTask.get(1, TimeUnit.SECONDS);
+            stdoutTask.get(1, TimeUnit.SECONDS);
+
+            StringBuilder mergedErr = new StringBuilder();
+            int failedStage = -1;
+            for (int i = 0; i < stderrTasks.size(); i++) {
+                String stageErr = stderrTasks.get(i).get(1, TimeUnit.SECONDS);
+                if (stageErr != null && !stageErr.isEmpty()) {
+                    if (mergedErr.length() > 0) {
+                        mergedErr.append(" | ");
+                    }
+                    mergedErr.append("stage ").append(i).append(": ").append(stageErr);
+                }
+                if (failedStage == -1 && i < stageExitCodes.size() && stageExitCodes.get(i) != 0) {
+                    failedStage = i;
+                }
+            }
+
+            result.failedStageIndex = failedStage;
+            result.stageExitCodes = stageExitCodes;
+            result.exitCode = failedStage >= 0 ? stageExitCodes.get(failedStage) : 0;
+            result.stdout = stdoutCapture.toString();
+            result.stderr = mergedErr.toString();
+            return result;
+        } catch (Exception e) {
+            destroyProcesses(processes);
+            result.exitCode = -1;
+            result.stderr = "Pipeline execution failed: " + e.getMessage();
+            result.stdout = stdoutCapture.toString();
+            result.stageExitCodes = stageExitCodes;
+            return result;
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private void destroyProcesses(List<Process> processes) {
+        for (Process process : processes) {
+            try {
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                }
+            } catch (Exception ignored) {
+            }
+        }
     }
 }

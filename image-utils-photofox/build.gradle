@@ -37,7 +37,7 @@ dependencies {
     testImplementation testFixtures(project(':image-utils'))
 
     // The photofox vips-ffm library
-    implementation 'app.photofox.vips-ffm:vips-ffm-core:1.9.5'
+    implementation 'app.photofox.vips-ffm:vips-ffm-core:1.9.6'
 
     // Testing
     testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
@@ -56,6 +56,20 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    maxHeapSize = "2048m"
+    minHeapSize = "512m"
+
+    def runBenchmarks = providers.gradleProperty('runBenchmarks')
+            .orElse(providers.systemProperty('runBenchmarks'))
+            .map { it.toBoolean() }
+            .orElse(false)
+
+    if (!runBenchmarks.get()) {
+        filter {
+            excludeTestsMatching '*Benchmark*'
+        }
+    }
+
     jvmArgs = [
 //        '--enable-preview',
         '--enable-native-access=ALL-UNNAMED',

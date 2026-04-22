@@ -226,18 +226,12 @@ public class OnDemandImageTiler implements IOnDemandImageTiler {
         }
 
         // Create output tile with proper format
-        BufferedImage destTile = createDestTile();
+        BufferedImage destTile = createDestTile(targetWidth, targetHeight);
         Graphics g = GRAPHICS_ENV.createGraphics(destTile);
 
         try {
-            // Fill background for JPEG format
-            if (tileFormat == TileFormat.JPEG) {
-                g.setColor(tileBackgroundColor);
-                g.fillRect(0, 0, tileSize, tileSize);
-            }
-
             // Draw the tile content
-            g.drawImage(resized, 0, tileSize - targetHeight, null);
+            g.drawImage(resized, 0, 0, null);
 
         } finally {
             g.dispose();
@@ -247,11 +241,11 @@ public class OnDemandImageTiler implements IOnDemandImageTiler {
         return destTile;
     }
 
-    private BufferedImage createDestTile() {
+    private BufferedImage createDestTile(int width, int height) {
         if (tileFormat == TileFormat.PNG) {
-            return new BufferedImage(tileSize, tileSize, BufferedImage.TYPE_4BYTE_ABGR);
+            return new BufferedImage(width, height, BufferedImage.TYPE_4BYTE_ABGR);
         } else {
-            return new BufferedImage(tileSize, tileSize, BufferedImage.TYPE_3BYTE_BGR);
+            return new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
         }
     }
 

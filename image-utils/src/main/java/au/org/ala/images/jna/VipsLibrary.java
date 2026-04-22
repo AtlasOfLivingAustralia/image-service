@@ -86,6 +86,18 @@ public interface VipsLibrary extends Library {
     void vips_error_clear();
 
     /**
+     * Set libvips worker thread concurrency.
+     * @param concurrency number of worker threads (0 lets libvips auto-select)
+     */
+    void vips_concurrency_set(int concurrency);
+
+    /**
+     * Get current libvips worker thread concurrency.
+     * @return configured worker thread count
+     */
+    int vips_concurrency_get();
+
+    /**
      * Load an image from a buffer in memory.
      * @param buf pointer to image data
      * @param len length of image data
@@ -264,6 +276,19 @@ public interface VipsLibrary extends Library {
      * @return 0 on success
      */
     int vips_resize(Pointer input, PointerByReference out, double scale, Object... varargs);
+
+    /**
+     * Copy an image (general copy operation; supports optional GObject properties via varargs).
+     */
+    int vips_copy(Pointer input, PointerByReference out, Object... varargs);
+
+    /**
+     * Force a lazy VipsImage pipeline to be evaluated and held entirely in memory.
+     * This is the correct API for eager materialization — use instead of vips_copy(memory=true).
+     * Returns a new VipsImage that owns an in-memory pixel buffer, or null on error.
+     * Available since libvips 8.x as vips_image_copy_memory().
+     */
+    Pointer vips_image_copy_memory(Pointer image);
 
     /**
      * Free memory allocated by VIPS (e.g., for buffers).

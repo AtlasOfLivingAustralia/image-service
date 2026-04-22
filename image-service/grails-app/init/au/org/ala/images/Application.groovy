@@ -4,6 +4,7 @@ import au.org.ala.images.config.ImageOptimisationConfig
 import au.org.ala.images.factory.ImageLibraryFactory
 import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.iiif.JavaIiifImageProcessor
+import au.org.ala.images.jna.NativeDzTilerBridgeLoader
 import au.org.ala.images.optimisation.CommandExecutor
 import au.org.ala.images.optimisation.ProcessCommandExecutor
 import au.org.ala.images.spring.SimpleAsyncTaskExecutor
@@ -59,6 +60,15 @@ class Application extends GrailsAutoConfiguration {
 
     @Value('${images.preferPureJavaOperations:false}')
     boolean preferPureJavaOperations
+
+    @Value('${images.nativeDzTiler.jna.enabled:false}')
+    boolean nativeDzTilerJnaEnabled
+
+    @Value('${images.nativeDzTiler.ffm.enabled:false}')
+    boolean nativeDzTilerFfmEnabled
+
+    @Value('${images.nativeDzTiler.bridgeLibraryPath:}')
+    String nativeDzTilerBridgeLibraryPath
 
     @Value('${tiling.tiler.version:V4}')
     TilerVersion tilerVersion
@@ -121,7 +131,7 @@ class Application extends GrailsAutoConfiguration {
     @ConditionalOnProperty(name = "images.useStreamingThumbnailer", havingValue = "true")
     IImageThumbnailer streamingImageThumbnailer(CommandExecutor commandExecutor, @Qualifier("fallbackThumbnailer") IImageThumbnailer fallbackThumbnailer, List<ImageLibraryFactory> availableFactories) {
         IImageThumbnailer current = fallbackThumbnailer
-        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        Map<String, String> commands = buildLibraryCommandMap()
         // Build up from lowest priority
         for (ImageLibraryFactory factory : availableFactories.reverse()) {
             IImageThumbnailer thumb = factory.createThumbnailer(commandExecutor, commands, current)
@@ -183,6 +193,11 @@ class Application extends GrailsAutoConfiguration {
         log.info("Initialising ImageIO settings...")
         ImageIO.scanForPlugins()
         ImageIO.setUseCache(false)
+
+        if (nativeDzTilerBridgeLibraryPath) {
+            System.setProperty(NativeDzTilerBridgeLoader.BRIDGE_LIB_PATH_PROPERTY, nativeDzTilerBridgeLibraryPath)
+            log.info("Configured native dz tiler bridge library path: {}", nativeDzTilerBridgeLibraryPath)
+        }
     }
 
     @Bean
@@ -225,7 +240,7 @@ class Application extends GrailsAutoConfiguration {
     @ConditionalOnProperty(name = "images.useStreamingTiler", havingValue = "true")
     IImageTiler streamingImageTiler(CommandExecutor commandExecutor, ImageTilerConfig imageTilerConfig, IImageTiler fallbackTiler, List<ImageLibraryFactory> availableFactories) {
         IImageTiler current = fallbackTiler
-        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        Map<String, String> commands = buildLibraryCommandMap()
         for (ImageLibraryFactory factory : availableFactories.reverse()) {
             IImageTiler tiler = factory.createTiler(commandExecutor, imageTilerConfig, commands, current)
             if (tiler != null) {
@@ -244,7 +259,7 @@ class Application extends GrailsAutoConfiguration {
     @Bean("onDemandImageTiler")
     IOnDemandImageTiler onDemandImageTiler(CommandExecutor commandExecutor, ImageTilerConfig config, List<ImageLibraryFactory> availableFactories) {
         IOnDemandImageTiler current = new OnDemandImageTiler(config)
-        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        Map<String, String> commands = buildLibraryCommandMap()
         for (ImageLibraryFactory factory : availableFactories.reverse()) {
             IOnDemandImageTiler tiler = factory.createOnDemandTiler(commandExecutor, config, commands, current)
             if (tiler != null) {
@@ -258,7 +273,7 @@ class Application extends GrailsAutoConfiguration {
     @ConditionalOnProperty(name = "images.useStreamingIiifProcessor", havingValue = "true", matchIfMissing = true)
     IiifImageProcessor iiifImageProcessor(CommandExecutor commandExecutor, List<ImageLibraryFactory> availableFactories) {
         IiifImageProcessor current = new JavaIiifImageProcessor()
-        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        Map<String, String> commands = buildLibraryCommandMap()
         for (ImageLibraryFactory factory : availableFactories.reverse()) {
             IiifImageProcessor proc = factory.createIiifProcessor(commandExecutor, commands, current)
             if (proc != null) {
@@ -277,7 +292,7 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     List<ImageLibraryFactory> availableFactories() {
         ServiceLoader<ImageLibraryFactory> loader = ServiceLoader.load(ImageLibraryFactory)
-        Map<String, String> commands = [vips: vipsCommand, magick: magickCommand, convert: magickCommand]
+        Map<String, String> commands = buildLibraryCommandMap()
         List<ImageLibraryFactory> factories = loader.toList().findAll { it.isAvailable(commands) }.sort { -it.priority }
         if (preferPureJavaOperations) {
             factories = factories.findAll { it.priority == 0 }
@@ -306,5 +321,15 @@ class Application extends GrailsAutoConfiguration {
         executor.waitForTasksToCompleteOnShutdown = true
         executor.awaitTerminationSeconds = 10
         return executor
+    }
+
+    private Map<String, String> buildLibraryCommandMap() {
+        return [
+            vips                  : vipsCommand,
+            magick                : magickCommand,
+            convert               : magickCommand,
+            nativeDzTilerJnaEnabled: Boolean.toString(nativeDzTilerJnaEnabled),
+            nativeDzTilerFfmEnabled: Boolean.toString(nativeDzTilerFfmEnabled)
+        ]
     }
 }

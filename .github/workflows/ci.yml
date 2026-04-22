@@ -19,8 +19,69 @@ env:
   TRAVIS_DEPLOY_PASSWORD: ${{ secrets.TRAVIS_DEPLOY_PASSWORD }}
 
 jobs:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Native DZ tiler bridge – compiled per platform
+  #    Produces one shared library per runner, uploaded as an artifact so the
+  #    Java build can assemble a fat JAR containing all three.
+  # ──────────────────────────────────────────────────────────────────────────
+  native-bridge:
+    name: Native bridge (${{ matrix.platform.classifier }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { runs-on: ubuntu-24.04,     classifier: linux-x86_64  }
+          - { runs-on: ubuntu-24.04-arm, classifier: linux-aarch64 }
+          - { runs-on: macos-15,         classifier: macos-aarch64 }
+    runs-on: ${{ matrix.platform.runs-on }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install libvips (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev
+
+      - name: Install libvips (macOS)
+        if: runner.os == 'macOS'
+        run: brew install vips
+
+      - name: Compile native bridge
+        run: ./gradlew :image-utils-native-bridge:stageNativeBridge
+
+      # Stage with classifier directory to avoid lib filename collisions when
+      # artifacts are merged in the downstream download step.
+      - name: Prepare native artifact layout
+        run: |
+          mkdir -p native-artifact/${{ matrix.platform.classifier }}
+          cp -f image-utils-native-bridge/build/native/${{ matrix.platform.classifier }}/* native-artifact/${{ matrix.platform.classifier }}/
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.platform.classifier }}
+          path: native-artifact/
+          if-no-files-found: error
+          retention-days: 3
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. image-utils Java build
+  #    Downloads all native artifacts, assembles a fat JAR containing native
+  #    libs for every target platform, then runs tests and publishes.
+  # ──────────────────────────────────────────────────────────────────────────
   image-utils-build:
     name: image-utils (JDK 11)
+    needs: [native-bridge]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -33,15 +94,34 @@ jobs:
           cache: 'gradle'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
+
+      # Download all native bridge artifacts in one go.
+      # pattern matches artifact names, not filesystem paths.
+      - name: Download all native binaries
+        uses: actions/download-artifact@v8
+        with:
+          path: image-utils/build/native-prebuilt/
+          pattern: native-*
+          merge-multiple: true
+
+      # Skip the local native compile and bundle all
+      # three pre-built libs via the nativeDzBridgePrebuiltDir property.
       - name: Install libvips
         run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
       - name: Build and Test image-utils
-        run: ./gradlew :image-utils:build
+        run: |
+          ./gradlew :image-utils:build \
+            -PskipNativeDzBridgeBuild=true \
+            -PnativeDzBridgePrebuiltDir="${{ github.workspace }}/image-utils/build/native-prebuilt"
         env:
           GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
+
       - name: Publish image-utils (on push)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
-        run: ./gradlew :image-utils:publish
+        run: |
+          ./gradlew :image-utils:publish \
+            -PskipNativeDzBridgeBuild=true \
+            -PnativeDzBridgePrebuiltDir="${{ github.workspace }}/image-utils/build/native-prebuilt"
         env:
           GRADLE_OPTS: -Dgrails.env=production
       - name: Publish Test Report
@@ -50,6 +130,9 @@ jobs:
         with:
           report_paths: '**/build/test-results/**/*.xml'
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. image-service Grails build
+  # ──────────────────────────────────────────────────────────────────────────
   image-service-build:
     name: image-service (JDK 21)
     needs: [image-utils-build]
@@ -90,7 +173,7 @@ jobs:
       - name: Build and Test
         run: ./gradlew :image-service:clean :image-service:build
         env:
-          GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }} # Added Grails env flag
+          GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
       - name: Publish image-service (on push)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
         run: ./gradlew :image-service:publish
@@ -105,6 +188,9 @@ jobs:
         with:
           report_paths: '**/build/test-results/**/*.xml'
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. FFM libraries (JDK 25, nested Gradle builds)
+  # ──────────────────────────────────────────────────────────────────────────
   ffm-libs-build:
     name: FFM Libraries (JDK 25)
     needs: [image-utils-build]
