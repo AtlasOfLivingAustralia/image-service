@@ -40,7 +40,12 @@ class SearchService implements MetricsSupport {
     }
 
     QueryResults<Image> findImagesByKeyword(String keyword, GrailsParameterMap params) {
-        def imageKeywords = ImageKeyword.findAllByKeyword(keyword, [max: params.max?:100,  offset: params.offset?:0])
+        def imageKeywords = ImageKeyword.findAllByKeyword(keyword, [fetch: [image: 'join'], max: params.max?:100,  offset: params.offset?:0])
+//        def imageIds = ImageKeyword.executeQuery(
+//                "select ik.image.id from ImageKeyword ik where ik.keyword = :keyword",
+//                [keyword: keyword],
+//                [max: params.max ?: 100, offset: params.offset ?: 0]
+//        )
         def queryResults = new QueryResults<Image>()
         queryResults.list = []
         if (imageKeywords){
@@ -48,6 +53,7 @@ class SearchService implements MetricsSupport {
                 queryResults.list << imageKeyWord.image
             }
         }
+//        queryResults.list = findImagesByIds(imageIds)
         queryResults.totalCount = queryResults.list.size()
         queryResults
     }
@@ -57,13 +63,29 @@ class SearchService implements MetricsSupport {
         def queryResults = new QueryResults<Image>()
         queryResults.list = []
         if (tag){
-            def imagetags = ImageTag.findAllByTag(tag, [max: params.max?:100,  offset: params.offset?:0])
+            def imagetags = ImageTag.findAllByTag(tag, [fetch: [image: 'join'], max: params.max?:100,  offset: params.offset?:0])
             imagetags.each { imagetag ->
                 queryResults.list << imagetag.image
             }
+//            def imageIds = ImageTag.executeQuery(
+//                    "select it.image.id from ImageTag it where it.tag = :tag",
+//                    [tag: tag],
+//                    [max: params.max ?: 100, offset: params.offset ?: 0]
+//            )
+//            queryResults.list = findImagesByIds(imageIds)
         }
         queryResults.totalCount = queryResults.list.size()
         queryResults
+    }
+
+    private List<Image> findImagesByIds(List imageIds) {
+        if (!imageIds) {
+            return []
+        }
+
+        List<Long> orderedImageIds = imageIds.collect { (it as Number).longValue() }
+        def imagesById = Image.findAllByIdInList(orderedImageIds).collectEntries { [(it.id): it] }
+        orderedImageIds.collect { imagesById[it] }.findAll { it != null }
     }
 
     def findImagesByOriginalFilename(String filename, GrailsParameterMap params) {

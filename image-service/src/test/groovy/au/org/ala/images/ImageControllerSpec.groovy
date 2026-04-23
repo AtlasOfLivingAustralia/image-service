@@ -331,6 +331,31 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         json.imageIdentifier == image.imageIdentifier
     }
 
+    def "test invalid jsonp callback falls back to json"() {
+        setup:
+        controller.imageStoreService = Mock(ImageStoreService)
+        controller.analyticsService = Mock(AnalyticsService)
+        Image image = new Image(dataResourceUid: 'dr-1234', imageIdentifier: UUID.randomUUID().toString(), contentSHA1Hash: sha1ContentHash, fileSize: fileContent.length, mimeType: 'image/jpeg', storageLocation: storageLocation, dateUploaded: dateUploaded).save()
+        ImageThumbnail thumbnail = new ImageThumbnail(image: image, width: 200, height: 200, isSquare: true, name: 'thumbnail_square').save()
+
+        request.addHeader('Accept', 'text/json')
+        request.setAttribute(GrailsApplicationAttributes.RESPONSE_FORMAT, 'json')
+        request.addHeader('User-Agent', userAgent)
+        params.id = image.imageIdentifier
+        params.callback = 'alert(1)'
+
+        request.userPrincipal = new AttributePrincipalImpl('1234', [userid: '1234', email: 'test@example.org'])
+        request.addUserRole('ROLE_USER')
+
+        when:
+        controller.details()
+
+        then:
+        response.contentType == 'application/json;charset=UTF-8'
+        !response.contentAsString.startsWith('alert(1)(')
+        response.json.imageIdentifier == image.imageIdentifier
+    }
+
     def "test json details"() {
         setup:
         controller.imageStoreService = Mock(ImageStoreService)

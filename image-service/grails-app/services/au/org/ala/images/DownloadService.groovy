@@ -197,12 +197,29 @@ class DownloadService {
         createByteSourceFromUrl(url.toURI(), extension, imageUrl)
     }
 
+    private RetryPolicy<Object> getRetryPolicy() {
+        return RetryPolicy.builder()
+            .handle(ServerErrorException.class)
+            .handle(IOException.class) // Also retry on IO exceptions during request/download
+            .withMaxRetries(maxHttpRetryAttempts)
+            .withBackoff(
+                    Duration.ofMillis(httpRetryInitialDelayMs),
+                    Duration.ofMillis(httpRetryMaxDelayMs)
+            )
+            .onRetry({ e ->
+                log.info("Retrying after error (attempt ${e.attemptCount}/${maxHttpRetryAttempts}): ${e.lastException?.message}")
+            })
+            .build()
+    }
+
     /**
      * Create a ByteSource from a URL with redirect handling and retry logic
      */
     CloseableByteSource createByteSourceFromUrl(URI uri, String extension, String imageUrl) {
-        def response = createHttpResponse(uri, imageUrl)
-        return createByteSourceFromHttpResponse(response, extension, imageUrl)
+        return Failsafe.with(getRetryPolicy()).get(() -> {
+            def response = createHttpResponse(uri, imageUrl)
+            return createByteSourceFromHttpResponse(response, extension, imageUrl)
+        } as CheckedSupplier<CloseableByteSource>)
     }
 
     /**
@@ -216,52 +233,38 @@ class DownloadService {
 
     /**
      * Create a ByteSource from an HttpResponse. The byte source is guaranteed to be reusable.
-     * Includes retry logic for 5xx errors and proper error handling for 4xx errors.
+     * Includes logic for 5xx errors and proper error handling for 4xx errors.
+     * Note: This method itself does not retry the request; use createByteSourceFromUrl for automatic retries.
      */
     CloseableByteSource createByteSourceFromHttpResponse(HttpResponse response, String extension, String imageUrl) {
-        // Build retry policy for 5xx errors with exponential backoff
-        def retryPolicy = RetryPolicy.builder()
-            .handle(ServerErrorException.class)
-            .withMaxRetries(maxHttpRetryAttempts)
-            .withBackoff(
-                    Duration.ofMillis(httpRetryInitialDelayMs),
-                    Duration.ofMillis(httpRetryMaxDelayMs)
-            )
-            .onRetry({ e ->
-                log.info("Retrying after server error (attempt ${e.attemptCount}/${maxHttpRetryAttempts}): ${e.lastException?.message}")
-            })
-            .build()
+        int statusCode = response.getStatusCode()
 
-        return Failsafe.with(retryPolicy).get(() -> {
-            int statusCode = response.getStatusCode()
-
-            if (statusCode >= 400 && statusCode < 500) {
-                // Client error - don't retry
-                String errorMessage = "HTTP ${statusCode} error for URL: ${imageUrl}"
-                try {
-                    def errorStream = response.getErrorStream()
-                    if (errorStream) {
-                        String errorBody = errorStream.text
-                        if (errorBody && errorBody.length() < 500) {
-                            errorMessage += " - ${errorBody}"
-                        }
+        if (statusCode >= 400 && statusCode < 500) {
+            // Client error - don't retry
+            String errorMessage = "HTTP ${statusCode} error for URL: ${imageUrl}"
+            try {
+                def errorStream = response.getErrorStream()
+                if (errorStream) {
+                    String errorBody = errorStream.text
+                    if (errorBody && errorBody.length() < 500) {
+                        errorMessage += " - ${errorBody}"
                     }
-                } catch (Exception ignored) {
-                    // Ignore errors reading error stream
                 }
-                throw new ClientErrorException(errorMessage, imageUrl, statusCode)
-            } else if (statusCode >= 500) {
-                // Server error - will be retried by retry policy
-                String errorMessage = "HTTP ${statusCode} server error for URL: ${imageUrl}"
-                throw new ServerErrorException(errorMessage, imageUrl, statusCode)
-            } else if (statusCode < 200 || statusCode >= 300) {
-                // Other non-success status
-                throw new HttpImageUploadException("HTTP ${statusCode} for URL: ${imageUrl}", imageUrl, statusCode)
+            } catch (Exception ignored) {
+                // Ignore errors reading error stream
             }
+            throw new ClientErrorException(errorMessage, imageUrl, statusCode)
+        } else if (statusCode >= 500) {
+            // Server error - will be retried by retry policy if wrapped
+            String errorMessage = "HTTP ${statusCode} server error for URL: ${imageUrl}"
+            throw new ServerErrorException(errorMessage, imageUrl, statusCode)
+        } else if (statusCode < 200 || statusCode >= 300) {
+            // Other non-success status
+            throw new HttpImageUploadException("HTTP ${statusCode} for URL: ${imageUrl}", imageUrl, statusCode)
+        }
 
-            // Status is OK, proceed with downloading
-            return createByteSourceFromInputStream(response, extension, imageUrl)
-        } as CheckedSupplier<CloseableByteSource>)
+        // Status is OK, proceed with downloading
+        return createByteSourceFromInputStream(response, extension, imageUrl)
     }
 
     CloseableByteSource createByteSourceFromInputStream(HttpResponse response, String extension, String imageUrl) {

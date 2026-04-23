@@ -29,7 +29,7 @@
         <ul class="facets list-unstyled">
             <g:each in="${facet.value}" var="facetCount">
                 <li>
-                    <a href="${request.getRequestURL().toString()}${raw(request.getQueryString() ? '?' + request.getQueryString() : '')}${raw(request.getQueryString() ? '&' : '?' )}fq=${facet.key}:${facetCount.key}">
+                    <a href="${createLink(action: 'list', params: [q: params.q, fq: (params.list('fq') ?: []) + (facet.key + ':' + facetCount.key)])}">
                         <span class="fa fa-square-o">&nbsp;</span>
                         <span class="facet-item">
                         <g:if test="${facet.key == 'dataResourceUid'}">
@@ -123,7 +123,8 @@
     $("#multipleFacets").on('show.bs.modal', function(e){
         $("#facetContent").html("");
         var facet = $(e.relatedTarget).data('facet');
-        $.ajax("${createLink(controller:'search',action: "facet")}?${raw(request.getQueryString())}${raw(request.getQueryString() ? '&' : '')}facet=" + facet).done(function(content) {
+        var url = "${createLink(controller:'search', action: 'facet', params: [q: params.q, fq: params.fq])}".replace(/&amp;/g, '&');
+        $.ajax(url + (url.indexOf('?') >= 0 ? '&' : '?') + "facet=" + encodeURIComponent(facet)).done(function(content) {
             $("#addButtonDiv").css("display", "block");
             $("#facetContent").html(content);
         });

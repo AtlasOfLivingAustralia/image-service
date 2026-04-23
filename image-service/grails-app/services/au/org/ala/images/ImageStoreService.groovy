@@ -348,6 +348,9 @@ class ImageStoreService implements MetricsSupport {
     }
 
     void storeTileZipInputStream(Image image, String fileName, String contentType, long length, ZipInputStream inputStream) {
+        if (fileName.contains("..") || fileName.startsWith("/") || fileName.startsWith("\\")) {
+            throw new IllegalArgumentException("Potentially malicious filename: ${fileName}")
+        }
         def ops = storageLocationService.getStorageOperationsForImage(image)
         ops.storeTileZipInputStream(image.imageIdentifier, fileName, contentType, length, inputStream)
     }
@@ -664,10 +667,15 @@ class ImageStoreService implements MetricsSupport {
             def tika = new Tika()
             for (FileHeader fh : szf.getFileHeaders()) {
                 if (fh.isDirectory()) continue
+                String fileName = fh.fileName
+                if (fileName.contains("..") || fileName.startsWith("/") || fileName.startsWith("\\")) {
+                    log.warn("Skipping potentially malicious zip entry: ${fileName}")
+                    continue
+                }
                 szf.getInputStream(fh).withStream { stream ->
-                    def contentType = tika.detect(stream, fh.fileName)
+                    def contentType = tika.detect(stream, fileName)
                     def length = fh.uncompressedSize
-                    storeTileZipInputStream(image, fh.fileName, contentType, length, szf.getInputStream(fh))
+                    storeTileZipInputStream(image, fileName, contentType, length, szf.getInputStream(fh))
                 }
             }
 
