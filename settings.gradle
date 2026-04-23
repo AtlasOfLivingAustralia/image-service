@@ -11,6 +11,7 @@ pluginManagement {
 rootProject.name = 'image-project'
 
 include 'image-utils'
+include 'image-utils-native-bridge'
 include 'image-service'
 
 

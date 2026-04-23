@@ -45,6 +45,18 @@ class VipsFfmSpec extends Specification {
         tiler != null || !factory.isAvailable([vips: "vips"])
     }
 
+    def "VipsFfmLibraryFactoryImpl creates IIIF processor when available"() {
+        given:
+        def factory = new VipsFfmLibraryFactoryImpl()
+        def mockExecutor = Mock(CommandExecutor)
+
+        when:
+        def processor = factory.createIiifProcessor(mockExecutor, [vips: "vips"], null)
+
+        then:
+        processor != null || !factory.isAvailable([vips: "vips"])
+    }
+
     def "VipsFfmStreamingImageThumbnailer calculates options correctly"() {
         given:
         def mockFallback = Mock(IImageThumbnailer)

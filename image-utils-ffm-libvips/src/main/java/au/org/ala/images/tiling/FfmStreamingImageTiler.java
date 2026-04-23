@@ -2,29 +2,22 @@ package au.org.ala.images.tiling;
 
 import au.org.ala.images.ffm.InputStreamVipsSourceFFM;
 import au.org.ala.images.ffm.NativeLibraryDetectorFFM;
+import au.org.ala.images.ffm.OutputStreamVipsTargetFFM;
 import au.org.ala.images.ffm.VipsLibraryFFM;
 import com.google.common.io.ByteSink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * FFM-based tiler that uses libvips directly via the Foreign Function & Memory API.
@@ -37,21 +30,38 @@ public class FfmStreamingImageTiler implements IImageTiler {
     private final IImageTiler fallbackTiler;
     private final int tileSize;
     private final ZoomFactorStrategy zoomFactorStrategy;
-    private final Executor ioExecutor;
     private final Executor levelExecutor;
+    private final int vipsConcurrency;
+    private final String encodeSuffix;
+    private final boolean sameThreadExecutor;
 
     public FfmStreamingImageTiler(IImageTiler fallbackTiler, ImageTilerConfig config) {
         this.fallbackTiler = fallbackTiler;
         this.tileSize = config.getTileSize();
-        this.ioExecutor = config.getIoExecutor();
         this.levelExecutor = config.getLevelExecutor();
+        this.vipsConcurrency = config.getVipsConcurrency();
+        this.encodeSuffix = resolveEncodeSuffix(config.getTileFormat());
+        this.sameThreadExecutor = isSameThreadExecutor(this.levelExecutor);
         this.vips = NativeLibraryDetectorFFM.getVipsLibrary();
         this.zoomFactorStrategy = config.getZoomFactorStrategy();
 
         if (vips != null) {
+            applyVipsConcurrency();
             log.info("FfmStreamingImageTiler initialized with native libvips (FFM)");
         } else {
             log.info("FfmStreamingImageTiler: libvips not available, will use fallback");
+        }
+    }
+
+    private void applyVipsConcurrency() {
+        if (vipsConcurrency <= 0) {
+            return;
+        }
+        try {
+            vips.vipsConcurrencySet(vipsConcurrency);
+            log.info("Set libvips concurrency to {} (FFM)", vips.vipsConcurrencyGet());
+        } catch (Throwable e) {
+            log.warn("Failed to set libvips concurrency to {} (FFM)", vipsConcurrency, e);
         }
     }
 
@@ -67,13 +77,16 @@ public class FfmStreamingImageTiler implements IImageTiler {
         }
 
         if (imageInputStream.markSupported()) {
-            imageInputStream.mark(10 * 1024 * 1024); // 10MB mark
+            imageInputStream.mark(10 * 1024 * 1024);
         }
 
         try {
             return tileLevelWithVipsFFM(imageInputStream, tilerSink, level);
         } catch (Exception e) {
             log.error("FFM single-level tiling failed, trying fallback", e);
+            if (fallbackTiler == null) {
+                throw e;
+            }
             if (imageInputStream.markSupported()) {
                 try {
                     imageInputStream.reset();
@@ -85,12 +98,11 @@ public class FfmStreamingImageTiler implements IImageTiler {
         }
     }
 
-    private ImageTilerResults tileLevelWithVipsFFM(InputStream imageInputStream, TilerSink tilerSink, int level) throws IOException, InterruptedException {
+    private ImageTilerResults tileLevelWithVipsFFM(InputStream imageInputStream, TilerSink tilerSink, int level) throws IOException {
         InputStreamVipsSourceFFM vipsSource = null;
         MemorySegment inputImage = null;
-        MemorySegment resizedImage = null;
 
-        try (Arena arena = Arena.ofShared()) {
+        try {
             vipsSource = new InputStreamVipsSourceFFM(vips, imageInputStream);
             inputImage = vips.vipsImageNewFromSource(vipsSource.getSource(), "");
             if (inputImage == null || inputImage.address() == 0) {
@@ -101,105 +113,34 @@ public class FfmStreamingImageTiler implements IImageTiler {
 
             int width = vips.vipsImageGetWidth(inputImage);
             int height = vips.vipsImageGetHeight(inputImage);
+            int[] pyramid = zoomFactorStrategy.getZoomFactors(height, width);
+            int zoomLevels = pyramid.length;
+            int maxLevel = zoomLevels - 1;
 
-            zoomFactorStrategy.getZoomFactors(width, height);
-
-            int maxLevel = (int) Math.ceil(Math.log(Math.max(width, height) / (double) tileSize) / Math.log(2));
-            double scale = Math.pow(0.5, maxLevel - level);
-
-            MemorySegment outPtr = arena.allocate(ValueLayout.ADDRESS);
-            int result = vips.vipsResize(inputImage, outPtr, scale);
-            if (result != 0) {
-                String error = vips.vipsErrorBuffer();
-                vips.vipsErrorClear();
-                throw new IOException("vips_resize failed: " + error);
-            }
-            resizedImage = outPtr.get(ValueLayout.ADDRESS, 0);
-
-            int resizedWidth = vips.vipsImageGetWidth(resizedImage);
-            int resizedHeight = vips.vipsImageGetHeight(resizedImage);
-
-            int cols = (int) Math.ceil(resizedWidth / (double) tileSize);
-            int rows = (int) Math.ceil(resizedHeight / (double) tileSize);
-
-            log.debug("Tiling level {}: {}x{} (scale {}), {}x{} tiles", level, resizedWidth, resizedHeight, scale, cols, rows);
-
-            TilerSink.LevelSink levelSink = tilerSink.getLevelSink(level);
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-            AtomicBoolean errorOccurred = new AtomicBoolean(false);
-
-            for (int x = 0; x < cols; x++) {
-                final int col = x;
-                TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, 0, rows);
-
-                for (int y = 0; y < rows; y++) {
-                    final int row = y;
-                    if (errorOccurred.get()) break;
-
-                    final MemorySegment finalResizedImage = resizedImage;
-                    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                        if (errorOccurred.get()) return;
-
-                        try (Arena threadArena = Arena.ofConfined()) {
-                            int left = col * tileSize;
-                            int top = row * tileSize;
-                            int w = Math.min(tileSize, resizedWidth - left);
-                            int h = Math.min(tileSize, resizedHeight - top);
-
-                            MemorySegment tileOutPtr = threadArena.allocate(ValueLayout.ADDRESS);
-                            int cropResult = vips.vipsCrop(finalResizedImage, tileOutPtr, left, top, w, h);
-                            if (cropResult != 0) {
-                                throw new IOException("vips_crop failed");
-                            }
-                            MemorySegment tileImage = tileOutPtr.get(ValueLayout.ADDRESS, 0);
-
-                            try {
-                                MemorySegment bufPtr = threadArena.allocate(ValueLayout.ADDRESS);
-                                MemorySegment lenPtr = threadArena.allocate(ValueLayout.JAVA_LONG);
-                                int saveResult = vips.vipsImageWriteToBuffer(tileImage, bufPtr, lenPtr, ".png");
-                                if (saveResult != 0) {
-                                    throw new IOException("vips_image_write_to_buffer failed");
-                                }
-
-                                MemorySegment buf = bufPtr.get(ValueLayout.ADDRESS, 0);
-                                long len = lenPtr.get(ValueLayout.JAVA_LONG, 0);
-                                byte[] data = buf.reinterpret(len).toArray(ValueLayout.JAVA_BYTE);
-                                vips.gFree(buf);
-
-                                ByteSink tileSink = columnSink.getTileSink(row);
-                                tileSink.write(data);
-                            } finally {
-                                vips.gObjectUnref(tileImage);
-                            }
-                        } catch (Throwable e) {
-                            log.error("Error generating tile {}/{}", col, row, e);
-                            errorOccurred.set(true);
-                        }
-                    }, levelExecutor);
-                    futures.add(future);
-                }
+            if (level > maxLevel) {
+                log.warn("Requested level {} is higher than maxLevel {}", level, maxLevel);
+                return new ImageTilerResults(true, zoomLevels);
             }
 
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-            if (errorOccurred.get()) {
-                throw new IOException("One or more tiles failed to generate");
-            }
-
-            return new ImageTilerResults(true, maxLevel + 1);
+            generateLevelTiles(inputImage, tilerSink.getLevelSink(level), level, pyramid[level]);
+            return new ImageTilerResults(true, zoomLevels);
 
         } catch (Throwable e) {
-            if (e instanceof IOException) throw (IOException) e;
-            if (e instanceof InterruptedException) throw (InterruptedException) e;
+            if (e instanceof IOException ioException) {
+                throw ioException;
+            }
             throw new IOException("Error tiling image with FFM", e);
         } finally {
             try {
-                if (resizedImage != null && resizedImage.address() != 0) vips.gObjectUnref(resizedImage);
-                if (inputImage != null && inputImage.address() != 0) vips.gObjectUnref(inputImage);
+                if (inputImage != null && inputImage.address() != 0) {
+                    vips.gObjectUnref(inputImage);
+                }
             } catch (Throwable t) {
-                log.warn("Error cleaning up vips images", t);
+                log.warn("Error cleaning up vips image", t);
             }
-            if (vipsSource != null) vipsSource.close();
+            if (vipsSource != null) {
+                vipsSource.close();
+            }
         }
     }
 
@@ -222,6 +163,9 @@ public class FfmStreamingImageTiler implements IImageTiler {
             return tileWithVipsFFM(imageInputStream, tilerSink, minLevel, maxLevel);
         } catch (Exception e) {
             log.error("FFM tiling failed, trying fallback", e);
+            if (fallbackTiler == null) {
+                throw e;
+            }
             if (imageInputStream.markSupported()) {
                 try {
                     imageInputStream.reset();
@@ -236,7 +180,6 @@ public class FfmStreamingImageTiler implements IImageTiler {
     private ImageTilerResults tileWithVipsFFM(InputStream imageInputStream, TilerSink tilerSink, int minLevel, int maxLevel) throws IOException {
         InputStreamVipsSourceFFM vipsSource = null;
         MemorySegment inputImage = null;
-        Path tempOutDir = null;
 
         try {
             vipsSource = new InputStreamVipsSourceFFM(vips, imageInputStream);
@@ -247,68 +190,27 @@ public class FfmStreamingImageTiler implements IImageTiler {
                 throw new IOException("Failed to load image from source with libvips: " + error);
             }
 
-            log.trace("Loaded image from VipsSource, streamed {} bytes", vipsSource.getPosition());
+            int originalWidth = vips.vipsImageGetWidth(inputImage);
+            int originalHeight = vips.vipsImageGetHeight(inputImage);
+            int[] pyramid = zoomFactorStrategy.getZoomFactors(originalHeight, originalWidth);
+            int zoomLevels = pyramid.length;
+            int finalMaxLevel = Math.min(maxLevel, zoomLevels - 1);
 
-            tempOutDir = Files.createTempDirectory("tile-out-ffm-");
-            File tilesBase = tempOutDir.resolve("tiles").toFile();
-
-            int result = vips.vipsDzsave(inputImage, tilesBase.getAbsolutePath(),
-                    "tile-size", tileSize,
-                    "overlap", 0,
-                    "suffix", ".png",
-                    "depth", 1,
-                    "layout", 2);
-            if (result != 0) {
-                String error = vips.vipsErrorBuffer();
-                vips.vipsErrorClear();
-                throw new IOException("vips_dzsave failed: " + error);
+            if (minLevel > finalMaxLevel) {
+                log.debug("tileWithVipsFFM: asked for levels {} to {}, but only {} levels available", minLevel, maxLevel, zoomLevels);
+                return new ImageTilerResults(true, zoomLevels);
             }
 
-            File tilesDir = tilesBase;
-            if (!tilesDir.exists() || !tilesDir.isDirectory()) {
-                // Some versions/layouts might still use _files suffix
-                tilesDir = tempOutDir.resolve("tiles_files").toFile();
+            for (int level = minLevel; level <= finalMaxLevel; level++) {
+                generateLevelTiles(inputImage, tilerSink.getLevelSink(level), level, pyramid[level]);
             }
 
-            if (!tilesDir.exists() || !tilesDir.isDirectory()) {
-                throw new IOException("vips_dzsave did not create expected tiles directory: " + tilesBase.getAbsolutePath() + " or " + tilesDir.getAbsolutePath());
-            }
-
-            int maxZoomLevel = 0;
-            File[] levelDirs = tilesDir.listFiles(File::isDirectory);
-            if (levelDirs != null) {
-                for (File levelDir : levelDirs) {
-                    int level = Integer.parseInt(levelDir.getName());
-                    if (level < minLevel || level > maxLevel) {
-                        continue;
-                    }
-                    maxZoomLevel = Math.max(maxZoomLevel, level);
-
-                    TilerSink.LevelSink levelSink = tilerSink.getLevelSink(level);
-
-                    File[] colDirs = levelDir.listFiles(File::isDirectory);
-                    if (colDirs != null) {
-                        for (File colDir : colDirs) {
-                            int col = Integer.parseInt(colDir.getName());
-                            TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, 0, Integer.MAX_VALUE);
-
-                            File[] rowFiles = colDir.listFiles(File::isFile);
-                            if (rowFiles != null) {
-                                for (File rowFile : rowFiles) {
-                                    int row = Integer.parseInt(rowFile.getName().replace(".png", "").replace(".jpg", ""));
-                                    ByteSink tileSink = columnSink.getTileSink(row);
-                                    com.google.common.io.Files.asByteSource(rowFile).copyTo(tileSink);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return new ImageTilerResults(true, maxZoomLevel + 1);
+            return new ImageTilerResults(true, zoomLevels);
 
         } catch (Throwable e) {
-            if (e instanceof IOException) throw (IOException) e;
+            if (e instanceof IOException ioException) {
+                throw ioException;
+            }
             throw new IOException("Error tiling image with FFM", e);
         } finally {
             if (inputImage != null && inputImage.address() != 0) {
@@ -321,19 +223,193 @@ public class FfmStreamingImageTiler implements IImageTiler {
             if (vipsSource != null) {
                 vipsSource.close();
             }
-            if (tempOutDir != null) {
-                deleteDirectory(tempOutDir);
-            }
         }
     }
 
-    private void deleteDirectory(Path path) {
-        try (Stream<Path> walk = Files.walk(path)) {
-            walk.sorted(Comparator.reverseOrder())
-                .map(Path::toFile)
-                .forEach(File::delete);
-        } catch (IOException e) {
-            log.warn("Failed to delete temp directory: " + path, e);
+    private void generateLevelTiles(MemorySegment inputImage, TilerSink.LevelSink levelSink, int level, int subsample) throws IOException {
+        try (Arena arena = Arena.ofShared()) {
+            double scale = 1.0d / (double) subsample;
+            MemorySegment outPtr = arena.allocate(ValueLayout.ADDRESS);
+            int resizeResult = vips.vipsResize(inputImage, outPtr, scale);
+            if (resizeResult != 0) {
+                String error = vips.vipsErrorBuffer();
+                vips.vipsErrorClear();
+                throw new IOException("vips_resize failed at level " + level + ": " + error);
+            }
+
+            MemorySegment resizedImage = outPtr.get(ValueLayout.ADDRESS, 0);
+            if (resizedImage == null || resizedImage.address() == 0) {
+                throw new IOException("vips_resize returned null image at level " + level);
+            }
+
+            int resizedWidth = vips.vipsImageGetWidth(resizedImage);
+            int resizedHeight = vips.vipsImageGetHeight(resizedImage);
+            int cols = (int) Math.ceil(resizedWidth / (double) tileSize);
+            int rows = (int) Math.ceil(resizedHeight / (double) tileSize);
+            boolean parallelFanOut = shouldUseParallelFanOut(cols, rows);
+
+            if (parallelFanOut) {
+                resizedImage = materializeLevelImage(resizedImage, arena, level);
+                resizedWidth = vips.vipsImageGetWidth(resizedImage);
+                resizedHeight = vips.vipsImageGetHeight(resizedImage);
+            }
+
+            try {
+                final MemorySegment levelImage = resizedImage;
+                final int levelWidth = resizedWidth;
+                final int levelHeight = resizedHeight;
+
+                log.debug("Tiling level {}: {}x{} (subsample {}), {}x{} tiles", level, levelWidth, levelHeight, subsample, cols, rows);
+
+                if (parallelFanOut) {
+                    List<CompletableFuture<Void>> futures = new ArrayList<>(cols * rows);
+                    AtomicBoolean errorOccurred = new AtomicBoolean(false);
+
+                    for (int col = 0; col < cols; col++) {
+                        final int finalCol = col;
+                        TilerSink.ColumnSink columnSink = levelSink.getColumnSink(finalCol, 0, 1);
+
+                        for (int tmsRow = 0; tmsRow < rows; tmsRow++) {
+                            final int finalTmsRow = tmsRow;
+
+                            if (errorOccurred.get()) {
+                                break;
+                            }
+
+                            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                                if (errorOccurred.get()) {
+                                    return;
+                                }
+
+                                try (Arena threadArena = Arena.ofConfined()) {
+                                    generateSingleTile(levelImage, columnSink, level, finalCol, finalTmsRow, levelWidth, levelHeight, threadArena);
+                                } catch (Throwable e) {
+                                    errorOccurred.set(true);
+                                    log.error("Error generating tile level {}/{}/{}", level, finalCol, finalTmsRow, e);
+                                }
+                            }, levelExecutor);
+
+                            futures.add(future);
+                        }
+                    }
+
+                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                    if (errorOccurred.get()) {
+                        throw new IOException("One or more tiles failed to generate at level " + level);
+                    }
+                } else {
+                    for (int col = 0; col < cols; col++) {
+                        TilerSink.ColumnSink columnSink = levelSink.getColumnSink(col, 0, 1);
+                        for (int tmsRow = 0; tmsRow < rows; tmsRow++) {
+                            try (Arena threadArena = Arena.ofConfined()) {
+                                generateSingleTile(levelImage, columnSink, level, col, tmsRow, levelWidth, levelHeight, threadArena);
+                            }
+                        }
+                    }
+                }
+            } finally {
+                vips.gObjectUnref(resizedImage);
+            }
+        } catch (Throwable e) {
+            if (e instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw new IOException("Error generating tiles at level " + level, e);
         }
+    }
+
+    private void generateSingleTile(MemorySegment levelImage, TilerSink.ColumnSink columnSink, int level, int col, int tmsRow,
+                                    int resizedWidth, int resizedHeight, Arena arena) throws Throwable {
+        int left = col * tileSize;
+        int width = Math.min(tileSize, resizedWidth - left);
+
+        int top = Math.max(0, resizedHeight - (tmsRow + 1) * tileSize);
+        int bottom = resizedHeight - tmsRow * tileSize;
+        int height = bottom - top;
+
+        MemorySegment tileOutPtr = arena.allocate(ValueLayout.ADDRESS);
+        int cropResult = vips.vipsCrop(levelImage, tileOutPtr, left, top, width, height);
+        if (cropResult != 0) {
+            String error = vips.vipsErrorBuffer();
+            vips.vipsErrorClear();
+            throw new IOException("vips_crop failed at level " + level + " tile " + col + "/" + tmsRow + ": " + error);
+        }
+
+        MemorySegment tileImage = tileOutPtr.get(ValueLayout.ADDRESS, 0);
+        try {
+            ByteSink tileSink = columnSink.getTileSink(tmsRow);
+            writeTile(tileImage, tileSink, arena);
+        } finally {
+            vips.gObjectUnref(tileImage);
+        }
+    }
+
+    private MemorySegment materializeLevelImage(MemorySegment resizedImage, Arena arena, int level) throws Throwable {
+        // Prefer the dedicated vips_copy_memory() — no varargs, stable across all libvips versions.
+        MemorySegment materialized = vips.vipsCopyMemory(resizedImage);
+        if (materialized != null && materialized.address() != 0) {
+            vips.gObjectUnref(resizedImage);
+            return materialized;
+        }
+
+        // Fallback: force evaluation via a dummy write-to-buffer encode pass.
+        forceEvaluateImage(resizedImage, arena, level);
+        return resizedImage;
+    }
+
+    private void forceEvaluateImage(MemorySegment image, Arena arena, int level) throws IOException {
+        try {
+            MemorySegment bufPtr = arena.allocate(ValueLayout.ADDRESS);
+            MemorySegment lenPtr = arena.allocate(ValueLayout.JAVA_LONG);
+            int saveResult = vips.vipsImageWriteToBuffer(image, bufPtr, lenPtr, encodeSuffix);
+            if (saveResult != 0) {
+                String error = vips.vipsErrorBuffer();
+                vips.vipsErrorClear();
+                throw new IOException("Failed to force level materialization at level " + level + ": " + error);
+            }
+            MemorySegment buf = bufPtr.get(ValueLayout.ADDRESS, 0);
+            vips.gFree(buf);
+        } catch (IOException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new IOException("Failed to force level materialization at level " + level, e);
+        }
+    }
+
+    private void writeTile(MemorySegment tileImage, ByteSink tileSink, Arena arena) throws IOException {
+        try (java.io.OutputStream os = tileSink.openStream();
+             OutputStreamVipsTargetFFM vipsTarget = new OutputStreamVipsTargetFFM(vips, os)) {
+            if (vips.vipsImageWriteToTarget(tileImage, encodeSuffix, vipsTarget.getTarget()) != 0) {
+                String error = vips.vipsErrorBuffer();
+                vips.vipsErrorClear();
+                throw new IOException("vips_image_write_to_target failed: " + error);
+            }
+        } catch (IOException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new IOException("Failed to write tile via target", t);
+        }
+    }
+
+    private boolean shouldUseParallelFanOut(int cols, int rows) {
+        return levelExecutor != null && !sameThreadExecutor && cols * rows > 1;
+    }
+
+    private static boolean isSameThreadExecutor(Executor executor) {
+        if (executor == null) {
+            return true;
+        }
+        AtomicBoolean ranInline = new AtomicBoolean(false);
+        Thread caller = Thread.currentThread();
+        try {
+            executor.execute(() -> ranInline.set(Thread.currentThread() == caller));
+            return ranInline.get();
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    private static String resolveEncodeSuffix(TileFormat tileFormat) {
+        return tileFormat == TileFormat.PNG ? ".png" : ".jpg";
     }
 }

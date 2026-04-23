@@ -325,16 +325,11 @@ public class ImageTiler5 implements IImageTiler {
                         }
                     }
 
-                    BufferedImage destTile = createDestTile();
+                    BufferedImage destTile = createDestTile(tw, th);
                     Graphics g = GRAPHICS_ENV.createGraphics(destTile);
 
-                    if (_tileFormat == TileFormat.JPEG && tile != null) {
-                        g.setColor(_tileBackgroundColor);
-                        g.fillRect(0, 0, _tileSize, _tileSize);
-                    }
-
                     if (tile != null) {
-                        g.drawImage(tile, 0, _tileSize - th, null);
+                        g.drawImage(tile, 0, 0, null);
                     }
 
                     g.dispose();
@@ -688,16 +683,11 @@ public class ImageTiler5 implements IImageTiler {
                             }
                         }
 
-                        BufferedImage destTile = createDestTile();
+                        BufferedImage destTile = createDestTile(finalTw, th);
                         Graphics g = GRAPHICS_ENV.createGraphics(destTile);
 
-                        if (_tileFormat == TileFormat.JPEG && tile != null) {
-                            g.setColor(_tileBackgroundColor);
-                            g.fillRect(0, 0, _tileSize, _tileSize);
-                        }
-
                         if (tile != null) {
-                            g.drawImage(tile, 0, _tileSize - th, null);
+                            g.drawImage(tile, 0, 0, null);
                         }
 
                         g.dispose();
@@ -766,13 +756,13 @@ public class ImageTiler5 implements IImageTiler {
         }
     }
 
-    private BufferedImage createDestTile() {
+    private BufferedImage createDestTile(int width, int height) {
         BufferedImage destTile;
 
         if (_tileFormat == TileFormat.PNG) {
-            destTile = new BufferedImage(_tileSize, _tileSize, BufferedImage.TYPE_4BYTE_ABGR);
+            destTile = new BufferedImage(width, height, BufferedImage.TYPE_4BYTE_ABGR);
         } else {
-            destTile = new BufferedImage(_tileSize, _tileSize, BufferedImage.TYPE_3BYTE_BGR);
+            destTile = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
         }
         return destTile;
     }

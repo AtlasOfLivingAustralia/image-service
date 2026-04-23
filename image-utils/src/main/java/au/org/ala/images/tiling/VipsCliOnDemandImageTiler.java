@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.Arrays;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -16,6 +17,8 @@ import java.util.regex.Pattern;
 public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
 
     private static final Logger log = LoggerFactory.getLogger(VipsCliOnDemandImageTiler.class);
+    private static final long TILE_COMMAND_TIMEOUT_SECONDS = 60;
+    private static final long HEADER_COMMAND_TIMEOUT_SECONDS = 10;
 
     private final CommandExecutor commandExecutor;
     private final String vipsCommand;
@@ -69,9 +72,6 @@ public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
             // Adjust for edges
             srcW = Math.min(srcW, info.getImageWidth() - srcX);
 
-            int targetWidth = tileSize;
-            int targetHeight = (tileBottomAtLevel - tileTopAtLevel);
-            
             double scale = 1.0 / subsample;
 
             TilerSink.LevelSink levelSink = tilerSink.getLevelSink(level);
@@ -86,17 +86,12 @@ public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
                     CommandExecutor.ExecResult res = commandExecutor.exec(vipsCommand, Arrays.asList(
                         "extract_area", "stdin", ".stdout" + suffix,
                         String.valueOf(srcX), String.valueOf(srcY), String.valueOf(srcW), String.valueOf(srcH)
-                    ), null, bis, 60, os);
+                    ), null, bis, TILE_COMMAND_TIMEOUT_SECONDS, os);
                     if (res.exitCode != 0) {
                         throw new IOException("vips extract_area failed: " + res.stderr);
                     }
                 } else {
-                    // Pipe extract_area to resize
-                    String shellCommand = String.format("%s extract_area stdin .stdout%s %d %d %d %d | %s resize stdin .stdout%s %f",
-                        vipsCommand, suffix, srcX, srcY, srcW, srcH,
-                        vipsCommand, suffix, scale);
-                    
-                    CommandExecutor.ExecResult res = commandExecutor.exec("sh", Arrays.asList("-c", shellCommand), null, bis, 60, os);
+                    CommandExecutor.ExecResult res = execExtractAreaAndResize(bis, os, suffix, srcX, srcY, srcW, srcH, scale);
                     if (res.exitCode != 0) {
                         throw new IOException("vips pipe failed: " + res.stderr);
                     }
@@ -111,10 +106,31 @@ public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
         }
     }
 
+    private CommandExecutor.ExecResult execExtractAreaAndResize(InputStream imageInputStream,
+                                                                OutputStream outputStream,
+                                                                String suffix,
+                                                                int srcX,
+                                                                int srcY,
+                                                                int srcW,
+                                                                int srcH,
+                                                                double scale) {
+        List<CommandExecutor.PipelineStage> stages = Arrays.asList(
+            new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
+                "extract_area", "stdin", ".stdout" + suffix,
+                String.valueOf(srcX), String.valueOf(srcY), String.valueOf(srcW), String.valueOf(srcH)
+            )),
+            new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
+                "resize", "stdin", ".stdout" + suffix,
+                Double.toString(scale)
+            ))
+        );
+        return commandExecutor.execPipeline(stages, null, imageInputStream, TILE_COMMAND_TIMEOUT_SECONDS, outputStream);
+    }
+
     private TilePyramidInfo getPyramidInfo(BufferedInputStream bis) throws IOException {
         bis.mark(1024 * 1024);
         try {
-            CommandExecutor.ExecResult res = commandExecutor.exec(vipsCommand, Arrays.asList("header", "stdin"), null, bis, 10, null);
+            CommandExecutor.ExecResult res = commandExecutor.exec(vipsCommand, Arrays.asList("header", "stdin"), null, bis, HEADER_COMMAND_TIMEOUT_SECONDS, null);
             if (res.exitCode != 0) {
                 // If vipsheader fails, maybe it's not a vips-supported format, or the stream is empty.
                 // We'll try the fallback or throw.

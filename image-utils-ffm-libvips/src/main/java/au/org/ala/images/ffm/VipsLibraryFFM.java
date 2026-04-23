@@ -27,6 +27,7 @@ public class VipsLibraryFFM implements AutoCloseable {
     private final Map<List<MemoryLayout>, MethodHandle> handleCache = new ConcurrentHashMap<>();
     private final MemorySegment vips_thumbnail_image_symbol;
     private final MemorySegment vips_dzsave_symbol;
+    private final MemorySegment vips_copy_symbol;
 
     // Method handles for libvips functions
     private final MethodHandle vips_init;
@@ -47,6 +48,10 @@ public class VipsLibraryFFM implements AutoCloseable {
     private final MethodHandle vips_colourspace;
     private final MethodHandle vips_relational_const;
     private final MethodHandle vips_resize;
+    private final MethodHandle vips_concurrency_set;
+    private final MethodHandle vips_concurrency_get;
+    private final MethodHandle vips_copy;
+    private final MethodHandle vips_image_copy_memory;
     private final MethodHandle vips_source_custom_new;
     private final MethodHandle vips_target_custom_new;
     private final MethodHandle g_object_unref;
@@ -84,6 +89,12 @@ public class VipsLibraryFFM implements AutoCloseable {
             ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_resize = FunctionDescriptor.of(
             ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_DOUBLE, ValueLayout.ADDRESS);
+    public static final FunctionDescriptor FD_vips_concurrency_set = FunctionDescriptor.ofVoid(ValueLayout.JAVA_INT);
+    public static final FunctionDescriptor FD_vips_concurrency_get = FunctionDescriptor.of(ValueLayout.JAVA_INT);
+    public static final FunctionDescriptor FD_vips_copy = FunctionDescriptor.of(
+            ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS);
+    /** vips_image_copy_memory: returns a new VipsImage* with all pixel data in memory (no varargs). */
+    public static final FunctionDescriptor FD_vips_image_copy_memory = FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_source_custom_new = FunctionDescriptor.of(ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_target_custom_new = FunctionDescriptor.of(ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_g_object_unref = FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
@@ -109,6 +120,7 @@ public class VipsLibraryFFM implements AutoCloseable {
             this.vips_thumbnail_image = lookupFunction(libvipsLookup, "vips_thumbnail_image", FD_vips_thumbnail_image);
             this.vips_thumbnail_image_symbol = libvipsLookup.find("vips_thumbnail_image").get();
             this.vips_dzsave_symbol = libvipsLookup.find("vips_dzsave").get();
+            this.vips_copy_symbol = libvipsLookup.find("vips_copy").get();
             this.vips_image_write_to_buffer = lookupFunction(libvipsLookup, "vips_image_write_to_buffer", FD_vips_image_write_to_buffer);
             this.vips_image_write_to_target = lookupFunction(libvipsLookup, "vips_image_write_to_target", FD_vips_image_write_to_target);
             this.vips_dzsave = lookupFunction(libvipsLookup, "vips_dzsave", FD_vips_dzsave);
@@ -118,6 +130,10 @@ public class VipsLibraryFFM implements AutoCloseable {
             this.vips_colourspace = lookupFunction(libvipsLookup, "vips_colourspace", FD_vips_colourspace);
             this.vips_relational_const = lookupFunction(libvipsLookup, "vips_relational_const", FD_vips_relational_const);
             this.vips_resize = lookupFunction(libvipsLookup, "vips_resize", FD_vips_resize);
+            this.vips_concurrency_set = lookupFunction(libvipsLookup, "vips_concurrency_set", FD_vips_concurrency_set);
+            this.vips_concurrency_get = lookupFunction(libvipsLookup, "vips_concurrency_get", FD_vips_concurrency_get);
+            this.vips_copy = lookupFunction(libvipsLookup, "vips_copy", FD_vips_copy);
+            this.vips_image_copy_memory = lookupFunction(libvipsLookup, "vips_image_copy_memory", FD_vips_image_copy_memory);
             this.vips_source_custom_new = lookupFunction(libvipsLookup, "vips_source_custom_new", FD_vips_source_custom_new);
             this.vips_target_custom_new = lookupFunction(libvipsLookup, "vips_target_custom_new", FD_vips_target_custom_new);
             this.g_object_unref = lookupFunction(libgobjectLookup, "g_object_unref", FD_g_object_unref);
@@ -322,6 +338,31 @@ public class VipsLibraryFFM implements AutoCloseable {
 
     public int vipsResize(MemorySegment input, MemorySegment outPtr, double scale) throws Throwable {
         return (int) vips_resize.invokeExact(input, outPtr, scale, MemorySegment.NULL);
+    }
+
+    public void vipsConcurrencySet(int concurrency) throws Throwable {
+        vips_concurrency_set.invokeExact(concurrency);
+    }
+
+    public int vipsConcurrencyGet() throws Throwable {
+        return (int) vips_concurrency_get.invokeExact();
+    }
+
+    public int vipsCopyToMemory(MemorySegment input, MemorySegment outPtr) throws Throwable {
+        MethodHandle mh = linker.downcallHandle(vips_copy_symbol, FD_vips_copy, Linker.Option.firstVariadicArg(2));
+        try (Arena tempArena = Arena.ofConfined()) {
+            MemorySegment memoryOpt = FFMShim.allocateFrom(tempArena, "memory");
+            return (int) mh.invokeExact(input, outPtr, memoryOpt, 1, MemorySegment.NULL);
+        }
+    }
+
+    /**
+     * Force evaluation of the image pipeline and return a new VipsImage that
+     * holds all pixel data in memory. This is the preferred, varargs-free alternative
+     * to vips_copy(memory=true). Calls vips_image_copy_memory().
+     */
+    public MemorySegment vipsCopyMemory(MemorySegment input) throws Throwable {
+        return (MemorySegment) vips_image_copy_memory.invokeExact(input);
     }
 
     public MemorySegment vipsSourceCustomNew() throws Throwable {

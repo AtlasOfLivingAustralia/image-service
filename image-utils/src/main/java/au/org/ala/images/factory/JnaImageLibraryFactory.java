@@ -1,27 +1,25 @@
 package au.org.ala.images.factory;
 
 import java.util.Map;
-import au.org.ala.images.factory.ImageLibraryFactory;
 import au.org.ala.images.iiif.IiifImageProcessor;
 import au.org.ala.images.iiif.JnaIiifImageProcessor;
 import au.org.ala.images.jna.NativeLibraryDetector;
 import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.IImageThumbnailer;
 import au.org.ala.images.thumb.JnaStreamingImageThumbnailer;
-import au.org.ala.images.thumb.StreamingImageThumbnailer;
-import au.org.ala.images.thumb.ImageThumbnailer;
 import au.org.ala.images.tiling.IImageTiler;
 import au.org.ala.images.tiling.IOnDemandImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
 import au.org.ala.images.tiling.JnaOnDemandImageTiler;
 import au.org.ala.images.tiling.JnaStreamingImageTiler;
-import au.org.ala.images.tiling.StreamingImageTiler;
-import au.org.ala.images.tiling.ImageTiler;
+import au.org.ala.images.tiling.NativeDzStreamingImageTiler;
 
 /**
  * Factory for JNA-based image processing implementations.
  */
 public class JnaImageLibraryFactory implements ImageLibraryFactory {
+
+    private static final String NATIVE_DZ_TILER_JNA_FLAG = "nativeDzTilerJnaEnabled";
 
     @Override
     public boolean isAvailable(Map<String, String> commands) {
@@ -42,7 +40,11 @@ public class JnaImageLibraryFactory implements ImageLibraryFactory {
         if (!NativeLibraryDetector.isVipsAvailable()) {
             return null;
         }
-        
+
+        if (Boolean.parseBoolean(commands.getOrDefault(NATIVE_DZ_TILER_JNA_FLAG, "false"))) {
+            return new NativeDzStreamingImageTiler(fallback, config);
+        }
+
         return new JnaStreamingImageTiler(fallback, config);
     }
 

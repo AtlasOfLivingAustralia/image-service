@@ -7,11 +7,7 @@ import au.org.ala.images.iiif.JavaIiifImageProcessor;
 import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.thumb.IImageThumbnailer;
 import au.org.ala.images.thumb.ImageThumbnailer;
-import au.org.ala.images.tiling.IImageTiler;
-import au.org.ala.images.tiling.IOnDemandImageTiler;
-import au.org.ala.images.tiling.ImageTiler;
-import au.org.ala.images.tiling.OnDemandImageTiler;
-import au.org.ala.images.tiling.ImageTilerConfig;
+import au.org.ala.images.tiling.*;
 
 /**
  * Factory for pure Java image processing implementations.
@@ -30,7 +26,7 @@ public class JavaImageLibraryFactory implements ImageLibraryFactory {
 
     @Override
     public IImageTiler createTiler(CommandExecutor commandExecutor, ImageTilerConfig config, Map<String, String> commands, IImageTiler fallback) {
-        return new ImageTiler(config);
+        return new ImageTiler5(config);
     }
 
     @Override

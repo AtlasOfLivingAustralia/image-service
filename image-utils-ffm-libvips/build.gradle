@@ -86,9 +86,24 @@ jar {
 
 test {
     useJUnitPlatform()
+    def runBenchmarks = providers.gradleProperty('runBenchmarks')
+            .orElse(providers.systemProperty('runBenchmarks'))
+            .map { it.toBoolean() }
+            .orElse(false)
+
+    if (!runBenchmarks.get()) {
+        filter {
+            excludeTestsMatching '*Benchmark*'
+        }
+    }
+
     jvmArgs = [
         '--enable-preview',
-        '--enable-native-access=ALL-UNNAMED'
+        '--enable-native-access=ALL-UNNAMED',
+        "-Dtiler.bench.warmupRounds=${System.getProperty('tiler.bench.warmupRounds', '0')}",
+        "-Dtiler.bench.measureRounds=${System.getProperty('tiler.bench.measureRounds', '1')}",
+        "-Dtiler.bench.image=${System.getProperty('tiler.bench.image', 'all')}",
+        "-Dtiler.bench.vips.concurrency=${System.getProperty('tiler.bench.vips.concurrency', '1')}"
     ]
 }
 
