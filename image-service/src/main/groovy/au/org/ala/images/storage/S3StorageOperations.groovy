@@ -18,6 +18,8 @@ import groovy.transform.TupleConstructor
 import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
+import org.reactivestreams.Subscriber
+import org.reactivestreams.Subscription
 import org.slf4j.event.Level
 import org.springframework.beans.factory.NoSuchBeanDefinitionException
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
@@ -27,7 +29,10 @@ import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode
 import software.amazon.awssdk.core.async.BlockingInputStreamAsyncRequestBody
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
 import software.amazon.awssdk.http.apache.ApacheHttpClient
+import software.amazon.awssdk.http.crt.ConnectionHealthConfiguration
+import software.amazon.awssdk.http.crt.TcpKeepAliveConfiguration
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
+import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient
 import software.amazon.awssdk.metrics.LoggingMetricPublisher
 import software.amazon.awssdk.metrics.MetricPublisher
 import software.amazon.awssdk.metrics.publishers.cloudwatch.CloudWatchMetricPublisher
@@ -104,8 +109,8 @@ class S3StorageOperations implements StorageOperations {
 
     private static final int maxConnections = Holders.getConfig().getProperty('aws.s3.max.connections', Integer, Integer.getInteger('au.org.ala.images.s3.max.connections', 500))
     private static final int maxErrorRetry = Holders.getConfig().getProperty('aws.s3.max.retry', Integer, Integer.getInteger('au.org.ala.images.s3.max.retry', 3))
-    private static final int apiCallAttemptTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.attempt', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.attempt', 60))
-    private static final int apiCallTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.call', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.call', 300))
+    private static final int apiCallAttemptTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.attempt', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.attempt', 5))
+    private static final int apiCallTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.call', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.call', 15))
     private static final int apacheConnectionTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.connection', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.connection', 2))
     private static final int socketTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.socket', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.socket', 50))
     private static final int apacheIdleTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.idle', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.idle', 5))
@@ -114,8 +119,11 @@ class S3StorageOperations implements StorageOperations {
     private static final boolean tcpKeepAlive = Holders.getConfig().getProperty('aws.s3.sync.keepalive', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.keepalive', 'true')))
     private static final boolean idleReaperEnabled = Holders.getConfig().getProperty('aws.s3.sync.idlereaper', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.idlereaper', 'true')))
     private static final boolean useCrtAsyncClient = Holders.getConfig().getProperty('aws.s3.crt.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.crt.enabled', 'true')))
-    private static final int crtThroughputSeconds = Holders.getConfig().getProperty('aws.s3.crt.throughput.seconds', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.seconds', 30))
-    private static final int crtThroughputBps = Holders.getConfig().getProperty('aws.s3.crt.throughput.bps', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.bps', 2))
+    private static final int crtThroughputSeconds = Holders.getConfig().getProperty('aws.s3.crt.throughput.seconds', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.seconds', 10))
+    // Minimum acceptable throughput for an active S3 data transfer before the CRT kills the connection.
+    // 32 KB/s is a reasonable floor for image content — well below any normal transfer rate but high enough
+    // to quickly detect a connection that has stalled after TCP establishment.
+    private static final long crtThroughputBps = Holders.getConfig().getProperty('aws.s3.crt.throughput.bps', Long, Long.getLong('au.org.ala.images.s3.crt.throughput.bps', 32 * 1024))
     private static final int crtConnectionTimeout = Holders.getConfig().getProperty('aws.s3.crt.connection.timeout', Integer, Integer.getInteger('au.org.ala.images.s3.crt.connection.timeout', 2))
     private static final boolean publishCloudwatchMetrics = Holders.getConfig().getProperty('aws.s3.cloudwatch.metrics.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.enabled', 'false')))
     private static final String cloudWatchNamespace = Holders.getConfig().getProperty('aws.s3.cloudwatch.metrics.namespace', String, System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.namespace', 'au.org.ala.image-service/S3'))
@@ -165,6 +173,20 @@ class S3StorageOperations implements StorageOperations {
         return s3ClientCacheLoader(key)
     }
 
+    private static final LoadingCache<CacheKey, S3AsyncClient> smallS3AsyncClientCache = Caffeine<String, S3AsyncClient>.from(asyncCacheSpec).removalListener {
+        CacheKey key, S3AsyncClient client, RemovalCause cause ->
+            log.info("S3AsyncClient evicted from cache: ${key.bucket}")
+            evictionScheduler.schedule( {
+                try {
+                    client?.close()
+                } catch (Exception e) {
+                    log.warn("Failed to close evicted S3AsyncClient", e)
+                }
+            }, inflightTimeout, TimeUnit.SECONDS)
+    }.build { CacheKey key ->
+        return s3AsyncClientCacheLoader(key, true)
+    }
+
     private static final LoadingCache<CacheKey, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from(asyncCacheSpec).removalListener {
         CacheKey key, S3AsyncClient client, RemovalCause cause ->
             log.info("S3AsyncClient evicted from cache: ${key.bucket}")
@@ -197,6 +219,7 @@ class S3StorageOperations implements StorageOperations {
     static final void clearS3ClientCache() {
         s3TransferManagerCache.invalidateAll()
         s3AsyncClientCache.invalidateAll()
+        smallS3AsyncClientCache.invalidateAll()
         s3ClientCache.invalidateAll()
     }
 
@@ -297,12 +320,18 @@ class S3StorageOperations implements StorageOperations {
     }
 
     @VisibleForTesting
+    protected S3AsyncClient getSmallS3AsyncClient() {
+        final cacheKey = getCacheKeyObject()
+        return smallS3AsyncClientCache.get(cacheKey)
+    }
+
+    @VisibleForTesting
     protected S3AsyncClient getS3AsyncClient() {
         final cacheKey = getCacheKeyObject()
         return s3AsyncClientCache.get(cacheKey)
     }
 
-    private static S3AsyncClient s3AsyncClientCacheLoader(CacheKey key) {
+    private static S3AsyncClient s3AsyncClientCacheLoader(CacheKey key, boolean smallOps = false) {
         def containerCredentials = key.containerCredentials
         def accessKey = key.accessKey
         def secretKey = key.secretKey
@@ -317,7 +346,7 @@ class S3StorageOperations implements StorageOperations {
 
         def client
 
-        if (!useCrtAsyncClient) {
+        if (smallOps || !useCrtAsyncClient) {
             log.info("Using standard S3AsyncClient builder for S3 access")
 
             // Configure Retry Policy
@@ -334,6 +363,7 @@ class S3StorageOperations implements StorageOperations {
                     .httpClientBuilder(NettyNioAsyncHttpClient.builder()
                             .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
                             .connectionAcquisitionTimeout(Duration.ofSeconds(acquisitionTimeout))
+                            .connectionMaxIdleTime(Duration.ofSeconds(apacheIdleTimeout))
                             .readTimeout(Duration.ofSeconds(socketTimeout))
                             .writeTimeout(Duration.ofSeconds(socketTimeout))
                             .maxConcurrency(maxConnections)
@@ -507,6 +537,11 @@ class S3StorageOperations implements StorageOperations {
         }
     }
 
+    @VisibleForTesting
+    protected boolean isUseAsyncS3Client() {
+        return forceAsyncCalls
+    }
+
     // --- Helper methods to route via async client when forceAsyncCalls is enabled ---
 
     private S3Utilities getUtilities() {
@@ -515,8 +550,8 @@ class S3StorageOperations implements StorageOperations {
     }
 
     private void putObjectAclAsyncAware(String bkt, String key, ObjectCannedACL acl) {
-        if (forceAsyncCalls) {
-            s3AsyncClient.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(key).acl(acl) } as Consumer<PutObjectAclRequest.Builder>).join()
+        if (isUseAsyncS3Client()) {
+            smallS3AsyncClient.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(key).acl(acl) } as Consumer<PutObjectAclRequest.Builder>).join()
         } else {
             s3Client.putObjectAcl({ PutObjectAclRequest.Builder b -> b.bucket(bkt).key(key).acl(acl) } as Consumer<PutObjectAclRequest.Builder>)
         }
@@ -524,8 +559,8 @@ class S3StorageOperations implements StorageOperations {
 
     private HeadObjectResponse headObjectAsyncAware(String bkt, String key) {
         return recordMetric(s3HeadObjectTimer) {
-            if (forceAsyncCalls) {
-                return s3AsyncClient.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>).join()
+            if (isUseAsyncS3Client()) {
+                return smallS3AsyncClient.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>).join()
             }
             return s3Client.headObject({ HeadObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<HeadObjectRequest.Builder>)
         }
@@ -533,8 +568,8 @@ class S3StorageOperations implements StorageOperations {
 
     private void copyObjectAsyncAware(Consumer<V2CopyObjectRequest.Builder> consumer) {
         recordMetric(s3CopyObjectTimer) {
-            if (forceAsyncCalls) {
-                s3AsyncClient.copyObject(consumer).join()
+            if (isUseAsyncS3Client()) {
+                smallS3AsyncClient.copyObject(consumer).join()
             } else {
                 s3Client.copyObject(consumer)
             }
@@ -543,8 +578,8 @@ class S3StorageOperations implements StorageOperations {
     }
 
     private void headBucketAsyncAware(String bkt) {
-        if (forceAsyncCalls) {
-            s3AsyncClient.headBucket({ HeadBucketRequest.Builder b -> b.bucket(bkt) } as Consumer<HeadBucketRequest.Builder>).join()
+        if (isUseAsyncS3Client()) {
+            smallS3AsyncClient.headBucket({ HeadBucketRequest.Builder b -> b.bucket(bkt) } as Consumer<HeadBucketRequest.Builder>).join()
         } else {
             s3Client.headBucket({ HeadBucketRequest.Builder b -> b.bucket(bkt) } as Consumer<HeadBucketRequest.Builder>)
         }
@@ -552,8 +587,8 @@ class S3StorageOperations implements StorageOperations {
 
     private void deleteObjectAsyncAware(String bkt, String key) {
         recordMetric(s3DeleteObjectTimer) {
-            if (forceAsyncCalls) {
-                s3AsyncClient.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>).join()
+            if (isUseAsyncS3Client()) {
+                smallS3AsyncClient.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>).join()
             } else {
                 s3Client.deleteObject({ DeleteObjectRequest.Builder b -> b.bucket(bkt).key(key) } as Consumer<DeleteObjectRequest.Builder>)
             }
@@ -564,8 +599,8 @@ class S3StorageOperations implements StorageOperations {
     private void putObjectSmallAsyncAware(String bkt, String key, String contentType, byte[] bytes) {
         recordMetric(s3PutObjectTimer) {
             def consumer = { PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(contentType) } as Consumer<PutObjectRequest.Builder>
-            if (forceAsyncCalls) {
-                s3AsyncClient.putObject(consumer, AsyncRequestBody.fromBytes(bytes)).join()
+            if (isUseAsyncS3Client()) {
+                smallS3AsyncClient.putObject(consumer, AsyncRequestBody.fromBytes(bytes)).join()
             } else {
                 s3Client.putObject(consumer, RequestBody.fromBytes(bytes))
             }
@@ -576,7 +611,7 @@ class S3StorageOperations implements StorageOperations {
     private void putObjectStreamAsyncAware(String bkt, String key, String contentType, InputStream stream, long length) {
         recordMetric(s3PutObjectTimer) {
             def consumer = { PutObjectRequest.Builder b -> b.bucket(bkt).key(key).contentType(contentType) } as Consumer<PutObjectRequest.Builder>
-            if (forceAsyncCalls) {
+            if (isUseAsyncS3Client()) {
                 // Use TransferManager with a blocking async request body to stream data
                 def transferManager = getS3TransferManager()
                 def blockingBody = BlockingOutputStreamAsyncRequestBody.builder().build()
@@ -604,7 +639,7 @@ class S3StorageOperations implements StorageOperations {
                     b.range("bytes=${range.start()}-${range.end()}")
                 }
             } as Consumer<V2GetObjectRequest.Builder>
-            if (forceAsyncCalls) {
+            if (isUseAsyncS3Client()) {
                 def resp = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBytes()).join()
                 return resp.asByteArray()
             } else {
@@ -621,7 +656,7 @@ class S3StorageOperations implements StorageOperations {
 
     private ListResult listObjectsV2AsyncAware(String bkt, String prefix, String delimiter) {
         return recordMetric(s3ListObjectsTimer) {
-            if (!forceAsyncCalls) {
+            if (!isUseAsyncS3Client()) {
                 ListObjectsV2Iterable pages = s3Client.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
                 ListResult lr = new ListResult()
                 pages.each { page ->
@@ -632,10 +667,10 @@ class S3StorageOperations implements StorageOperations {
             }
             ListResult result = new ListResult()
             CountDownLatch latch = new CountDownLatch(1)
-            def publisher = s3AsyncClient.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
-            publisher.subscribe(new org.reactivestreams.Subscriber<ListObjectsV2Response>() {
-                org.reactivestreams.Subscription s
-                @Override void onSubscribe(org.reactivestreams.Subscription s) { this.s = s; s.request(Long.MAX_VALUE) }
+            def publisher = smallS3AsyncClient.listObjectsV2Paginator({ ListObjectsV2Request.Builder b -> b.bucket(bkt).prefix(prefix).delimiter(delimiter) } as Consumer<ListObjectsV2Request.Builder>)
+            publisher.subscribe(new Subscriber<ListObjectsV2Response>() {
+                Subscription s
+                @Override void onSubscribe(Subscription s) { this.s = s; s.request(Long.MAX_VALUE) }
                 @Override void onNext(ListObjectsV2Response page) {
                     result.contents.addAll(page.contents())
                     result.commonPrefixes.addAll(page.commonPrefixes().collect { it.prefix() })
@@ -799,7 +834,7 @@ class S3StorageOperations implements StorageOperations {
             } as Consumer<V2GetObjectRequest.Builder>
 
             InputStream rawStream
-            if (forceAsyncCalls) {
+            if (isUseAsyncS3Client()) {
                 rawStream = s3AsyncClient
                         .getObject(consumer, AsyncResponseTransformer.toBlockingInputStream())
                         .join()
@@ -1042,7 +1077,7 @@ class S3StorageOperations implements StorageOperations {
             final String k = obj['key'] as String
             def head = headObjectAsyncAware(bkt, k)
             InputStream objectStream
-            if (forceAsyncCalls) {
+            if (isUseAsyncS3Client()) {
                 def consumer = { V2GetObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<V2GetObjectRequest.Builder>
                 objectStream = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBlockingInputStream()).join()
             } else {

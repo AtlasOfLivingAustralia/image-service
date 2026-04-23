@@ -76,12 +76,13 @@ dependencies {
     implementation platform("software.amazon.awssdk:bom:$awsSdk2Version")
     implementation "software.amazon.awssdk:apache-client"
     implementation "software.amazon.awssdk:cloudwatch-metric-publisher"
-    implementation("software.amazon.awssdk:netty-nio-client")
+    implementation "software.amazon.awssdk:netty-nio-client"
+    implementation "software.amazon.awssdk:aws-crt-client"
     implementation "software.amazon.awssdk:s3"
     implementation "software.amazon.awssdk:s3-transfer-manager"
     implementation "software.amazon.awssdk:sts"
     implementation "software.amazon.awssdk:auth"
-    implementation("software.amazon.awssdk.crt:aws-crt:0.40.1")
+    implementation("software.amazon.awssdk.crt:aws-crt:0.45.1")
     // TEMP: Keep AWS SDK v1 during migration; remove once all code/tests are v2
 //    implementation "com.amazonaws:aws-java-sdk-s3:1.12.418"
     implementation 'org.javaswift:joss:0.10.4'

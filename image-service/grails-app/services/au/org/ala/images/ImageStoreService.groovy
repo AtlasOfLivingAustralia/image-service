@@ -15,6 +15,7 @@ import au.org.ala.images.tiling.OnDemandImageTiler
 import au.org.ala.images.tiling.TileGenerationResult
 import au.org.ala.images.tiling.TilerSink
 import au.org.ala.images.util.ImageReaderUtils
+import com.github.benmanes.caffeine.cache.AsyncCache
 import com.github.benmanes.caffeine.cache.Cache
 import com.google.common.io.Files as GFiles
 import com.github.benmanes.caffeine.cache.Caffeine
@@ -48,8 +49,11 @@ import java.nio.file.Files
 
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.function.BiFunction
 
 @Slf4j
 class ImageStoreService implements MetricsSupport {
@@ -124,15 +128,15 @@ class ImageStoreService implements MetricsSupport {
     }
 
 
-    Cache<Pair<String, String>, ImageInfo> thumbnailCache
-    Cache<Pair<String, Point>, ImageInfo> tileCache
+    AsyncCache<Pair<String, String>, ImageInfo> thumbnailCache
+    AsyncCache<Pair<String, Point>, ImageInfo> tileCache
     Cache<String, ImageInfo> originalCache
 
     @PostConstruct
     @NotTransactional
     def init() {
-        thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).build()
-        tileCache = Caffeine.from(tileLookupCacheConfig).build()
+        thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).buildAsync()
+        tileCache = Caffeine.from(tileLookupCacheConfig).buildAsync()
         originalCache = Caffeine.from(originalLookupCacheConfig).build()
     }
 
@@ -726,12 +730,14 @@ class ImageStoreService implements MetricsSupport {
         type = normaliseThumbnailType(type)
         def key = Pair.of(imageIdentifier, type)
         def loader = this.&ensureThumbnailExistsCacheLoader.curry(dataResourceUid).curry(operations)
+        BiFunction<Pair<String, String>, Executor, CompletableFuture<ImageInfo>> mappingFunction =
+                { Pair<String, String> k, Executor exec -> CompletableFuture.supplyAsync({ loader.call(k) as ImageInfo }, exec) } as BiFunction<Pair<String, String>, Executor, CompletableFuture<ImageInfo>>
 
         // TODO undefined behaviour if already loading when invalidate is called.
         if (refresh) {
-            thumbnailCache.invalidate(key)
+            thumbnailCache.synchronous().invalidate(key)
         }
-        return (disableCache ? loader.call(key) : thumbnailCache.get(key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
+        return (disableCache ? loader.call(key) : thumbnailCache.get(key, mappingFunction).join()) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
     }
 
     private ImageInfo ensureThumbnailExistsCacheLoader(String dataResourceUid, StorageOperations operations, Pair<String, String> pair) {
@@ -819,28 +825,30 @@ class ImageStoreService implements MetricsSupport {
         }
 
         def loader = this.&ensureTileExistsCacheLoader.curry(zoomLevels).curry(operations)
+        BiFunction<Pair<String, Point>, Executor, CompletableFuture<ImageInfo>> mappingFunction =
+                { Pair<String, Point> k, Executor exec -> CompletableFuture.supplyAsync({ loader.call(k) as ImageInfo }, exec) } as BiFunction<Pair<String, Point>, Executor, CompletableFuture<ImageInfo>>
         def originKey = Pair.of(identifier, new Point(0,0,z))
         def key = Pair.of(identifier, new Point(x, y, z))
 
         // TODO undefined behaviour if already loading when invalidate is called.
         if (refresh) {
             if (onDemandTilingEnabled) {
-                tileCache.invalidate(key)
+                tileCache.synchronous().invalidate(key)
             } else {
-                tileCache.invalidateAll([originKey, key])
+                tileCache.synchronous().invalidateAll([originKey, key])
             }
         }
 
         if (onDemandTilingEnabled) {
             // experimental: With on-demand tiling, attempt to fetch/generate exactly the requested tile
-            def tileInfo = (disableCache ? loader.call(key) : tileCache.get(key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png')
+            def tileInfo = (disableCache ? loader.call(key) : tileCache.get(key, mappingFunction).join()) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png')
             tileInfo.dataResourceUid = dataResourceUid
             return tileInfo
         } else {
             // Regular behaviour:
             // First check the origin tile for the zoom level, if it doesn't exist then we can generate
             // the whole set of tiles for the level
-            def originInfo = (disableCache ? loader.call(originKey) : tileCache.get(originKey, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
+            def originInfo = (disableCache ? loader.call(originKey) : tileCache.get(originKey, mappingFunction).join()) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
 
             // then if the origin was requested, return the origin info
             // or if the origin doesn't exist then any tile for the given zoom level won't exist either
@@ -850,7 +858,7 @@ class ImageStoreService implements MetricsSupport {
                 return originInfo
             } else {
                 // otherwise now we get the info for the tile that was actually requested and cache it
-                def tileInfo = (disableCache ? loader.call(key) : tileCache.get(key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
+                def tileInfo = (disableCache ? loader.call(key) : tileCache.get(key, mappingFunction).join()) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
                 tileInfo.dataResourceUid = dataResourceUid
                 return tileInfo
             }

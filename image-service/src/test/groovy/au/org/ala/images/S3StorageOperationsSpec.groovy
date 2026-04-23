@@ -2,14 +2,19 @@ package au.org.ala.images
 
 import au.org.ala.images.storage.S3StorageOperations
 import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.core.ResponseBytes
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest
+import software.amazon.awssdk.services.s3.model.DeleteObjectResponse
+import software.amazon.awssdk.services.s3.model.GetObjectResponse
+import software.amazon.awssdk.services.s3.model.HeadBucketResponse
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response
 import software.amazon.awssdk.services.s3.model.ObjectCannedACL
 import software.amazon.awssdk.services.s3.model.PutObjectAclRequest
-import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectResponse
 import software.amazon.awssdk.services.s3.model.S3Object
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable
@@ -32,13 +37,25 @@ class S3StorageOperationsSpec extends Specification implements DataTest {
 
     private static class TestOps extends S3StorageOperations {
         S3Client mockClient
+        S3AsyncClient mockSmallAsyncClient
+        S3AsyncClient mockAsyncClient
         S3TransferManager mockTransferManager
+        boolean forceAsync = false
 
         @Override
         protected S3Client getS3Client() { return mockClient }
 
         @Override
+        protected S3AsyncClient getSmallS3AsyncClient() { return mockSmallAsyncClient }
+
+        @Override
+        protected S3AsyncClient getS3AsyncClient() { return mockAsyncClient }
+
+        @Override
         protected S3TransferManager getS3TransferManager() { return mockTransferManager }
+
+        @Override
+        protected boolean isUseAsyncS3Client() { return forceAsync }
     }
 
     private void consumeBody(UploadRequest req) {
@@ -192,5 +209,60 @@ class S3StorageOperationsSpec extends Specification implements DataTest {
         0 * client.putObjectAcl(_)
         1 * client.headObject(_ as Consumer<HeadObjectRequest.Builder>) >> { Consumer<HeadObjectRequest.Builder> c -> }
         1 * client.copyObject(_ as Consumer<CopyObjectRequest.Builder>)
+    }
+
+    def "verifySettings uses small async client for head/put/delete when forceAsync is enabled"() {
+        given:
+        def smallAsync = Mock(S3AsyncClient)
+        def regularAsync = Mock(S3AsyncClient)
+        def client = Mock(S3Client)
+        def ops = new TestOps(bucket: 'b', prefix: '', mockClient: client, mockSmallAsyncClient: smallAsync, mockAsyncClient: regularAsync, forceAsync: true)
+
+        when:
+        def result = ops.verifySettings()
+
+        then:
+        result
+        1 * smallAsync.headBucket(_ as Consumer) >> CompletableFuture.completedFuture(HeadBucketResponse.builder().build())
+        1 * smallAsync.putObject(_ as Consumer, _) >> CompletableFuture.completedFuture(PutObjectResponse.builder().eTag('etag').build())
+        1 * smallAsync.deleteObject(_ as Consumer) >> CompletableFuture.completedFuture(DeleteObjectResponse.builder().build())
+        0 * client._
+        0 * regularAsync._
+    }
+
+    def "stored uses small async client headObject when forceAsync is enabled"() {
+        given:
+        def smallAsync = Mock(S3AsyncClient)
+        def regularAsync = Mock(S3AsyncClient)
+        def client = Mock(S3Client)
+        def ops = new TestOps(bucket: 'b', prefix: '', mockClient: client, mockSmallAsyncClient: smallAsync, mockAsyncClient: regularAsync, forceAsync: true)
+
+        when:
+        def exists = ops.stored('uuid-1')
+
+        then:
+        exists
+        1 * smallAsync.headObject(_ as Consumer) >> CompletableFuture.completedFuture(HeadObjectResponse.builder().build())
+        0 * client._
+        0 * regularAsync._
+    }
+
+    def "retrieve still uses main async client when forceAsync is enabled"() {
+        given:
+        def smallAsync = Mock(S3AsyncClient)
+        def regularAsync = Mock(S3AsyncClient)
+        def client = Mock(S3Client)
+        def bytes = 'abc'.bytes
+        def responseBytes = ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), bytes)
+        def ops = new TestOps(bucket: 'b', prefix: '', mockClient: client, mockSmallAsyncClient: smallAsync, mockAsyncClient: regularAsync, forceAsync: true)
+
+        when:
+        def actual = ops.retrieve('uuid-2')
+
+        then:
+        actual == bytes
+        1 * regularAsync.getObject(_ as Consumer, _) >> CompletableFuture.completedFuture(responseBytes)
+        0 * smallAsync.getObject(_, _)
+        0 * client._
     }
 }
