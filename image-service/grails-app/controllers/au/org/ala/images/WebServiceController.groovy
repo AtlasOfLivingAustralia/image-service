@@ -31,6 +31,7 @@ import static io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.PATH
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
 
+@NoCache
 @Slf4j
 class WebServiceController implements MetricsSupport {
 

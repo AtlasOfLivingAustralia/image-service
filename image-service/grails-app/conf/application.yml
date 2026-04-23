@@ -433,6 +433,9 @@ purgeCompletedAgeInDays: 3
 imageServiceUrls: ["http://dev.ala.org.au:8080","https://images.ala.org.au"]
 
 images:
+  # Toggle for the global no-cache interceptor. Default: true
+  nocacheInterceptor:
+    enabled: true
   # When true, disable all HTTP caching for image responses and bypass
   # in-memory Caffeine caches for thumbnails and tiles. Default: false
   disableCache: false
