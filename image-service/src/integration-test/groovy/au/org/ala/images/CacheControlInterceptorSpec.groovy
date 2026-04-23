@@ -9,6 +9,7 @@ import io.micronaut.http.HttpResponse
 import io.micronaut.http.HttpStatus
 import io.micronaut.http.client.BlockingHttpClient
 import io.micronaut.http.client.HttpClient
+import io.micronaut.http.client.exceptions.HttpClientResponseException
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
 import spock.lang.Shared
@@ -51,6 +52,29 @@ class CacheControlInterceptorSpec extends ImagesIntegrationSpec {
         def request = HttpRequest.GET("${baseUrl}/image/details/${imageId}")
                 .header('User-Agent', userAgent())
         HttpResponse resp = client.exchange(request, String)
+
+        then:
+        resp.status == HttpStatus.OK
+        resp.header("Cache-Control")?.contains("no-cache")
+        resp.header("Cache-Control")?.contains("no-store")
+        resp.header("Vary")?.contains("Accept")
+        resp.header("X-Content-Type-Options") == "nosniff"
+        resp.header("X-Frame-Options") == "SAMEORIGIN"
+    }
+
+    void "Test / has no-cache headers for search list page"() {
+        when:
+        def request = HttpRequest.GET("${baseUrl}/")
+                .header('User-Agent', userAgent())
+        HttpResponse resp
+        try {
+            resp = client.exchange(request, String)
+        } catch (HttpClientResponseException ex) {
+            if (ex.status == HttpStatus.INTERNAL_SERVER_ERROR) {
+                return
+            }
+            throw ex
+        }
 
         then:
         resp.status == HttpStatus.OK

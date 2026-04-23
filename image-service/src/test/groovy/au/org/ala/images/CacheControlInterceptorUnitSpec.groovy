@@ -40,6 +40,14 @@ class CacheControlInterceptorUnitSpec extends Specification {
         !CacheControlInterceptor.isNoCacheOptOut(NoOptOut, 'index')
     }
 
+    void "should detect no-cache annotation on controller and action"() {
+        expect:
+        CacheControlInterceptor.isNoCache(ControllerNoCache, 'index')
+        CacheControlInterceptor.isNoCache(ActionNoCache, 'index')
+        !CacheControlInterceptor.isNoCache(ActionNoCache, 'other')
+        !CacheControlInterceptor.isNoCache(NoOptOut, 'index')
+    }
+
     void "should default no-cache interceptor toggle to enabled"() {
         expect:
         CacheControlInterceptor.isNoCacheEnabled(null)
@@ -62,6 +70,18 @@ class CacheControlInterceptorUnitSpec extends Specification {
 
     private static class ActionOptOut {
         @NoCacheOptOut
+        def index() {}
+
+        def other() {}
+    }
+
+    @NoCache
+    private static class ControllerNoCache {
+        def index() {}
+    }
+
+    private static class ActionNoCache {
+        @NoCache
         def index() {}
 
         def other() {}
