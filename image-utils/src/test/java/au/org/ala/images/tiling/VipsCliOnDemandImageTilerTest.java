@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,7 +28,7 @@ public class VipsCliOnDemandImageTilerTest {
         VipsCliOnDemandImageTiler tiler = new VipsCliOnDemandImageTiler(
             commandExecutor,
             "vips",
-            new ImageTilerConfig(Runnable::run, Runnable::run),
+            new ImageTilerConfig(Runnable::run, Runnable::run, 256, 6, TileFormat.JPEG, Color.GRAY, false),
             fallback
         );
         CapturingTilerSink sink = new CapturingTilerSink();
@@ -52,12 +53,45 @@ public class VipsCliOnDemandImageTilerTest {
         CommandExecutor.PipelineStage extractStage = commandExecutor.findPipelineStage("extract_area");
         assertNotNull(extractStage);
         assertEquals("vips", extractStage.cmd);
-        assertEquals(Arrays.asList("extract_area", "stdin", ".stdout.jpg", "0", "0", "500", "500"), extractStage.args);
+        assertEquals(Arrays.asList("extract_area", "stdin", ".stdout.v", "0", "0", "500", "500"), extractStage.args);
 
         CommandExecutor.PipelineStage resizeStage = commandExecutor.findPipelineStage("resize");
         assertNotNull(resizeStage);
         assertEquals("vips", resizeStage.cmd);
         assertEquals(Arrays.asList("resize", "stdin", ".stdout.jpg", "0.5"), resizeStage.args);
+    }
+
+    @Test
+    public void generateTileUsesNativePaddingStagesForPngEdges() {
+        RecordingCommandExecutor commandExecutor = new RecordingCommandExecutor(false);
+        RecordingFallbackTiler fallback = new RecordingFallbackTiler();
+        VipsCliOnDemandImageTiler tiler = new VipsCliOnDemandImageTiler(
+            commandExecutor,
+            "vips",
+            new ImageTilerConfig(Runnable::run, Runnable::run, 256, 6, TileFormat.PNG, Color.GRAY, true),
+            fallback
+        );
+        CapturingTilerSink sink = new CapturingTilerSink();
+
+        TileGenerationResult result = tiler.generateTile(
+            new ByteArrayInputStream("fake-image".getBytes(StandardCharsets.UTF_8)),
+            sink,
+            0,
+            0,
+            0
+        );
+
+        assertTrue(result.isSuccess());
+        assertEquals(0, fallback.invocationCount);
+        assertEquals(1, commandExecutor.pipelineInvocations.size());
+
+        List<CommandExecutor.PipelineStage> stages = commandExecutor.pipelineInvocations.get(0);
+        assertEquals(4, stages.size());
+        assertEquals(Arrays.asList("extract_area", "stdin", ".stdout.v", "0", "0", "500", "500"), stages.get(0).args);
+        assertEquals(Arrays.asList("resize", "stdin", ".stdout.v", "0.5"), stages.get(1).args);
+        assertEquals(Arrays.asList("bandjoin_const", "stdin", ".stdout.v", "[0]"), stages.get(2).args);
+        assertEquals(Arrays.asList("gravity", "stdin", ".stdout.png", "south-west", "256", "256", "--extend", "background", "--background", "0 0 0 0"), stages.get(3).args);
+        assertEquals("padded", sink.getCapturedOutput());
     }
 
     @Test
@@ -67,7 +101,7 @@ public class VipsCliOnDemandImageTilerTest {
         VipsCliOnDemandImageTiler tiler = new VipsCliOnDemandImageTiler(
             commandExecutor,
             "vips",
-            new ImageTilerConfig(Runnable::run, Runnable::run),
+            new ImageTilerConfig(Runnable::run, Runnable::run, 256, 6, TileFormat.JPEG, Color.GRAY, false),
             fallback
         );
 
@@ -155,27 +189,45 @@ public class VipsCliOnDemandImageTilerTest {
         public PipelineResult execPipeline(List<PipelineStage> stages, File workingDir, InputStream stdinStream, long timeoutSeconds, OutputStream stdoutStream) {
             pipelineInvocations.add(stages);
             PipelineResult result = new PipelineResult();
-            result.stageExitCodes = Arrays.asList(0, 0);
+            result.stageExitCodes = new ArrayList<>();
             result.stdout = "";
             result.stderr = "";
             try {
-                extractInputBytes = stdinStream == null ? new byte[0] : stdinStream.readAllBytes();
-                CommandExecutor.PipelineStage extractStage = stages.get(0);
-                CommandExecutor.PipelineStage resizeStage = stages.get(1);
-                if (!"extract_area".equals(extractStage.args.get(0)) || !"resize".equals(resizeStage.args.get(0))) {
-                    throw new AssertionError("Unexpected pipeline stages: " + stages);
+                byte[] currentBytes = stdinStream == null ? new byte[0] : stdinStream.readAllBytes();
+                extractInputBytes = currentBytes;
+                for (int i = 0; i < stages.size(); i++) {
+                    PipelineStage stage = stages.get(i);
+                    String operation = stage.args.get(0);
+                    if (i == 0 && !"extract_area".equals(operation)) {
+                        throw new AssertionError("Unexpected first pipeline stage: " + stages);
+                    }
+                    if (failExtractStage && i == 0) {
+                        result.exitCode = 9;
+                        result.failedStageIndex = 0;
+                        result.stageExitCodes.add(9);
+                        for (int j = 1; j < stages.size(); j++) {
+                            result.stageExitCodes.add(0);
+                        }
+                        result.stderr = "stage 0: extract failed";
+                        return result;
+                    }
+
+                    if ("extract_area".equals(operation)) {
+                        currentBytes = "cropped".getBytes(StandardCharsets.UTF_8);
+                    } else if ("resize".equals(operation)) {
+                        resizeInputBytes = currentBytes;
+                        currentBytes = "resized".getBytes(StandardCharsets.UTF_8);
+                    } else if ("bandjoin_const".equals(operation)) {
+                        currentBytes = "alpha".getBytes(StandardCharsets.UTF_8);
+                    } else if ("gravity".equals(operation)) {
+                        currentBytes = "padded".getBytes(StandardCharsets.UTF_8);
+                    } else {
+                        throw new AssertionError("Unexpected pipeline stage: " + stage.args);
+                    }
+                    result.stageExitCodes.add(0);
                 }
 
-                if (failExtractStage) {
-                    result.exitCode = 9;
-                    result.failedStageIndex = 0;
-                    result.stageExitCodes = Arrays.asList(9, 0);
-                    result.stderr = "stage 0: extract failed";
-                    return result;
-                }
-
-                resizeInputBytes = "cropped".getBytes(StandardCharsets.UTF_8);
-                stdoutStream.write("resized".getBytes(StandardCharsets.UTF_8));
+                stdoutStream.write(currentBytes);
                 result.exitCode = 0;
                 return result;
             } catch (IOException e) {
@@ -235,6 +287,3 @@ public class VipsCliOnDemandImageTilerTest {
         }
     }
 }
-
-
-

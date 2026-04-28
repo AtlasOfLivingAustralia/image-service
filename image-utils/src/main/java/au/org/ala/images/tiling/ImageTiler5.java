@@ -36,6 +36,7 @@ public class ImageTiler5 implements IImageTiler {
     private final int _tileSize;
     private final TileFormat _tileFormat;
     private final Color _tileBackgroundColor;
+    private final boolean _padTiles;
     private final ZoomFactorStrategy _zoomFactorStrategy;
 
     private final Executor levelThreadPool;
@@ -51,6 +52,7 @@ public class ImageTiler5 implements IImageTiler {
             _tileSize = config.getTileSize();
             _tileFormat = config.getTileFormat();
             _tileBackgroundColor = config.getTileBackgroundColor();
+            _padTiles = config.isPadTiles();
             _zoomFactorStrategy = config.getZoomFactorStrategy();
 
             // Warn if using the same executor instance for both pools
@@ -67,6 +69,7 @@ public class ImageTiler5 implements IImageTiler {
             _tileSize = 256;
             _tileFormat = TileFormat.JPEG;
             _tileBackgroundColor = Color.gray;
+            _padTiles = true;
             _zoomFactorStrategy = new DefaultZoomFactorStrategy(_tileSize);
         }
     }
@@ -325,14 +328,15 @@ public class ImageTiler5 implements IImageTiler {
                         }
                     }
 
-                    BufferedImage destTile = createDestTile(tw, th);
-                    Graphics g = GRAPHICS_ENV.createGraphics(destTile);
-
-                    if (tile != null) {
-                        g.drawImage(tile, 0, 0, null);
-                    }
-
-                    g.dispose();
+                    BufferedImage destTile = TilePadding.materializeTile(
+                            tile,
+                            tw,
+                            th,
+                            _tileSize,
+                            _tileFormat,
+                            _tileBackgroundColor,
+                            _padTiles
+                    );
 
                     ByteSink tileSink = columnSink.getTileSink(finalRow);
                     return new TileGenerationResult(tileSink, destTile);
@@ -683,14 +687,15 @@ public class ImageTiler5 implements IImageTiler {
                             }
                         }
 
-                        BufferedImage destTile = createDestTile(finalTw, th);
-                        Graphics g = GRAPHICS_ENV.createGraphics(destTile);
-
-                        if (tile != null) {
-                            g.drawImage(tile, 0, 0, null);
-                        }
-
-                        g.dispose();
+                        BufferedImage destTile = TilePadding.materializeTile(
+                                tile,
+                                finalTw,
+                                th,
+                                _tileSize,
+                                _tileFormat,
+                                _tileBackgroundColor,
+                                _padTiles
+                        );
 
                         return new TileGenerationResult(tileSink, destTile);
                     }, levelThreadPool);
@@ -743,28 +748,11 @@ public class ImageTiler5 implements IImageTiler {
      */
     private void writeTile(ByteSink tileSink, BufferedImage image) throws IOException {
         try {
-            String format = _tileFormat == TileFormat.PNG ? "png" : "jpeg";
-            try (OutputStream tileStream = tileSink.openStream()) {
-                if (!ImageIO.write(image, format, tileStream)) {
-                    log.error("Failed to write tile");
-                    throw new IOException("Failed to write tile");
-                }
-            }
+            TilePadding.writeImage(tileSink, image, _tileFormat);
         } catch (Exception | Error ex) {
             log.error("Exception occurred saving tile", ex);
             throw ex;
         }
-    }
-
-    private BufferedImage createDestTile(int width, int height) {
-        BufferedImage destTile;
-
-        if (_tileFormat == TileFormat.PNG) {
-            destTile = new BufferedImage(width, height, BufferedImage.TYPE_4BYTE_ABGR);
-        } else {
-            destTile = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
-        }
-        return destTile;
     }
 
     private Point getImageDimensions(byte[] imageBytes) throws IOException {
@@ -803,5 +791,4 @@ public class ImageTiler5 implements IImageTiler {
         }
     }
 }
-
 

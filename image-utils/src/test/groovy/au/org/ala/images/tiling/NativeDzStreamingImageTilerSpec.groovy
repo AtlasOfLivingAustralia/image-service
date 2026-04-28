@@ -44,6 +44,10 @@ class NativeDzStreamingImageTilerSpec extends Specification {
                 ".jpg",
                 82,
                 6,
+                true,
+                221d,
+                221d,
+                221d,
                 _ as NativeDzTilerLibrary.TileCallback,
                 Pointer.NULL,
                 _ as PointerByReference
@@ -85,9 +89,8 @@ class NativeDzStreamingImageTilerSpec extends Specification {
         then:
         result.is(fallbackResult)
         1 * fallback.tileImage(input, sink, 0, 1) >> fallbackResult
-        0 * nativeLib.ala_vips_google_tms_tiles_from_source(_, _, _, _, _, _, _, _, _, _, _, _)
+        0 * nativeLib.ala_vips_google_tms_tiles_from_source(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _)
         1 * vips.g_object_unref(source)
     }
 }
-
 

@@ -136,6 +136,13 @@ public interface VipsLibrary extends Library {
     int vips_image_get_height(Pointer image);
 
     /**
+     * Test whether an image has an alpha channel.
+     * @param image the image
+     * @return non-zero if the image has alpha
+     */
+    int vips_image_hasalpha(Pointer image);
+
+    /**
      * Thumbnail an image. This is a high-level operation that will
      * shrink or expand an image to fit within a bounding box.
      * @param input input image
@@ -278,6 +285,16 @@ public interface VipsLibrary extends Library {
     int vips_resize(Pointer input, PointerByReference out, double scale, Object... varargs);
 
     /**
+     * Append an alpha band to an image.
+     */
+    int vips_addalpha(Pointer input, PointerByReference out, Object... varargs);
+
+    /**
+     * Embed an image in a larger canvas.
+     */
+    int vips_embed(Pointer input, PointerByReference out, int x, int y, int width, int height, Object... varargs);
+
+    /**
      * Copy an image (general copy operation; supports optional GObject properties via varargs).
      */
     int vips_copy(Pointer input, PointerByReference out, Object... varargs);
@@ -289,6 +306,16 @@ public interface VipsLibrary extends Library {
      * Available since libvips 8.x as vips_image_copy_memory().
      */
     Pointer vips_image_copy_memory(Pointer image);
+
+    /**
+     * Create a libvips boxed array of doubles.
+     */
+    Pointer vips_array_double_new(double[] array, int n);
+
+    /**
+     * Unref a libvips area/boxed array.
+     */
+    void vips_area_unref(Pointer area);
 
     /**
      * Free memory allocated by VIPS (e.g., for buffers).

@@ -1,6 +1,9 @@
 package au.org.ala.images.vipsffm;
 
 import app.photofox.vipsffm.VImage;
+import app.photofox.vipsffm.VipsOption;
+import app.photofox.vipsffm.enums.VipsCompassDirection;
+import app.photofox.vipsffm.enums.VipsExtend;
 import au.org.ala.images.tiling.DefaultZoomFactorStrategy;
 import au.org.ala.images.tiling.IOnDemandImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
@@ -10,11 +13,12 @@ import au.org.ala.images.tiling.TilePyramidInfo;
 import au.org.ala.images.tiling.TilerSink;
 import au.org.ala.images.tiling.ZoomFactorStrategy;
 import com.google.common.io.ByteSink;
+import java.awt.Color;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.lang.foreign.Arena;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,18 +32,24 @@ public class VipsFfmOnDemandImageTiler implements IOnDemandImageTiler {
     private final IOnDemandImageTiler fallback;
     private final int tileSize;
     private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
     private final ZoomFactorStrategy zoomFactorStrategy;
+    private final boolean padTiles;
 
     public VipsFfmOnDemandImageTiler(ImageTilerConfig config, IOnDemandImageTiler fallback) {
         this.fallback = fallback;
         if (config != null) {
             this.tileSize = config.getTileSize();
             this.tileFormat = config.getTileFormat();
+            this.tileBackgroundColor = config.getTileBackgroundColor();
             this.zoomFactorStrategy = config.getZoomFactorStrategy();
+            this.padTiles = config.isPadTiles();
         } else {
             this.tileSize = 256;
             this.tileFormat = TileFormat.JPEG;
+            this.tileBackgroundColor = Color.gray;
             this.zoomFactorStrategy = new DefaultZoomFactorStrategy(this.tileSize);
+            this.padTiles = true;
         }
     }
 
@@ -96,14 +106,20 @@ public class VipsFfmOnDemandImageTiler implements IOnDemandImageTiler {
             TilerSink.ColumnSink columnSink = levelSink.getColumnSink(x, 0, 1);
             ByteSink byteSink = columnSink.getTileSink(y);
 
-            try (OutputStream os = byteSink.openStream()) {
-                String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg[Q=85]";
-                workingImage.writeToStream(os, suffix);
+            String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg[Q=85]";
+            VImage outputImage = prepareImageForOutput(workingImage);
+            try (var outputStream = byteSink.openStream()) {
+                outputImage.writeToStream(outputStream, suffix);
             }
 
             return TileGenerationResult.success();
         } catch (Exception e) {
             log.warn("vips-ffm on-demand tiling failed, falling back: {}", e.getMessage());
+            if (fallback == null) {
+                throw e instanceof RuntimeException runtimeException
+                    ? runtimeException
+                    : new RuntimeException(e);
+            }
             try {
                 bis.reset();
             } catch (IOException resetEx) {
@@ -112,6 +128,36 @@ public class VipsFfmOnDemandImageTiler implements IOnDemandImageTiler {
             return fallback.generateTile(bis, tilerSink, level, x, y);
         }
     }
+
+    private VImage prepareImageForOutput(VImage image) throws Exception {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        if (!padTiles || (width == tileSize && height == tileSize)) {
+            return image;
+        }
+
+        VImage paddedInput = image;
+        if (tileFormat == TileFormat.PNG && !image.hasAlpha()) {
+            paddedInput = image.bandjoinConst(List.of(0d));
+        }
+
+        return paddedInput.gravity(
+            VipsCompassDirection.COMPASS_DIRECTION_SOUTH_WEST,
+            tileSize,
+            tileSize,
+            VipsOption.Enum("extend", VipsExtend.EXTEND_BACKGROUND),
+            VipsOption.ArrayDouble("background", backgroundValues())
+        );
+    }
+
+    private List<Double> backgroundValues() {
+        if (tileFormat == TileFormat.PNG) {
+            return List.of(0d, 0d, 0d, 0d);
+        }
+        return List.of(
+            (double) tileBackgroundColor.getRed(),
+            (double) tileBackgroundColor.getGreen(),
+            (double) tileBackgroundColor.getBlue()
+        );
+    }
 }
-
-

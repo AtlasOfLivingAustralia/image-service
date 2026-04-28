@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.awt.Color;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -41,6 +42,8 @@ public class StreamingImageTiler implements IImageTiler {
     private final String vipsCommand;
     private final int tileSize;
     private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
+    private final boolean padTiles;
     private final ZoomFactorStrategy zoomFactorStrategy;
 
     // ── Constructors ────────────────────────────────────────────────────────────
@@ -55,6 +58,8 @@ public class StreamingImageTiler implements IImageTiler {
         this.vipsCommand        = vipsCommand;
         this.tileSize           = config.getTileSize();
         this.tileFormat         = config.getTileFormat();
+        this.tileBackgroundColor = config.getTileBackgroundColor();
+        this.padTiles           = config.isPadTiles();
         this.zoomFactorStrategy = config.getZoomFactorStrategy();
     }
 
@@ -73,6 +78,8 @@ public class StreamingImageTiler implements IImageTiler {
         this.vipsCommand        = tool;
         this.tileSize           = tileSize;
         this.tileFormat         = TileFormat.JPEG;
+        this.tileBackgroundColor = Color.gray;
+        this.padTiles           = true;
         this.zoomFactorStrategy = new DefaultZoomFactorStrategy(tileSize);
     }
 
@@ -271,28 +278,81 @@ public class StreamingImageTiler implements IImageTiler {
      * bytes directly into {@code tileSink} via the OS stdout pipe — zero extra heap copy.
      */
     private void extractTile(File levelFile,
-                              ByteSink tileSink,
-                              String suffix,
-                              int left, int top, int width, int height,
-                              int level, int col, int tmsRow) throws IOException {
-        List<String> args = Arrays.asList(
+                               ByteSink tileSink,
+                               String suffix,
+                               int left, int top, int width, int height,
+                               int level, int col, int tmsRow) throws IOException {
+        CommandExecutor.ExecResult res;
+        try (OutputStream outputStream = tileSink.openStream()) {
+            res = execTilePipeline(levelFile, outputStream, suffix, left, top, width, height);
+        }
+        if (res.exitCode != 0) {
+            throw new IOException(String.format(
+                    "vips tile pipeline failed at level %d tile %d/%d: %s",
+                    level, col, tmsRow, res.stderr));
+        }
+    }
+
+    private CommandExecutor.ExecResult execTilePipeline(File levelFile,
+                                                        OutputStream outputStream,
+                                                        String suffix,
+                                                        int left,
+                                                        int top,
+                                                        int width,
+                                                        int height) {
+        List<CommandExecutor.PipelineStage> stages = buildTileStages(levelFile, suffix, left, top, width, height);
+        if (stages.size() == 1) {
+            CommandExecutor.PipelineStage stage = stages.get(0);
+            return commandExecutor.exec(stage.cmd, stage.args, null, (InputStream) null, TILE_TIMEOUT_SECONDS, outputStream);
+        }
+        return commandExecutor.execPipeline(stages, null, null, TILE_TIMEOUT_SECONDS, outputStream);
+    }
+
+    private List<CommandExecutor.PipelineStage> buildTileStages(File levelFile,
+                                                                String suffix,
+                                                                int left,
+                                                                int top,
+                                                                int width,
+                                                                int height) {
+        List<CommandExecutor.PipelineStage> stages = new ArrayList<>();
+        boolean requiresPadding = TilePadding.requiresPadding(padTiles, tileSize, width, height);
+        stages.add(new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
                 "extract_area",
                 levelFile.getAbsolutePath(),
-                ".stdout" + suffix,
+                requiresPadding ? ".stdout.v" : ".stdout" + suffix,
                 String.valueOf(left),
                 String.valueOf(top),
                 String.valueOf(width),
                 String.valueOf(height)
-        );
-        try (OutputStream os = tileSink.openStream()) {
-            CommandExecutor.ExecResult res = commandExecutor.exec(
-                    vipsCommand, args, null, (InputStream) null, TILE_TIMEOUT_SECONDS, os);
-            if (res.exitCode != 0) {
-                throw new IOException(String.format(
-                        "vips extract_area failed at level %d tile %d/%d: %s",
-                        level, col, tmsRow, res.stderr));
+        )));
+        if (requiresPadding) {
+            if (tileFormat == TileFormat.PNG) {
+                stages.add(new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
+                        "bandjoin_const",
+                        "stdin",
+                        ".stdout.v",
+                        "[0]"
+                )));
             }
+            stages.add(new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
+                    "gravity",
+                    "stdin",
+                    ".stdout" + suffix,
+                    "south-west",
+                    String.valueOf(tileSize),
+                    String.valueOf(tileSize),
+                    "--extend", "background",
+                    "--background", backgroundString()
+            )));
         }
+        return stages;
+    }
+
+    private String backgroundString() {
+        if (tileFormat == TileFormat.PNG) {
+            return "0 0 0 0";
+        }
+        return tileBackgroundColor.getRed() + " " + tileBackgroundColor.getGreen() + " " + tileBackgroundColor.getBlue();
     }
 
     // ── Utilities ────────────────────────────────────────────────────────────────
