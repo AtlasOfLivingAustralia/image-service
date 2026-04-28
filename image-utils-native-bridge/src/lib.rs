@@ -17,11 +17,16 @@ static EMPTY_STRING: &[u8] = b"\0";
 static ACCESS_OPTION: &[u8] = b"access\0";
 static COMPRESSION_OPTION: &[u8] = b"compression\0";
 static STRIP_OPTION: &[u8] = b"strip\0";
+static EXTEND_OPTION: &[u8] = b"extend\0";
+static BACKGROUND_OPTION: &[u8] = b"background\0";
 static PNG_CONTENT_TYPE: &[u8] = b"image/png\0";
 static JPEG_CONTENT_TYPE: &[u8] = b"image/jpeg\0";
+const VIPS_EXTEND_BACKGROUND: c_int = 2;
 
 type VipsSource = c_void;
 type VipsImage = c_void;
+type VipsArea = c_void;
+type VipsArrayDouble = c_void;
 type AlaVipsTileCallback = unsafe extern "C" fn(
     level: c_int,
     x: c_int,
@@ -37,6 +42,8 @@ unsafe extern "C" {
     fn g_free(ptr: *mut c_void);
     fn g_object_ref(object: *mut c_void) -> *mut c_void;
     fn g_object_unref(object: *mut c_void);
+    fn vips_area_unref(area: *mut VipsArea);
+    fn vips_array_double_new(array: *const f64, n: c_int) -> *mut VipsArrayDouble;
 
     fn vips_error_buffer() -> *const c_char;
     fn vips_error_clear();
@@ -52,6 +59,15 @@ unsafe extern "C" {
         output: *mut *mut VipsImage,
         left: c_int,
         top: c_int,
+        width: c_int,
+        height: c_int,
+        ...
+    ) -> c_int;
+    fn vips_embed(
+        input: *mut VipsImage,
+        output: *mut *mut VipsImage,
+        x: c_int,
+        y: c_int,
         width: c_int,
         height: c_int,
         ...
@@ -190,6 +206,10 @@ unsafe fn tiles_from_source_impl(
     suffix: *const c_char,
     jpeg_quality: c_int,
     png_compression: c_int,
+    pad_tiles: c_int,
+    background_red: f64,
+    background_green: f64,
+    background_blue: f64,
     callback: Option<AlaVipsTileCallback>,
     user_data: *mut c_void,
     error_out: *mut *mut c_char,
@@ -223,6 +243,7 @@ unsafe fn tiles_from_source_impl(
     }
 
     let callback_fn = callback.expect("callback presence already checked");
+    let png = unsafe { is_png_suffix(suffix) };
 
     for level in min_level..=max_level {
         // SAFETY: bounds validated above and `subsamples` points to `level_count` ints.
@@ -301,11 +322,61 @@ unsafe fn tiles_from_source_impl(
                     return -1;
                 }
 
+                let mut output_tile = tile;
+                if pad_tiles != 0 && (width != tile_size || height != tile_size) {
+                    let background_values = [background_red, background_green, background_blue, 0.0_f64];
+                    let background_len = if png { 4 } else { 3 };
+                    let background_array = unsafe {
+                        vips_array_double_new(background_values.as_ptr(), background_len)
+                    };
+                    if background_array.is_null() {
+                        unsafe {
+                            g_object_unref(tile.cast());
+                            g_object_unref(level_image.cast());
+                            g_object_unref(input.cast());
+                            set_error(error_out, "failed to allocate background colour array for tile padding");
+                        }
+                        return -1;
+                    }
+                    let mut padded_tile: *mut VipsImage = ptr::null_mut();
+                    let embed_rc = unsafe {
+                        vips_embed(
+                            tile,
+                            &mut padded_tile,
+                            0,
+                            tile_size - height,
+                            tile_size,
+                            tile_size,
+                            EXTEND_OPTION.as_ptr().cast::<c_char>(),
+                            VIPS_EXTEND_BACKGROUND,
+                            BACKGROUND_OPTION.as_ptr().cast::<c_char>(),
+                            background_array,
+                            ptr::null::<c_void>(),
+                        )
+                    };
+                    unsafe {
+                        vips_area_unref(background_array.cast());
+                    }
+                    if embed_rc != 0 {
+                        unsafe {
+                            g_object_unref(tile.cast());
+                            g_object_unref(level_image.cast());
+                            g_object_unref(input.cast());
+                            set_vips_error(error_out, "vips_embed failed while padding edge tile");
+                        }
+                        return -1;
+                    }
+                    unsafe {
+                        g_object_unref(tile.cast());
+                    }
+                    output_tile = padded_tile;
+                }
+
                 let mut buf: *mut c_void = ptr::null_mut();
                 let mut len: size_t = 0;
                 let encode_rc = unsafe {
                     encode_tile(
-                        tile,
+                        output_tile,
                         suffix,
                         jpeg_quality,
                         png_compression,
@@ -314,9 +385,9 @@ unsafe fn tiles_from_source_impl(
                         error_out,
                     )
                 };
-                // SAFETY: `tile` was created by `vips_crop` above.
+                // SAFETY: tile/output_tile was created by libvips above.
                 unsafe {
-                    g_object_unref(tile.cast());
+                    g_object_unref(output_tile.cast());
                 }
                 if encode_rc != 0 {
                     unsafe {
@@ -375,6 +446,10 @@ pub unsafe extern "C" fn ala_vips_google_tms_tiles_from_source(
     suffix: *const c_char,
     jpeg_quality: c_int,
     png_compression: c_int,
+    pad_tiles: c_int,
+    background_red: f64,
+    background_green: f64,
+    background_blue: f64,
     callback: Option<AlaVipsTileCallback>,
     user_data: *mut c_void,
     error_out: *mut *mut c_char,
@@ -397,6 +472,10 @@ pub unsafe extern "C" fn ala_vips_google_tms_tiles_from_source(
             suffix,
             jpeg_quality,
             png_compression,
+            pad_tiles,
+            background_red,
+            background_green,
+            background_blue,
             callback,
             user_data,
             error_out,
@@ -421,6 +500,10 @@ pub unsafe extern "C" fn ala_vips_google_tms_tiles_from_file(
     suffix: *const c_char,
     jpeg_quality: c_int,
     png_compression: c_int,
+    pad_tiles: c_int,
+    background_red: f64,
+    background_green: f64,
+    background_blue: f64,
     callback: Option<AlaVipsTileCallback>,
     user_data: *mut c_void,
     error_out: *mut *mut c_char,
@@ -436,6 +519,10 @@ pub unsafe extern "C" fn ala_vips_google_tms_tiles_from_file(
             suffix,
             jpeg_quality,
             png_compression,
+            pad_tiles,
+            background_red,
+            background_green,
+            background_blue,
             callback,
             user_data,
             error_out,
@@ -465,4 +552,3 @@ mod tests {
         assert!(!is_png_suffix_bytes(b"png"));
     }
 }
-

@@ -78,6 +78,30 @@ tasks.withType(Test).configureEach {
 def nativeOs = osdetector.os == 'osx' ? 'macos' : osdetector.os
 def nativeArch = osdetector.arch == 'aarch_64' ? 'aarch64' : osdetector.arch
 def nativeClassifier = "${nativeOs}-${nativeArch}"
+def nativeLibFileName = osdetector.os == 'osx' ? 'libala_vips_dztiler.dylib' : 'libala_vips_dztiler.so'
+def useSanitizedNativeDzBridge = providers.gradleProperty('useSanitizedNativeDzBridge')
+        .orElse(providers.systemProperty('useSanitizedNativeDzBridge'))
+        .map { it.toBoolean() }
+        .orElse(false)
+def nativeBridgeSanitizers = providers.gradleProperty('nativeBridgeSanitizers')
+        .orElse(useSanitizedNativeDzBridge.map { enabled -> enabled ? 'asan' : '' })
+        .map { value ->
+            value.split(',')
+                    .collect { it.trim().toLowerCase() }
+                    .findAll { !it.isEmpty() }
+                    .unique()
+        }
+def sanitizedBridgeRelativeDir = nativeBridgeSanitizers.map { sanitizers -> sanitizers.join('-') }
+def sanitizedBridgePath = project(':image-utils-native-bridge').layout.buildDirectory.file(
+        sanitizedBridgeRelativeDir.map { dirName -> "native-sanitized/${nativeClassifier}/${dirName}/${nativeLibFileName}" }
+)
+
+tasks.withType(Test).configureEach {
+    if (useSanitizedNativeDzBridge.get()) {
+        dependsOn(':image-utils-native-bridge:stageNativeBridgeSanitized')
+        systemProperty 'images.nativeDzTiler.bridgeLibraryPath', sanitizedBridgePath.get().asFile.absolutePath
+    }
+}
 
 processResources {
     def skipNativeBuild = providers.gradleProperty('skipNativeDzBridgeBuild')

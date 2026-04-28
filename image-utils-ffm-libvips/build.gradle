@@ -19,6 +19,29 @@ repositories {
     maven { url "https://nexus.ala.org.au/content/groups/public/" }
 }
 
+def nativeOs = System.getProperty('os.name').toLowerCase().contains('mac') ? 'macos' :
+        (System.getProperty('os.name').toLowerCase().contains('linux') ? 'linux' : System.getProperty('os.name').toLowerCase().replaceAll('[^a-z0-9]', ''))
+def nativeArch = ['amd64', 'x86_64'].contains(System.getProperty('os.arch').toLowerCase()) ? 'x86_64' :
+        (['aarch64', 'arm64'].contains(System.getProperty('os.arch').toLowerCase()) ? 'aarch64' : System.getProperty('os.arch').toLowerCase().replaceAll('[^a-z0-9_]', ''))
+def nativeClassifier = "${nativeOs}-${nativeArch}"
+def nativeLibFileName = nativeOs == 'macos' ? 'libala_vips_dztiler.dylib' : 'libala_vips_dztiler.so'
+def useSanitizedNativeDzBridge = providers.gradleProperty('useSanitizedNativeDzBridge')
+        .orElse(providers.systemProperty('useSanitizedNativeDzBridge'))
+        .map { it.toBoolean() }
+        .orElse(false)
+def nativeBridgeSanitizers = providers.gradleProperty('nativeBridgeSanitizers')
+        .orElse(useSanitizedNativeDzBridge.map { enabled -> enabled ? 'asan' : '' })
+        .map { value ->
+            value.split(',')
+                    .collect { it.trim().toLowerCase() }
+                    .findAll { !it.isEmpty() }
+                    .unique()
+        }
+def sanitizedBridgeRelativeDir = nativeBridgeSanitizers.map { sanitizers -> sanitizers.join('-') }
+def sanitizedBridgePath = project(':image-utils-native-bridge').layout.buildDirectory.file(
+        sanitizedBridgeRelativeDir.map { dirName -> "native-sanitized/${nativeClassifier}/${dirName}/${nativeLibFileName}" }
+)
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
@@ -105,6 +128,11 @@ test {
         "-Dtiler.bench.image=${System.getProperty('tiler.bench.image', 'all')}",
         "-Dtiler.bench.vips.concurrency=${System.getProperty('tiler.bench.vips.concurrency', '1')}"
     ]
+
+    if (useSanitizedNativeDzBridge.get()) {
+        dependsOn(':image-utils-native-bridge:stageNativeBridgeSanitized')
+        systemProperty 'images.nativeDzTiler.bridgeLibraryPath', sanitizedBridgePath.get().asFile.absolutePath
+    }
 }
 
 publishing {
