@@ -159,7 +159,7 @@ class ImageStoreService implements MetricsSupport {
     def clearTileLookupCacheForImage(String imageIdentifier) {
         // Find all cache entries for this image identifier and invalidate them
         tileCache.asMap().keySet().findAll { it.left == imageIdentifier }.each { key ->
-            tileCache.invalidate(key)
+            tileCache.synchronous().invalidate(key)
         }
     }
 
