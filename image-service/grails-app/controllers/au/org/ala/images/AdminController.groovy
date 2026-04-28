@@ -16,6 +16,7 @@ import java.util.regex.Pattern
 
 
 @AlaSecured(value = [CASRoles.ROLE_ADMIN, "ROLE_IMAGE_ADMIN"], redirectUri = "/", anyRole = true)
+@NoCache
 class AdminController {
 
     def imageService
