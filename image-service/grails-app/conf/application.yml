@@ -443,6 +443,10 @@ images:
   # When enabled, uses external tools (vips, magick) if available, falls back to pure Java
   useStreamingTiler: false
   useStreamingThumbnailer: false
+  # When true, right/top edge tiles are padded out to the full tile size using
+  # transparent pixels for PNG tiles and the configured tile background colour
+  # for non-alpha formats such as JPEG. Default: true
+  padTiles: true
   # When enabled, uses native libraries (vips) if available, falls back to pure Java
   useStreamingIiifProcessor: false
   # Prefer pure Java tiler and thumbnailer over native code versions (vips, magick) even if native tools are available.

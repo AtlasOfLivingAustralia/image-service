@@ -5,7 +5,9 @@ import com.google.common.io.ByteSink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Color;
 import java.io.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -25,7 +27,9 @@ public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
     private final IOnDemandImageTiler fallback;
     private final int tileSize;
     private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
     private final ZoomFactorStrategy zoomFactorStrategy;
+    private final boolean padTiles;
 
     public VipsCliOnDemandImageTiler(CommandExecutor commandExecutor, String vipsCommand, ImageTilerConfig config, IOnDemandImageTiler fallback) {
         this.commandExecutor = commandExecutor;
@@ -34,11 +38,15 @@ public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
         if (config != null) {
             this.tileSize = config.getTileSize();
             this.tileFormat = config.getTileFormat();
+            this.tileBackgroundColor = config.getTileBackgroundColor();
             this.zoomFactorStrategy = config.getZoomFactorStrategy();
+            this.padTiles = config.isPadTiles();
         } else {
             this.tileSize = 256;
             this.tileFormat = TileFormat.JPEG;
+            this.tileBackgroundColor = Color.gray;
             this.zoomFactorStrategy = new DefaultZoomFactorStrategy(this.tileSize);
+            this.padTiles = true;
         }
     }
 
@@ -79,23 +87,16 @@ public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
             ByteSink byteSink = columnSink.getTileSink(y);
 
             String suffix = (tileFormat == TileFormat.PNG) ? ".png" : ".jpg";
-
-            try (OutputStream os = byteSink.openStream()) {
-                if (subsample == 1) {
-                    // No resize needed, just extract
-                    CommandExecutor.ExecResult res = commandExecutor.exec(vipsCommand, Arrays.asList(
-                        "extract_area", "stdin", ".stdout" + suffix,
-                        String.valueOf(srcX), String.valueOf(srcY), String.valueOf(srcW), String.valueOf(srcH)
-                    ), null, bis, TILE_COMMAND_TIMEOUT_SECONDS, os);
-                    if (res.exitCode != 0) {
-                        throw new IOException("vips extract_area failed: " + res.stderr);
-                    }
-                } else {
-                    CommandExecutor.ExecResult res = execExtractAreaAndResize(bis, os, suffix, srcX, srcY, srcW, srcH, scale);
-                    if (res.exitCode != 0) {
-                        throw new IOException("vips pipe failed: " + res.stderr);
-                    }
-                }
+            int outputWidth;
+            int outputHeight;
+            outputWidth = subsample == 1 ? srcW : (int) Math.ceil(srcW / (double) subsample);
+            outputHeight = subsample == 1 ? srcH : (int) Math.ceil(srcH / (double) subsample);
+            CommandExecutor.ExecResult res;
+            try (OutputStream outputStream = byteSink.openStream()) {
+                res = execPipeline(bis, outputStream, suffix, srcX, srcY, srcW, srcH, scale, subsample, outputWidth, outputHeight);
+            }
+            if (res.exitCode != 0) {
+                throw new IOException("vips pipe failed: " + res.stderr);
             }
 
             return TileGenerationResult.success();
@@ -106,25 +107,81 @@ public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
         }
     }
 
-    private CommandExecutor.ExecResult execExtractAreaAndResize(InputStream imageInputStream,
-                                                                OutputStream outputStream,
-                                                                String suffix,
-                                                                int srcX,
-                                                                int srcY,
-                                                                int srcW,
-                                                                int srcH,
-                                                                double scale) {
-        List<CommandExecutor.PipelineStage> stages = Arrays.asList(
-            new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
-                "extract_area", "stdin", ".stdout" + suffix,
-                String.valueOf(srcX), String.valueOf(srcY), String.valueOf(srcW), String.valueOf(srcH)
-            )),
-            new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
-                "resize", "stdin", ".stdout" + suffix,
-                Double.toString(scale)
-            ))
-        );
+    private CommandExecutor.ExecResult execPipeline(InputStream imageInputStream,
+                                                    OutputStream outputStream,
+                                                    String suffix,
+                                                    int srcX,
+                                                    int srcY,
+                                                    int srcW,
+                                                    int srcH,
+                                                    double scale,
+                                                    int subsample,
+                                                    int outputWidth,
+                                                    int outputHeight) {
+        List<CommandExecutor.PipelineStage> stages = buildStages(suffix, srcX, srcY, srcW, srcH, scale, subsample, outputWidth, outputHeight);
+        if (stages.size() == 1) {
+            CommandExecutor.PipelineStage stage = stages.get(0);
+            return commandExecutor.exec(stage.cmd, stage.args, null, imageInputStream, TILE_COMMAND_TIMEOUT_SECONDS, outputStream);
+        }
         return commandExecutor.execPipeline(stages, null, imageInputStream, TILE_COMMAND_TIMEOUT_SECONDS, outputStream);
+    }
+
+    private List<CommandExecutor.PipelineStage> buildStages(String suffix,
+                                                            int srcX,
+                                                            int srcY,
+                                                            int srcW,
+                                                            int srcH,
+                                                            double scale,
+                                                            int subsample,
+                                                            int outputWidth,
+                                                            int outputHeight) {
+        List<CommandExecutor.PipelineStage> stages = new ArrayList<>();
+        boolean requiresPadding = TilePadding.requiresPadding(padTiles, tileSize, outputWidth, outputHeight);
+
+        stages.add(new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
+            "extract_area",
+            "stdin",
+            subsample == 1 && !requiresPadding ? ".stdout" + suffix : ".stdout.v",
+            String.valueOf(srcX), String.valueOf(srcY), String.valueOf(srcW), String.valueOf(srcH)
+        )));
+
+        if (subsample != 1) {
+            stages.add(new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
+                "resize",
+                "stdin",
+                requiresPadding ? ".stdout.v" : ".stdout" + suffix,
+                Double.toString(scale)
+            )));
+        }
+
+        if (requiresPadding) {
+            if (tileFormat == TileFormat.PNG) {
+                stages.add(new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
+                    "bandjoin_const",
+                    "stdin",
+                    ".stdout.v",
+                    "[0]"
+                )));
+            }
+            stages.add(new CommandExecutor.PipelineStage(vipsCommand, Arrays.asList(
+                "gravity",
+                "stdin",
+                ".stdout" + suffix,
+                "south-west",
+                String.valueOf(tileSize),
+                String.valueOf(tileSize),
+                "--extend", "background",
+                "--background", backgroundString()
+            )));
+        }
+        return stages;
+    }
+
+    private String backgroundString() {
+        if (tileFormat == TileFormat.PNG) {
+            return "0 0 0 0";
+        }
+        return tileBackgroundColor.getRed() + " " + tileBackgroundColor.getGreen() + " " + tileBackgroundColor.getBlue();
     }
 
     private TilePyramidInfo getPyramidInfo(BufferedInputStream bis) throws IOException {

@@ -32,6 +32,7 @@ public class OnDemandImageTiler implements IOnDemandImageTiler {
     private final int tileSize;
     private final TileFormat tileFormat;
     private final Color tileBackgroundColor;
+    private final boolean padTiles;
     private final ZoomFactorStrategy zoomFactorStrategy;
 
     private static final GraphicsEnvironment GRAPHICS_ENV =
@@ -42,11 +43,13 @@ public class OnDemandImageTiler implements IOnDemandImageTiler {
             this.tileSize = config.getTileSize();
             this.tileFormat = config.getTileFormat();
             this.tileBackgroundColor = config.getTileBackgroundColor();
+            this.padTiles = config.isPadTiles();
             this.zoomFactorStrategy = config.getZoomFactorStrategy();
         } else {
             this.tileSize = 256;
             this.tileFormat = TileFormat.JPEG;
             this.tileBackgroundColor = Color.gray;
+            this.padTiles = true;
             this.zoomFactorStrategy = new DefaultZoomFactorStrategy(this.tileSize);
         }
     }
@@ -127,13 +130,7 @@ public class OnDemandImageTiler implements IOnDemandImageTiler {
                     ByteSink byteSink = columnSink.getTileSink(y);
 
                     // Write the tile
-                    try (OutputStream os = byteSink.openStream()) {
-                        if (tileFormat == TileFormat.PNG) {
-                            ImageIO.write(tile, "png", os);
-                        } else {
-                            ImageIO.write(tile, "jpg", os);
-                        }
-                    }
+                    TilePadding.writeImage(byteSink, tile, tileFormat);
 
                     long endTime = System.nanoTime();
                     log.debug("Generated and wrote tile ({},{}) at level {} in {} ms",
@@ -226,26 +223,18 @@ public class OnDemandImageTiler implements IOnDemandImageTiler {
         }
 
         // Create output tile with proper format
-        BufferedImage destTile = createDestTile(targetWidth, targetHeight);
-        Graphics g = GRAPHICS_ENV.createGraphics(destTile);
-
         try {
-            // Draw the tile content
-            g.drawImage(resized, 0, 0, null);
-
+            return TilePadding.materializeTile(
+                    resized,
+                    targetWidth,
+                    targetHeight,
+                    tileSize,
+                    tileFormat,
+                    tileBackgroundColor,
+                    padTiles
+            );
         } finally {
-            g.dispose();
             resized.flush();
-        }
-
-        return destTile;
-    }
-
-    private BufferedImage createDestTile(int width, int height) {
-        if (tileFormat == TileFormat.PNG) {
-            return new BufferedImage(width, height, BufferedImage.TYPE_4BYTE_ABGR);
-        } else {
-            return new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
         }
     }
 
@@ -284,4 +273,3 @@ public class OnDemandImageTiler implements IOnDemandImageTiler {
         }
     }
 }
-

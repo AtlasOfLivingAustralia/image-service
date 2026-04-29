@@ -10,6 +10,7 @@ import com.sun.jna.ptr.PointerByReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Color;
 import java.io.*;
 
 /**
@@ -23,7 +24,9 @@ public class JnaOnDemandImageTiler implements IOnDemandImageTiler {
     private final IOnDemandImageTiler fallback;
     private final int tileSize;
     private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
     private final ZoomFactorStrategy zoomFactorStrategy;
+    private final boolean padTiles;
 
     public JnaOnDemandImageTiler(ImageTilerConfig config, IOnDemandImageTiler fallback) {
         this.vips = NativeLibraryDetector.getVipsLibrary();
@@ -31,18 +34,22 @@ public class JnaOnDemandImageTiler implements IOnDemandImageTiler {
         if (config != null) {
             this.tileSize = config.getTileSize();
             this.tileFormat = config.getTileFormat();
+            this.tileBackgroundColor = config.getTileBackgroundColor();
             this.zoomFactorStrategy = config.getZoomFactorStrategy();
+            this.padTiles = config.isPadTiles();
         } else {
             this.tileSize = 256;
             this.tileFormat = TileFormat.JPEG;
+            this.tileBackgroundColor = Color.gray;
             this.zoomFactorStrategy = new DefaultZoomFactorStrategy(this.tileSize);
+            this.padTiles = true;
         }
     }
 
     @Override
     public TileGenerationResult generateTile(InputStream imageInputStream, TilerSink tilerSink, int level, int x, int y) {
         if (vips == null) {
-            return fallback.generateTile(imageInputStream, tilerSink, level, x, y);
+            return generateWithFallbackOrThrow(imageInputStream, tilerSink, level, x, y, null);
         }
 
         BufferedInputStream bis = (imageInputStream instanceof BufferedInputStream) 
@@ -111,13 +118,7 @@ public class JnaOnDemandImageTiler implements IOnDemandImageTiler {
                 TilerSink.ColumnSink columnSink = levelSink.getColumnSink(x, 0, 1);
                 ByteSink byteSink = columnSink.getTileSink(y);
 
-                try (OutputStream os = byteSink.openStream();
-                     OutputStreamVipsTarget vipsTarget = new OutputStreamVipsTarget(vips, os)) {
-                    String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg";
-                    if (vips.vips_image_write_to_target(workingImage, suffix, vipsTarget.getTarget(), (Object) null) != 0) {
-                         throw new IOException("vips_image_write_to_target failed: " + vips.vips_error_buffer());
-                    }
-                }
+                writeTileImage(workingImage, byteSink);
 
                 return TileGenerationResult.success();
             } finally {
@@ -126,13 +127,112 @@ public class JnaOnDemandImageTiler implements IOnDemandImageTiler {
             }
         } catch (Exception e) {
             log.warn("JNA tile generation failed, falling back: {}", e.getMessage());
+            if (fallback == null) {
+                if (e instanceof RuntimeException) {
+                    throw (RuntimeException) e;
+                }
+                throw new RuntimeException(e);
+            }
             try {
                 bis.reset();
             } catch (IOException resetEx) {
                 log.debug("Failed to reset stream for fallback: {}", resetEx.getMessage());
             }
-            return fallback.generateTile(bis, tilerSink, level, x, y);
+            return generateWithFallbackOrThrow(bis, tilerSink, level, x, y, e);
         }
+    }
+
+    private TileGenerationResult generateWithFallbackOrThrow(InputStream imageInputStream,
+                                                             TilerSink tilerSink,
+                                                             int level,
+                                                             int x,
+                                                             int y,
+                                                             Exception cause) {
+        if (fallback == null) {
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            }
+            if (cause != null) {
+                throw new RuntimeException(cause);
+            }
+            throw new IllegalStateException("JNA tiler fallback is not configured and libvips is unavailable");
+        }
+        return fallback.generateTile(imageInputStream, tilerSink, level, x, y);
+    }
+
+    private void writeTileImage(Pointer tileImage, ByteSink byteSink) throws IOException {
+        Pointer outputImage = tileImage;
+        try {
+            outputImage = prepareImageForOutput(tileImage);
+            try (OutputStream outputStream = byteSink.openStream();
+                 OutputStreamVipsTarget vipsTarget = new OutputStreamVipsTarget(vips, outputStream)) {
+                String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg";
+                if (vips.vips_image_write_to_target(outputImage, suffix, vipsTarget.getTarget(), (Object) null) != 0) {
+                    throw new IOException("vips_image_write_to_target failed: " + vips.vips_error_buffer());
+                }
+            }
+        } finally {
+            if (outputImage != null && outputImage != tileImage) {
+                vips.g_object_unref(outputImage);
+            }
+        }
+    }
+
+    private Pointer prepareImageForOutput(Pointer tileImage) throws IOException {
+        int width = vips.vips_image_get_width(tileImage);
+        int height = vips.vips_image_get_height(tileImage);
+        if (!TilePadding.requiresPadding(padTiles, tileSize, width, height)) {
+            return tileImage;
+        }
+
+        Pointer paddedInput = tileImage;
+        Pointer alphaImage = null;
+        if (tileFormat == TileFormat.PNG && vips.vips_image_hasalpha(tileImage) == 0) {
+            PointerByReference alphaRef = new PointerByReference();
+            if (vips.vips_addalpha(tileImage, alphaRef, (Object) null) != 0) {
+                throw new IOException("vips_addalpha failed: " + vips.vips_error_buffer());
+            }
+            alphaImage = alphaRef.getValue();
+            paddedInput = alphaImage;
+        }
+
+        Pointer background = null;
+        try {
+            background = vips.vips_array_double_new(resolveBackgroundArray(), tileFormat == TileFormat.PNG ? 4 : 3);
+            PointerByReference paddedRef = new PointerByReference();
+            if (vips.vips_embed(
+                    paddedInput,
+                    paddedRef,
+                    0,
+                    tileSize - height,
+                    tileSize,
+                    tileSize,
+                    "extend", 5,
+                    "background", background,
+                    null
+            ) != 0) {
+                throw new IOException("vips_embed failed: " + vips.vips_error_buffer());
+            }
+            return paddedRef.getValue();
+        } finally {
+            if (background != null && background != Pointer.NULL) {
+                vips.vips_area_unref(background);
+            }
+            if (alphaImage != null && alphaImage != Pointer.NULL) {
+                vips.g_object_unref(alphaImage);
+            }
+        }
+    }
+
+    private double[] resolveBackgroundArray() {
+        if (tileFormat == TileFormat.PNG) {
+            return new double[]{0d, 0d, 0d, 0d};
+        }
+        return new double[]{
+                tileBackgroundColor.getRed(),
+                tileBackgroundColor.getGreen(),
+                tileBackgroundColor.getBlue()
+        };
     }
 
 }

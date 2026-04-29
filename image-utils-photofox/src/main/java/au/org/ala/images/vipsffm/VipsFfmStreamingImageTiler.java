@@ -3,6 +3,8 @@ package au.org.ala.images.vipsffm;
 import app.photofox.vipsffm.VImage;
 import app.photofox.vipsffm.Vips;
 import app.photofox.vipsffm.VipsOption;
+import app.photofox.vipsffm.enums.VipsCompassDirection;
+import app.photofox.vipsffm.enums.VipsExtend;
 import au.org.ala.images.tiling.IImageTiler;
 import au.org.ala.images.tiling.ImageTilerConfig;
 import au.org.ala.images.tiling.ImageTilerResults;
@@ -10,6 +12,7 @@ import au.org.ala.images.tiling.TileFormat;
 import au.org.ala.images.tiling.TilerSink;
 import au.org.ala.images.tiling.ZoomFactorStrategy;
 import com.google.common.io.ByteSink;
+import java.awt.Color;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -38,6 +41,8 @@ public class VipsFfmStreamingImageTiler implements IImageTiler {
 
     private final IImageTiler fallbackTiler;
     private final int tileSize;
+    private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
     private final ZoomFactorStrategy zoomFactorStrategy;
     /** Executor used to parallelise per-tile encode+write operations. May be null (sequential fallback). */
     private final Executor ioExecutor;
@@ -45,6 +50,7 @@ public class VipsFfmStreamingImageTiler implements IImageTiler {
     private final int vipsConcurrency;
     /** Encode suffix passed to VImage.writeToStream(), e.g. ".jpg" or ".png". */
     private final String encodeSuffix;
+    private final boolean padTiles;
 
     private static final class LevelPhaseMetrics {
         final long levelStartNanos = System.nanoTime();
@@ -153,11 +159,14 @@ public class VipsFfmStreamingImageTiler implements IImageTiler {
     public VipsFfmStreamingImageTiler(IImageTiler fallbackTiler, ImageTilerConfig config) {
         this.fallbackTiler = fallbackTiler;
         this.tileSize = config.getTileSize();
+        this.tileFormat = config.getTileFormat();
+        this.tileBackgroundColor = config.getTileBackgroundColor();
         this.zoomFactorStrategy = config.getZoomFactorStrategy();
         this.ioExecutor = config.getIoExecutor();
         this.sameThreadExecutor = isSameThreadExecutor(this.ioExecutor);
         this.vipsConcurrency = config.getVipsConcurrency();
         this.encodeSuffix = config.getTileFormat() == TileFormat.PNG ? ".png" : ".jpg";
+        this.padTiles = config.isPadTiles();
         applyVipsConcurrencyIfConfigured();
         log.info(
             "VipsFfmStreamingImageTiler initialized (lopcode/vips-ffm), ioExecutor={}, sameThreadExecutor={}",
@@ -416,7 +425,7 @@ public class VipsFfmStreamingImageTiler implements IImageTiler {
                 metrics.tileCount.increment();
 
                 ByteSink tileSink = columnSink.getTileSink(tmsRow);
-                writeTile(tileImage, tileSink, metrics);
+                writeTile(tileImage, tileSink, width, height, metrics);
             } catch (Exception e) {
                 log.error("Error generating tile level {}/{}/{}", level, col, tmsRow, e);
                 throw new IOException("One or more tiles failed to generate at level " + level, e);
@@ -424,31 +433,57 @@ public class VipsFfmStreamingImageTiler implements IImageTiler {
         }
     }
 
-    private void writeTile(VImage tileImage, ByteSink tileSink, LevelPhaseMetrics metrics) throws IOException {
-        OutputStream raw = null;
+    private void writeTile(VImage tileImage, ByteSink tileSink, int width, int height, LevelPhaseMetrics metrics) throws IOException {
         try {
+            VImage outputImage = prepareImageForOutput(tileImage, width, height);
             long tOpen0 = System.nanoTime();
-            raw = tileSink.openStream();
+            OutputStream outputStream = tileSink.openStream();
             metrics.sinkOpenCloseNanos.add(System.nanoTime() - tOpen0);
-
-            TimedOutputStream timed = new TimedOutputStream(raw, metrics.sinkWriteNanos);
             long tEncode0 = System.nanoTime();
-            tileImage.writeToStream(timed, encodeSuffix);
+            TimedOutputStream timed = new TimedOutputStream(outputStream, metrics.sinkWriteNanos);
+            try {
+                outputImage.writeToStream(timed, encodeSuffix);
+            } finally {
+                long tClose0 = System.nanoTime();
+                timed.close();
+                metrics.sinkOpenCloseNanos.add(System.nanoTime() - tClose0);
+            }
             metrics.encodeWallNanos.add(System.nanoTime() - tEncode0);
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
             throw new IOException("Failed to encode tile", e);
-        } finally {
-            if (raw != null) {
-                long tClose0 = System.nanoTime();
-                try {
-                    raw.close();
-                } finally {
-                    metrics.sinkOpenCloseNanos.add(System.nanoTime() - tClose0);
-                }
-            }
         }
+    }
+
+    private VImage prepareImageForOutput(VImage tileImage, int width, int height) throws Exception {
+        if (!padTiles || (width == tileSize && height == tileSize)) {
+            return tileImage;
+        }
+
+        VImage paddedInput = tileImage;
+        if (tileFormat == TileFormat.PNG && !tileImage.hasAlpha()) {
+            paddedInput = tileImage.bandjoinConst(List.of(0d));
+        }
+
+        return paddedInput.gravity(
+            VipsCompassDirection.COMPASS_DIRECTION_SOUTH_WEST,
+            tileSize,
+            tileSize,
+            VipsOption.Enum("extend", VipsExtend.EXTEND_BACKGROUND),
+            VipsOption.ArrayDouble("background", backgroundValues())
+        );
+    }
+
+    private List<Double> backgroundValues() {
+        if (tileFormat == TileFormat.PNG) {
+            return List.of(0d, 0d, 0d, 0d);
+        }
+        return List.of(
+            (double) tileBackgroundColor.getRed(),
+            (double) tileBackgroundColor.getGreen(),
+            (double) tileBackgroundColor.getBlue()
+        );
     }
 
     private boolean shouldMaterializeLevel(int cols, int rows, boolean parallelFanOut) {
@@ -493,5 +528,3 @@ public class VipsFfmStreamingImageTiler implements IImageTiler {
         return false;
     }
 }
-
-

@@ -11,6 +11,7 @@ import com.sun.jna.ptr.PointerByReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Color;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -30,6 +31,8 @@ public class NativeDzStreamingImageTiler implements IImageTiler {
     private final IImageTiler fallbackTiler;
     private final int tileSize;
     private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
+    private final boolean padTiles;
     private final ZoomFactorStrategy zoomFactorStrategy;
     private final NativeDzTilerLibrary nativeLib;
     private final VipsLibrary vips;
@@ -47,6 +50,8 @@ public class NativeDzStreamingImageTiler implements IImageTiler {
         this.fallbackTiler = fallbackTiler;
         this.tileSize = config.getTileSize();
         this.tileFormat = config.getTileFormat();
+        this.tileBackgroundColor = config.getTileBackgroundColor();
+        this.padTiles = config.isPadTiles();
         this.zoomFactorStrategy = config.getZoomFactorStrategy();
         this.nativeLib = nativeLib;
         this.vips = vips;
@@ -110,6 +115,10 @@ public class NativeDzStreamingImageTiler implements IImageTiler {
                     tileFormat == TileFormat.PNG ? ".png" : ".jpg",
                     DEFAULT_JPEG_QUALITY,
                     DEFAULT_PNG_COMPRESSION,
+                    padTiles,
+                    tileBackgroundColor.getRed(),
+                    tileBackgroundColor.getGreen(),
+                    tileBackgroundColor.getBlue(),
                     callback,
                     Pointer.NULL,
                     errorRef
@@ -164,4 +173,3 @@ public class NativeDzStreamingImageTiler implements IImageTiler {
         }
     }
 }
-

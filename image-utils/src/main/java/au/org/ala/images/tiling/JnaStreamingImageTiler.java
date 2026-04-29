@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -31,20 +32,26 @@ public class JnaStreamingImageTiler implements IImageTiler {
     private final VipsLibrary vips;
     private final IImageTiler fallbackTiler;
     private final int tileSize;
+    private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
     private final Executor levelExecutor;
     private final ZoomFactorStrategy zoomFactorStrategy;
     private final int vipsConcurrency;
     private final String encodeSuffix;
     private final boolean sameThreadExecutor;
+    private final boolean padTiles;
 
     public JnaStreamingImageTiler(IImageTiler fallbackTiler, ImageTilerConfig config) {
         this.fallbackTiler = fallbackTiler;
         this.tileSize = config.getTileSize();
+        this.tileFormat = config.getTileFormat();
+        this.tileBackgroundColor = config.getTileBackgroundColor();
         this.levelExecutor = config.getLevelExecutor();
         this.zoomFactorStrategy = config.getZoomFactorStrategy();
         this.vipsConcurrency = config.getVipsConcurrency();
         this.encodeSuffix = resolveEncodeSuffix(config.getTileFormat());
         this.sameThreadExecutor = isSameThreadExecutor(this.levelExecutor);
+        this.padTiles = config.isPadTiles();
         this.vips = NativeLibraryDetector.getVipsLibrary();
 
         if (vips != null) {
@@ -299,7 +306,7 @@ public class JnaStreamingImageTiler implements IImageTiler {
         Pointer tileImage = tileOut.getValue();
         try {
             ByteSink tileSink = columnSink.getTileSink(tmsRow);
-            writeTile(tileImage, tileSink);
+            writeTile(tileImage, tileSink, width, height);
         } finally {
             vips.g_object_unref(tileImage);
         }
@@ -334,15 +341,81 @@ public class JnaStreamingImageTiler implements IImageTiler {
         }
     }
 
-    private void writeTile(Pointer tileImage, ByteSink tileSink) throws IOException {
-        try (java.io.OutputStream os = tileSink.openStream();
-             OutputStreamVipsTarget vipsTarget = new OutputStreamVipsTarget(vips, os)) {
-            if (vips.vips_image_write_to_target(tileImage, encodeSuffix, vipsTarget.getTarget(), (Object) null) != 0) {
-                String error = vips.vips_error_buffer();
-                vips.vips_error_clear();
-                throw new IOException("vips_image_write_to_target failed: " + error);
+    private void writeTile(Pointer tileImage, ByteSink tileSink, int width, int height) throws IOException {
+        Pointer outputImage = tileImage;
+        try {
+            outputImage = prepareImageForOutput(tileImage, width, height);
+            try (OutputStreamVipsTarget target = new OutputStreamVipsTarget(vips, tileSink.openStream())) {
+                if (vips.vips_image_write_to_target(outputImage, encodeSuffix, target.getTarget(), (Object) null) != 0) {
+                    String error = vips.vips_error_buffer();
+                    vips.vips_error_clear();
+                    throw new IOException("vips_image_write_to_target failed: " + error);
+                }
+            }
+        } finally {
+            if (outputImage != null && outputImage != tileImage) {
+                vips.g_object_unref(outputImage);
             }
         }
+    }
+
+    private Pointer prepareImageForOutput(Pointer tileImage, int width, int height) throws IOException {
+        if (!TilePadding.requiresPadding(padTiles, tileSize, width, height)) {
+            return tileImage;
+        }
+
+        Pointer paddedInput = tileImage;
+        Pointer alphaImage = null;
+        if (tileFormat == TileFormat.PNG && vips.vips_image_hasalpha(tileImage) == 0) {
+            PointerByReference alphaRef = new PointerByReference();
+            if (vips.vips_addalpha(tileImage, alphaRef, (Object) null) != 0) {
+                String error = vips.vips_error_buffer();
+                vips.vips_error_clear();
+                throw new IOException("vips_addalpha failed: " + error);
+            }
+            alphaImage = alphaRef.getValue();
+            paddedInput = alphaImage;
+        }
+
+        Pointer background = null;
+        try {
+            background = vips.vips_array_double_new(resolveBackgroundArray(), tileFormat == TileFormat.PNG ? 4 : 3);
+            PointerByReference paddedRef = new PointerByReference();
+            if (vips.vips_embed(
+                    paddedInput,
+                    paddedRef,
+                    0,
+                    tileSize - height,
+                    tileSize,
+                    tileSize,
+                    "extend", 5,
+                    "background", background,
+                    null
+            ) != 0) {
+                String error = vips.vips_error_buffer();
+                vips.vips_error_clear();
+                throw new IOException("vips_embed failed: " + error);
+            }
+            return paddedRef.getValue();
+        } finally {
+            if (background != null && background != Pointer.NULL) {
+                vips.vips_area_unref(background);
+            }
+            if (alphaImage != null && alphaImage != Pointer.NULL) {
+                vips.g_object_unref(alphaImage);
+            }
+        }
+    }
+
+    private double[] resolveBackgroundArray() {
+        if (tileFormat == TileFormat.PNG) {
+            return new double[]{0d, 0d, 0d, 0d};
+        }
+        return new double[]{
+                tileBackgroundColor.getRed(),
+                tileBackgroundColor.getGreen(),
+                tileBackgroundColor.getBlue()
+        };
     }
 
     private boolean shouldUseParallelFanOut(int cols, int rows) {

@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,7 +28,7 @@ public class StreamingImageTilerTest {
         StreamingImageTiler tiler = new StreamingImageTiler(
             commandExecutor,
             "vips",
-            new ImageTilerConfig(null, null, 256, 6, TileFormat.JPEG)
+            new ImageTilerConfig(null, null, 256, 6, TileFormat.JPEG, Color.GRAY, false)
         );
 
         ImageTilerResults results = tiler.tileImage(
@@ -54,7 +55,7 @@ public class StreamingImageTilerTest {
         StreamingImageTiler tiler = new StreamingImageTiler(
             commandExecutor,
             "/opt/libvips/bin/vips",
-            new ImageTilerConfig(null, null, 256, 6, TileFormat.JPEG)
+            new ImageTilerConfig(null, null, 256, 6, TileFormat.JPEG, Color.GRAY, false)
         );
 
         ImageTilerResults results = tiler.tileImage(
@@ -67,6 +68,27 @@ public class StreamingImageTilerTest {
         assertTrue(results.getSuccess());
         assertEquals("/opt/libvips/bin/vipsheader", commandExecutor.invocations.get(1).command);
         assertEquals("/opt/libvips/bin/vipsheader", commandExecutor.invocations.get(2).command);
+    }
+
+    @Test
+    public void tileImageUsesNativePaddingPipelineForPngEdgeTiles() throws Exception {
+        RecordingCommandExecutor commandExecutor = new RecordingCommandExecutor("vipsheader");
+        StreamingImageTiler tiler = new StreamingImageTiler(
+            commandExecutor,
+            "vips",
+            new ImageTilerConfig(null, null, 256, 6, TileFormat.PNG, Color.GRAY, true)
+        );
+
+        ImageTilerResults results = tiler.tileImage(
+            new ByteArrayInputStream("fake-image".getBytes(StandardCharsets.UTF_8)),
+            new DevNullSink(),
+            0,
+            0
+        );
+
+        assertTrue(results.getSuccess());
+        assertTrue(commandExecutor.invocations.stream().anyMatch(inv -> "bandjoin_const".equals(inv.args.get(0))));
+        assertTrue(commandExecutor.invocations.stream().anyMatch(inv -> "gravity".equals(inv.args.get(0))));
     }
 
     private static final class RecordingCommandExecutor implements CommandExecutor {
@@ -122,6 +144,20 @@ public class StreamingImageTilerTest {
                     res.exitCode = 0;
                     return res;
                 }
+                if ("bandjoin_const".equals(action)) {
+                    if (stdoutStream != null) {
+                        stdoutStream.write("alpha".getBytes(StandardCharsets.UTF_8));
+                    }
+                    res.exitCode = 0;
+                    return res;
+                }
+                if ("gravity".equals(action)) {
+                    if (stdoutStream != null) {
+                        stdoutStream.write("padded".getBytes(StandardCharsets.UTF_8));
+                    }
+                    res.exitCode = 0;
+                    return res;
+                }
             } catch (IOException e) {
                 res.exitCode = -1;
                 res.stderr = e.getMessage();
@@ -129,6 +165,34 @@ public class StreamingImageTilerTest {
             }
 
             throw new AssertionError("Unexpected command: " + cmd + " " + args);
+        }
+
+        @Override
+        public PipelineResult execPipeline(List<PipelineStage> stages, File workingDir, InputStream stdinStream, long timeoutSeconds, OutputStream stdoutStream) {
+            PipelineResult result = new PipelineResult();
+            result.stageExitCodes = new ArrayList<>();
+            result.stdout = "";
+            result.stderr = "";
+            try {
+                for (PipelineStage stage : stages) {
+                    invocations.add(new Invocation(stage.cmd, new ArrayList<>(stage.args)));
+                    String action = stage.args.isEmpty() ? "" : stage.args.get(0);
+                    if ("bandjoin_const".equals(action) || "gravity".equals(action) || "extract_area".equals(action)) {
+                        result.stageExitCodes.add(0);
+                        continue;
+                    }
+                    throw new AssertionError("Unexpected pipeline stage: " + stage.args);
+                }
+                if (stdoutStream != null) {
+                    stdoutStream.write("padded".getBytes(StandardCharsets.UTF_8));
+                }
+                result.exitCode = 0;
+                return result;
+            } catch (IOException e) {
+                result.exitCode = -1;
+                result.stderr = e.getMessage();
+                return result;
+            }
         }
     }
 
@@ -154,6 +218,3 @@ public class StreamingImageTilerTest {
         }
     }
 }
-
-
-

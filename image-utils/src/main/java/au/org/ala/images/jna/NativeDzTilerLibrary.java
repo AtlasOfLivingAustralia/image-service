@@ -24,6 +24,10 @@ public interface NativeDzTilerLibrary extends Library {
             String suffix,
             int jpegQuality,
             int pngCompression,
+            boolean padTiles,
+            double backgroundRed,
+            double backgroundGreen,
+            double backgroundBlue,
             TileCallback callback,
             Pointer userData,
             PointerByReference errorOut
@@ -40,6 +44,10 @@ public interface NativeDzTilerLibrary extends Library {
             String suffix,
             int jpegQuality,
             int pngCompression,
+            boolean padTiles,
+            double backgroundRed,
+            double backgroundGreen,
+            double backgroundBlue,
             TileCallback callback,
             Pointer userData,
             PointerByReference errorOut
@@ -54,6 +62,10 @@ public interface NativeDzTilerLibrary extends Library {
                 suffix,
                 jpegQuality,
                 pngCompression,
+                padTiles,
+                backgroundRed,
+                backgroundGreen,
+                backgroundBlue,
                 callback,
                 userData,
                 errorOut
@@ -62,4 +74,3 @@ public interface NativeDzTilerLibrary extends Library {
 
     void ala_vips_google_tms_free_error(Pointer errorMessage);
 }
-

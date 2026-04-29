@@ -37,6 +37,10 @@ public class NativeDzTilerLibraryFFM {
             ValueLayout.ADDRESS,
             ValueLayout.JAVA_INT,
             ValueLayout.JAVA_INT,
+            ValueLayout.JAVA_INT,
+            ValueLayout.JAVA_DOUBLE,
+            ValueLayout.JAVA_DOUBLE,
+            ValueLayout.JAVA_DOUBLE,
             ValueLayout.ADDRESS,
             ValueLayout.ADDRESS,
             ValueLayout.ADDRESS
@@ -82,6 +86,10 @@ public class NativeDzTilerLibraryFFM {
             String suffix,
             int jpegQuality,
             int pngCompression,
+            boolean padTiles,
+            double backgroundRed,
+            double backgroundGreen,
+            double backgroundBlue,
             TileCallback callback,
             MemorySegment userData
     ) throws IOException {
@@ -120,6 +128,10 @@ public class NativeDzTilerLibraryFFM {
                     suffixSegment,
                     jpegQuality,
                     pngCompression,
+                    padTiles ? 1 : 0,
+                    backgroundRed,
+                    backgroundGreen,
+                    backgroundBlue,
                     callbackStub,
                     userData,
                     errorOut
@@ -162,4 +174,3 @@ public class NativeDzTilerLibraryFFM {
         }
     }
 }
-

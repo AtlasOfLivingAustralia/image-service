@@ -12,6 +12,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -101,5 +102,25 @@ public class JnaOnDemandImageTilerTest {
             assertTrue("Green should match within 10", Math.abs(cJava.getGreen() - cJna.getGreen()) < 10);
             assertTrue("Blue should match within 10", Math.abs(cJava.getBlue() - cJna.getBlue()) < 10);
         }
+    }
+
+    @Test
+    public void testNullFallbackThrowsUsefulErrorWhenVipsUnavailable() throws IOException {
+        if (NativeLibraryDetector.isVipsAvailable()) {
+            System.out.println("VIPS available, skipping null-fallback guard test");
+            return;
+        }
+
+        ImageTilerConfig config = new ImageTilerConfig(ioExecutor, levelExecutor);
+        JnaOnDemandImageTiler jnaTiler = new JnaOnDemandImageTiler(config, null);
+        TilerSink sink = new TilerSink.PathBasedTilerSink(new FileByteSinkFactory(new File(tempDir, "null-fallback"), true));
+
+        IllegalStateException error;
+        try (InputStream inputStream = new FileInputStream(testImage)) {
+            error = assertThrows(IllegalStateException.class,
+                () -> jnaTiler.generateTile(inputStream, sink, 1, 0, 0));
+        }
+
+        assertEquals("JNA tiler fallback is not configured and libvips is unavailable", error.getMessage());
     }
 }

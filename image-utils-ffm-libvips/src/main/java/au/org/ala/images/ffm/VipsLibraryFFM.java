@@ -38,6 +38,7 @@ public class VipsLibraryFFM implements AutoCloseable {
     private final MethodHandle vips_image_new_from_source;
     private final MethodHandle vips_image_get_width;
     private final MethodHandle vips_image_get_height;
+    private final MethodHandle vips_image_hasalpha;
     private final MethodHandle vips_thumbnail_image;
     private final MethodHandle vips_image_write_to_buffer;
     private final MethodHandle vips_image_write_to_target;
@@ -48,10 +49,14 @@ public class VipsLibraryFFM implements AutoCloseable {
     private final MethodHandle vips_colourspace;
     private final MethodHandle vips_relational_const;
     private final MethodHandle vips_resize;
+    private final MemorySegment vips_addalpha_symbol;
+    private final MemorySegment vips_embed_symbol;
     private final MethodHandle vips_concurrency_set;
     private final MethodHandle vips_concurrency_get;
     private final MethodHandle vips_copy;
     private final MethodHandle vips_image_copy_memory;
+    private final MethodHandle vips_array_double_new;
+    private final MethodHandle vips_area_unref;
     private final MethodHandle vips_source_custom_new;
     private final MethodHandle vips_target_custom_new;
     private final MethodHandle g_object_unref;
@@ -69,6 +74,7 @@ public class VipsLibraryFFM implements AutoCloseable {
             ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_image_get_width = FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_image_get_height = FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS);
+    public static final FunctionDescriptor FD_vips_image_hasalpha = FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_thumbnail_image = FunctionDescriptor.of(
             ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_image_write_to_buffer = FunctionDescriptor.of(
@@ -89,6 +95,8 @@ public class VipsLibraryFFM implements AutoCloseable {
             ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_resize = FunctionDescriptor.of(
             ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_DOUBLE, ValueLayout.ADDRESS);
+    public static final FunctionDescriptor FD_vips_array_double_new = FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT);
+    public static final FunctionDescriptor FD_vips_area_unref = FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
     public static final FunctionDescriptor FD_vips_concurrency_set = FunctionDescriptor.ofVoid(ValueLayout.JAVA_INT);
     public static final FunctionDescriptor FD_vips_concurrency_get = FunctionDescriptor.of(ValueLayout.JAVA_INT);
     public static final FunctionDescriptor FD_vips_copy = FunctionDescriptor.of(
@@ -117,6 +125,7 @@ public class VipsLibraryFFM implements AutoCloseable {
             this.vips_image_new_from_source = lookupFunction(libvipsLookup, "vips_image_new_from_source", FD_vips_image_new_from_source);
             this.vips_image_get_width = lookupFunction(libvipsLookup, "vips_image_get_width", FD_vips_image_get_width);
             this.vips_image_get_height = lookupFunction(libvipsLookup, "vips_image_get_height", FD_vips_image_get_height);
+            this.vips_image_hasalpha = lookupFunction(libvipsLookup, "vips_image_hasalpha", FD_vips_image_hasalpha);
             this.vips_thumbnail_image = lookupFunction(libvipsLookup, "vips_thumbnail_image", FD_vips_thumbnail_image);
             this.vips_thumbnail_image_symbol = libvipsLookup.find("vips_thumbnail_image").get();
             this.vips_dzsave_symbol = libvipsLookup.find("vips_dzsave").get();
@@ -125,6 +134,8 @@ public class VipsLibraryFFM implements AutoCloseable {
             this.vips_image_write_to_target = lookupFunction(libvipsLookup, "vips_image_write_to_target", FD_vips_image_write_to_target);
             this.vips_dzsave = lookupFunction(libvipsLookup, "vips_dzsave", FD_vips_dzsave);
             this.vips_crop = lookupFunction(libvipsLookup, "vips_crop", FD_vips_crop);
+            this.vips_addalpha_symbol = libvipsLookup.find("vips_addalpha").get();
+            this.vips_embed_symbol = libvipsLookup.find("vips_embed").get();
             this.vips_rot = lookupFunction(libvipsLookup, "vips_rot", FD_vips_rot);
             this.vips_flip = lookupFunction(libvipsLookup, "vips_flip", FD_vips_flip);
             this.vips_colourspace = lookupFunction(libvipsLookup, "vips_colourspace", FD_vips_colourspace);
@@ -134,6 +145,8 @@ public class VipsLibraryFFM implements AutoCloseable {
             this.vips_concurrency_get = lookupFunction(libvipsLookup, "vips_concurrency_get", FD_vips_concurrency_get);
             this.vips_copy = lookupFunction(libvipsLookup, "vips_copy", FD_vips_copy);
             this.vips_image_copy_memory = lookupFunction(libvipsLookup, "vips_image_copy_memory", FD_vips_image_copy_memory);
+            this.vips_array_double_new = lookupFunction(libvipsLookup, "vips_array_double_new", FD_vips_array_double_new);
+            this.vips_area_unref = lookupFunction(libvipsLookup, "vips_area_unref", FD_vips_area_unref);
             this.vips_source_custom_new = lookupFunction(libvipsLookup, "vips_source_custom_new", FD_vips_source_custom_new);
             this.vips_target_custom_new = lookupFunction(libvipsLookup, "vips_target_custom_new", FD_vips_target_custom_new);
             this.g_object_unref = lookupFunction(libgobjectLookup, "g_object_unref", FD_g_object_unref);
@@ -195,6 +208,10 @@ public class VipsLibraryFFM implements AutoCloseable {
 
     public int vipsImageGetHeight(MemorySegment image) throws Throwable {
         return (int) vips_image_get_height.invokeExact(image);
+    }
+
+    public int vipsImageHasAlpha(MemorySegment image) throws Throwable {
+        return (int) vips_image_hasalpha.invokeExact(image);
     }
 
     public int vipsThumbnailImage(MemorySegment input, MemorySegment outPtr, int width) throws Throwable {
@@ -340,6 +357,54 @@ public class VipsLibraryFFM implements AutoCloseable {
         return (int) vips_resize.invokeExact(input, outPtr, scale, MemorySegment.NULL);
     }
 
+    public int vipsAddAlpha(MemorySegment input, MemorySegment outPtr) throws Throwable {
+        FunctionDescriptor fd = FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS);
+        MethodHandle mh = linker.downcallHandle(vips_addalpha_symbol, fd, Linker.Option.firstVariadicArg(2));
+        return (int) mh.invokeExact(input, outPtr, MemorySegment.NULL);
+    }
+
+    public int vipsEmbed(MemorySegment input,
+                         MemorySegment outPtr,
+                         int x,
+                         int y,
+                         int width,
+                         int height,
+                         int extend,
+                         MemorySegment background) throws Throwable {
+        FunctionDescriptor fd = FunctionDescriptor.of(
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS
+        );
+        MethodHandle mh = linker.downcallHandle(vips_embed_symbol, fd, Linker.Option.firstVariadicArg(6));
+        try (Arena tempArena = Arena.ofConfined()) {
+            MemorySegment extendOption = FFMShim.allocateFrom(tempArena, "extend");
+            MemorySegment backgroundOption = FFMShim.allocateFrom(tempArena, "background");
+            return (int) mh.invokeWithArguments(
+                    input,
+                    outPtr,
+                    x,
+                    y,
+                    width,
+                    height,
+                    extendOption,
+                    extend,
+                    backgroundOption,
+                    background,
+                    MemorySegment.NULL
+            );
+        }
+    }
+
     public void vipsConcurrencySet(int concurrency) throws Throwable {
         vips_concurrency_set.invokeExact(concurrency);
     }
@@ -363,6 +428,19 @@ public class VipsLibraryFFM implements AutoCloseable {
      */
     public MemorySegment vipsCopyMemory(MemorySegment input) throws Throwable {
         return (MemorySegment) vips_image_copy_memory.invokeExact(input);
+    }
+
+    public MemorySegment vipsArrayDoubleNew(double[] values) throws Throwable {
+        try (Arena tempArena = Arena.ofConfined()) {
+            MemorySegment segment = FFMShim.allocateFrom(tempArena, ValueLayout.JAVA_DOUBLE, values);
+            return (MemorySegment) vips_array_double_new.invokeExact(segment, values.length);
+        }
+    }
+
+    public void vipsAreaUnref(MemorySegment area) throws Throwable {
+        if (area != null && area.address() != 0) {
+            vips_area_unref.invokeExact(area);
+        }
     }
 
     public MemorySegment vipsSourceCustomNew() throws Throwable {

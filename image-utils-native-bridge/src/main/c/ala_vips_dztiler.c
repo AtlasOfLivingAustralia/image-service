@@ -75,6 +75,51 @@ static int ala_encode_tile(
     return 0;
 }
 
+static int ala_pad_tile(
+        VipsImage *tile,
+        int tile_size,
+        gboolean pad_tiles,
+        gboolean png,
+        double background_red,
+        double background_green,
+        double background_blue,
+        VipsImage **tile_out,
+        char **error_out) {
+    int width = vips_image_get_width(tile);
+    int height = vips_image_get_height(tile);
+
+    if (!pad_tiles || (width == tile_size && height == tile_size)) {
+        *tile_out = tile;
+        g_object_ref(*tile_out);
+        return 0;
+    }
+
+    double background[4] = { background_red, background_green, background_blue, 0.0 };
+    int background_bands = png ? 4 : 3;
+    VipsArrayDouble *background_array = vips_array_double_new(background, background_bands);
+    if (background_array == NULL) {
+        ala_set_error(error_out, "failed to allocate background colour array for tile padding");
+        return -1;
+    }
+
+    if (vips_embed(tile, tile_out,
+            0,
+            tile_size - height,
+            tile_size,
+            tile_size,
+            "extend", VIPS_EXTEND_BACKGROUND,
+            "background", background_array,
+            NULL) != 0) {
+        vips_area_unref((VipsArea *) background_array);
+        ala_set_vips_error(error_out, "vips_embed failed while padding edge tile");
+        return -1;
+    }
+
+    vips_area_unref((VipsArea *) background_array);
+
+    return 0;
+}
+
 int ala_vips_google_tms_tiles_from_source(
         VipsSource *input_source,
         const int *subsamples,
@@ -85,6 +130,10 @@ int ala_vips_google_tms_tiles_from_source(
         const char *suffix,
         int jpeg_quality,
         int png_compression,
+        gboolean pad_tiles,
+        double background_red,
+        double background_green,
+        double background_blue,
         ala_vips_tile_callback callback,
         void *user_data,
         char **error_out) {
@@ -105,6 +154,8 @@ int ala_vips_google_tms_tiles_from_source(
         ala_set_error(error_out, "invalid argument: level bounds are outside available pyramid levels");
         return -1;
     }
+
+    gboolean png = suffix != NULL && g_str_has_prefix(suffix, ".png");
 
     VipsImage *input = vips_image_new_from_source(
             input_source,
@@ -164,10 +215,21 @@ int ala_vips_google_tms_tiles_from_source(
                     return -1;
                 }
 
+                VipsImage *output_tile = NULL;
+                if (ala_pad_tile(tile, tile_size, pad_tiles, png,
+                        background_red, background_green, background_blue,
+                        &output_tile, error_out) != 0) {
+                    g_object_unref(tile);
+                    g_object_unref(level_image);
+                    g_object_unref(input);
+                    return -1;
+                }
+                g_object_unref(tile);
+
                 void *buf = NULL;
                 size_t len = 0;
-                int encode_rc = ala_encode_tile(tile, suffix, jpeg_quality, png_compression, &buf, &len, error_out);
-                g_object_unref(tile);
+                int encode_rc = ala_encode_tile(output_tile, suffix, jpeg_quality, png_compression, &buf, &len, error_out);
+                g_object_unref(output_tile);
                 if (encode_rc != 0) {
                     g_object_unref(level_image);
                     g_object_unref(input);
@@ -206,6 +268,10 @@ int ala_vips_google_tms_tiles_from_file(
         const char *suffix,
         int jpeg_quality,
         int png_compression,
+        gboolean pad_tiles,
+        double background_red,
+        double background_green,
+        double background_blue,
         ala_vips_tile_callback callback,
         void *user_data,
         char **error_out) {
@@ -219,6 +285,10 @@ int ala_vips_google_tms_tiles_from_file(
             suffix,
             jpeg_quality,
             png_compression,
+            pad_tiles,
+            background_red,
+            background_green,
+            background_blue,
             callback,
             user_data,
             error_out);
@@ -229,4 +299,3 @@ void ala_vips_google_tms_free_error(char *error_message) {
         g_free(error_message);
     }
 }
-

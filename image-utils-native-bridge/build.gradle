@@ -21,6 +21,35 @@ if (!(nativeBridgeImplementation in ['c', 'rust'])) {
     throw new GradleException("Invalid -PnativeBridgeImplementation='${nativeBridgeImplementation}'. Supported values: c, rust")
 }
 
+def useSanitizedNativeDzBridge = providers.gradleProperty('useSanitizedNativeDzBridge')
+        .orElse(providers.systemProperty('useSanitizedNativeDzBridge'))
+        .map { it.toBoolean() }
+        .orElse(false)
+        .get()
+
+def nativeBridgeSanitizers = providers.gradleProperty('nativeBridgeSanitizers')
+        .orElse(useSanitizedNativeDzBridge ? 'asan' : '')
+        .map { value ->
+            value.split(',')
+                    .collect { it.trim().toLowerCase() }
+                    .findAll { !it.isEmpty() }
+                    .unique()
+        }
+        .orElse([])
+        .get()
+
+def supportedSanitizers = ['asan', 'ubsan']
+def invalidSanitizers = nativeBridgeSanitizers.findAll { !(it in supportedSanitizers) }
+if (!invalidSanitizers.isEmpty()) {
+    throw new GradleException("Invalid -PnativeBridgeSanitizers='${nativeBridgeSanitizers.join(',')}'. Supported values: ${supportedSanitizers.join(', ')}")
+}
+
+def sanitizerFlagSuffix = nativeBridgeSanitizers.collect { sanitizer ->
+    sanitizer == 'asan' ? 'address' : 'undefined'
+}
+
+def sanitizerStageSuffix = nativeBridgeSanitizers.isEmpty() ? 'none' : nativeBridgeSanitizers.join('-')
+
 def cargoProfileDir = nativeBridgeBuildType == 'release' ? 'release' : 'debug'
 def cargoProfileArgs = nativeBridgeBuildType == 'release' ? ['--release'] : []
 
@@ -35,6 +64,17 @@ if (rustTargetTriple == null) {
 
 def cargoTargetDir = layout.buildDirectory.dir('cargo-target')
 def cargoLibFile = cargoTargetDir.map { it.file("${rustTargetTriple}/${cargoProfileDir}/${nativeLibFileName}") }
+def sanitizedBuildDir = layout.buildDirectory.dir("sanitized/${nativeClassifier}/${sanitizerStageSuffix}")
+def sanitizedLibFile = sanitizedBuildDir.map { it.file(nativeLibFileName) }
+
+// Define pkg-config as a lazy provider (runs once, results cached)
+def pkgConfigCFlagsProvider = providers.exec {
+    commandLine 'pkg-config', '--cflags', 'vips', 'glib-2.0', 'gobject-2.0'
+}.standardOutput.asText.map { it.trim().split(/\s+/).findAll { !it.isEmpty() } }
+
+def pkgConfigLibsProvider = providers.exec {
+    commandLine 'pkg-config', '--libs', 'vips', 'glib-2.0', 'gobject-2.0'
+}.standardOutput.asText.map { it.trim().split(/\s+/).findAll { !it.isEmpty() } }
 
 tasks.register('cargoBuildNativeBridge', Exec) {
     group = 'build'
@@ -54,16 +94,43 @@ tasks.register('cargoBuildNativeBridge', Exec) {
     outputs.file(cargoLibFile)
 }
 
+tasks.register('buildNativeBridgeSanitized', Exec) {
+    group = 'build'
+    description = "Builds the C native dz tiler bridge with sanitizers=${nativeBridgeSanitizers.join(',')} (buildType=${nativeBridgeBuildType})."
+
+    onlyIf { !nativeBridgeSanitizers.isEmpty() }
+
+    if (nativeBridgeImplementation != 'c') {
+        throw new GradleException("Sanitized native bridge builds currently support only -PnativeBridgeImplementation=c")
+    }
+
+    def outputDir = sanitizedBuildDir.get().asFile
+    def outputFile = sanitizedLibFile.get().asFile
+    def sanitizerFlags = sanitizerFlagSuffix.collectMany { ["-fsanitize=${it}"] }
+    def compileArgs = ['-std=c11', '-O1', '-g', '-fno-omit-frame-pointer', '-fPIC', '-shared', '-x', 'c'] +
+            sanitizerFlags +
+            pkgConfigCFlagsProvider.get() +
+            [file('src/main/cpp/ala_vips_dztiler.cpp').absolutePath, '-o', outputFile.absolutePath] +
+            pkgConfigLibsProvider.get()
+
+    workingDir = projectDir
+    commandLine(['cc'] + compileArgs)
+
+    doFirst {
+        outputDir.mkdirs()
+    }
+
+    inputs.property('nativeBridgeBuildType', nativeBridgeBuildType)
+    inputs.property('nativeBridgeImplementation', nativeBridgeImplementation)
+    inputs.property('nativeBridgeSanitizers', nativeBridgeSanitizers)
+    inputs.files(
+            file('src/main/c/ala_vips_dztiler.c'),
+            file('src/main/cpp/ala_vips_dztiler.cpp')
+    )
+    outputs.file(sanitizedLibFile)
+}
+
 def linkBuildTypeToken = nativeBridgeBuildType.capitalize()
-
-// Define pkg-config as a lazy provider (runs once, results cached)
-def pkgConfigCFlagsProvider = providers.exec {
-    commandLine 'pkg-config', '--cflags', 'vips', 'glib-2.0', 'gobject-2.0'
-}.standardOutput.asText.map { it.trim().split(/\s+/).findAll { !it.isEmpty() } }
-
-def pkgConfigLibsProvider = providers.exec {
-    commandLine 'pkg-config', '--libs', 'vips', 'glib-2.0', 'gobject-2.0'
-}.standardOutput.asText.map { it.trim().split(/\s+/).findAll { !it.isEmpty() } }
 
 
 library {
@@ -142,4 +209,14 @@ tasks.register('stageNativeBridgeRust', Copy) {
     from(cargoLibFile)
 
     into layout.buildDirectory.dir("native/${nativeClassifier}")
+}
+
+tasks.register('stageNativeBridgeSanitized', Copy) {
+    group = 'build'
+    description = "Stages the sanitized C native bridge under build/native-sanitized/${nativeClassifier}/${sanitizerStageSuffix}."
+
+    onlyIf { !nativeBridgeSanitizers.isEmpty() }
+    dependsOn tasks.named('buildNativeBridgeSanitized')
+    from(sanitizedLibFile)
+    into layout.buildDirectory.dir("native-sanitized/${nativeClassifier}/${sanitizerStageSuffix}")
 }

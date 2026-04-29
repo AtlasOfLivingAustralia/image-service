@@ -70,6 +70,9 @@ class Application extends GrailsAutoConfiguration {
     @Value('${images.nativeDzTiler.bridgeLibraryPath:}')
     String nativeDzTilerBridgeLibraryPath
 
+    @Value('${images.padTiles:true}')
+    boolean padTiles
+
     @Value('${tiling.tiler.version:V4}')
     TilerVersion tilerVersion
 
@@ -185,7 +188,7 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     ImageTilerConfig imageTilerConfig(@Qualifier("tilingIoPool") Executor tilingIoPool, @Qualifier("tilingWorkPool") Executor tilingWorkPool) {
-        return new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG, new Color(221, 221, 221))
+        return new ImageTilerConfig(tilingIoPool, tilingWorkPool, TILE_SIZE, 6, TileFormat.JPEG, new Color(221, 221, 221), 0, padTiles)
     }
 
     @PostConstruct

@@ -118,7 +118,7 @@ abstract class AbstractImageLibrarySpec extends Specification {
         }
 
         // Use PNG tiles so colour assertions are not degraded by JPEG compression.
-        def config = new ImageTilerConfig(ioExecutor, levelExecutor, 256, 6, TileFormat.PNG)
+        def config = pngTilerConfig(true)
         def tiler  = factory.createTiler(getCommandExecutor(), config, getCommands(), null)
         if (tiler == null) {
             println "[DEBUG_LOG] Factory ${factory.implementationName} does not support tiling, skipping"
@@ -167,13 +167,15 @@ abstract class AbstractImageLibrarySpec extends Specification {
                     int tileBottomPx = levelH - y * tileSize   // always ≤ levelH for valid y
                     int tileLeftPx   = x * tileSize
                     int tileRightPx  = Math.min(levelW, (x + 1) * tileSize)
-                    int expectedW    = tileRightPx  - tileLeftPx
-                    int expectedH    = tileBottomPx - tileTopPx
+                    int actualW      = tileRightPx  - tileLeftPx
+                    int actualH      = tileBottomPx - tileTopPx
+                    int expectedW    = shouldPad(config, actualW, actualH) ? tileSize : actualW
+                    int expectedH    = shouldPad(config, actualW, actualH) ? tileSize : actualH
 
                     BufferedImage tile = ImageIO.read(tileFile)
-                    assert tile        != null      : "Could not decode tile: $level/$x/$y"
-                    assert tile.width  == expectedW : "Tile $level/$x/$y: width  ${tile.width}  != $expectedW"
-                    assert tile.height == expectedH : "Tile $level/$x/$y: height ${tile.height} != $expectedH"
+                     assert tile        != null      : "Could not decode tile: $level/$x/$y"
+                     assert tile.width  == expectedW : "Tile $level/$x/$y: width  ${tile.width}  != $expectedW"
+                     assert tile.height == expectedH : "Tile $level/$x/$y: height ${tile.height} != $expectedH"
 
                     // ── colour ─────────────────────────────────────────────
                     // At subsample ≤ 2 each tile's source footprint is ≤ 512×512 px,
@@ -181,14 +183,16 @@ abstract class AbstractImageLibrarySpec extends Specification {
                     // At subsample = 4 (level 0) the single tile blends all four quadrants
                     // so colour sampling is not meaningful there.
                     if (sub <= 2) {
-                        int srcCenterX = (tileLeftPx + (expectedW as int).intdiv(2)) * sub
-                        int srcCenterY = (tileTopPx  + (expectedH as int).intdiv(2)) * sub
+                        int srcCenterX = (tileLeftPx + (actualW as int).intdiv(2)) * sub
+                        int srcCenterY = (tileTopPx  + (actualH as int).intdiv(2)) * sub
                         Color expected = quadrantColour(srcCenterX, srcCenterY, QUAD_HALF_W, QUAD_HALF_H)
-                        Color actual   = new Color(tile.getRGB((tile.width as int).intdiv(2), (tile.height as int).intdiv(2)))
+                        Color actual   = sampleTileColour(tile, actualW, actualH)
                         assert colourClose(actual, expected, TILE_COLOUR_TOLERANCE) :
                             "Tile $level/$x/$y centre colour $actual expected $expected " +
                             "(srcCenterX=$srcCenterX srcCenterY=$srcCenterY sub=$sub)"
                     }
+
+                    assertPngPaddingTransparent(tile, actualW, actualH, config)
                 }
             }
         }
@@ -239,7 +243,7 @@ abstract class AbstractImageLibrarySpec extends Specification {
 
         // PNG tiles → lossless output → exact colour assertions with a small tolerance
         // for sub-pixel rounding during resize.
-        def config = new ImageTilerConfig(ioExecutor, levelExecutor, 256, 6, TileFormat.PNG)
+        def config = pngTilerConfig(true)
         def tiler  = factory.createOnDemandTiler(getCommandExecutor(), config, getCommands(), null)
         if (tiler == null) {
             println "[DEBUG_LOG] Factory ${factory.implementationName} does not support on-demand tiling, skipping"
@@ -307,23 +311,26 @@ abstract class AbstractImageLibrarySpec extends Specification {
         //   top-edge height   = 350 - 256 =  94
         level1Results.values().every { it.success }
 
-        // [x, y, expectedW, expectedH, expectedColour]
+        // [x, y, actualW, actualH, expectedColour]
         [[0,0, 256,  256, Color.BLUE  ],   // interior
          [1,0, 194,  256, Color.YELLOW],   // right edge  – partial width
          [0,1, 256,   94, Color.RED   ],   // top edge    – partial height
          [1,1, 194,   94, Color.GREEN ]    // corner edge – partial both
         ].each { spec ->
             int lx = spec[0] as int, ly = spec[1] as int
-            int expW = spec[2] as int,  expH = spec[3] as int
+            int actualW = spec[2] as int, actualH = spec[3] as int
+            int expW = shouldPad(config, actualW, actualH) ? tileSize : actualW
+            int expH = shouldPad(config, actualW, actualH) ? tileSize : actualH
             Color expColour = spec[4] as Color
             File f = new File(tilesDir, "1/${lx}/${ly}.png")
             assert f.exists()        : "Level-1 tile missing: 1/$lx/$ly"
             BufferedImage tile = ImageIO.read(f)
             assert tile.width  == expW : "Level-1 1/$lx/$ly width  ${tile.width}  != $expW"
             assert tile.height == expH : "Level-1 1/$lx/$ly height ${tile.height} != $expH"
-            Color actual = new Color(tile.getRGB((tile.width as int).intdiv(2), (tile.height as int).intdiv(2)))
+            Color actual = sampleTileColour(tile, actualW, actualH)
             assert colourClose(actual, expColour, TILE_COLOUR_TOLERANCE) :
                 "Level-1 1/$lx/$ly centre colour $actual expected $expColour"
+            assertPngPaddingTransparent(tile, actualW, actualH, config)
         }
 
         // ── level 2 ─────────────────────────────────────────────────────────────
@@ -332,23 +339,74 @@ abstract class AbstractImageLibrarySpec extends Specification {
         //   top-edge height   = 700 - 2×256 = 188
         level2Results.values().every { it.success }
 
-        // [x, y, expectedW, expectedH, expectedColour]
+        // [x, y, actualW, actualH, expectedColour]
         [[0,0, 256,  256, Color.BLUE  ],   // interior
          [3,0, 132,  256, Color.YELLOW],   // right edge  – partial width
          [0,2, 256,  188, Color.RED   ],   // top edge    – partial height
          [3,2, 132,  188, Color.GREEN ]    // corner edge – partial both
         ].each { spec ->
             int lx = spec[0] as int, ly = spec[1] as int
-            int expW = spec[2] as int,  expH = spec[3] as int
+            int actualW = spec[2] as int, actualH = spec[3] as int
+            int expW = shouldPad(config, actualW, actualH) ? tileSize : actualW
+            int expH = shouldPad(config, actualW, actualH) ? tileSize : actualH
             Color expColour = spec[4] as Color
             File f = new File(tilesDir, "2/${lx}/${ly}.png")
             assert f.exists()        : "Level-2 tile missing: 2/$lx/$ly"
             BufferedImage tile = ImageIO.read(f)
             assert tile.width  == expW : "Level-2 2/$lx/$ly width  ${tile.width}  != $expW"
             assert tile.height == expH : "Level-2 2/$lx/$ly height ${tile.height} != $expH"
-            Color actual = new Color(tile.getRGB((tile.width as int).intdiv(2), (tile.height as int).intdiv(2)))
+            Color actual = sampleTileColour(tile, actualW, actualH)
             assert colourClose(actual, expColour, TILE_COLOUR_TOLERANCE) :
                 "Level-2 2/$lx/$ly centre colour $actual expected $expColour"
+            assertPngPaddingTransparent(tile, actualW, actualH, config)
+        }
+    }
+
+    def "on-demand tiler preserves partial edge tiles when padding disabled"() {
+        given:
+        def factory = getFactory()
+        if (!factory.isAvailable(getCommands())) {
+            println "[DEBUG_LOG] Factory ${factory.implementationName} not available, skipping test"
+            return
+        }
+
+        def config = pngTilerConfig(false)
+        def tiler  = factory.createOnDemandTiler(getCommandExecutor(), config, getCommands(), null)
+        if (tiler == null) {
+            println "[DEBUG_LOG] Factory ${factory.implementationName} does not support on-demand tiling, skipping"
+            return
+        }
+
+        File quadFile = createQuadrantImageFile(tempDir)
+        File tilesDir = new File(tempDir, "quad-tiles-unpadded")
+        tilesDir.mkdirs()
+        def quadSink = new TilerSink.PathBasedTilerSink(new SimpleByteSinkFactory(tilesDir))
+
+        when:
+        [[1,1,1,194, 94, Color.GREEN ],
+         [2,3,0,132,256, Color.YELLOW],
+         [2,0,2,256,188, Color.RED   ]].each { spec ->
+            new FileInputStream(quadFile).withCloseable { is ->
+                tiler.generateTile(is, quadSink, spec[0] as int, spec[1] as int, spec[2] as int)
+            }
+        }
+
+        then:
+        [[1,1,1,194, 94, Color.GREEN ],
+         [2,3,0,132,256, Color.YELLOW],
+         [2,0,2,256,188, Color.RED   ]].each { spec ->
+            int level = spec[0] as int
+            int x = spec[1] as int
+            int y = spec[2] as int
+            int actualW = spec[3] as int
+            int actualH = spec[4] as int
+            Color expected = spec[5] as Color
+            File tileFile = new File(tilesDir, "${level}/${x}/${y}.png")
+            assert tileFile.exists(): "Tile missing: ${level}/${x}/${y}"
+            BufferedImage tile = ImageIO.read(tileFile)
+            assert tile.width == actualW
+            assert tile.height == actualH
+            assert colourClose(sampleTileColour(tile, actualW, actualH), expected, TILE_COLOUR_TOLERANCE)
         }
     }
 
@@ -390,6 +448,33 @@ abstract class AbstractImageLibrarySpec extends Specification {
         if (srcX >= halfW && srcY < halfH) return Color.GREEN  // top-right
         if (srcX < halfW && srcY >= halfH) return Color.BLUE   // bottom-left
         return Color.YELLOW                                     // bottom-right
+    }
+
+    protected ImageTilerConfig pngTilerConfig(boolean padTiles) {
+        new ImageTilerConfig(ioExecutor, levelExecutor, 256, 6, TileFormat.PNG, new Color(221, 221, 221), padTiles)
+    }
+
+    protected static boolean shouldPad(ImageTilerConfig config, int actualWidth, int actualHeight) {
+        config.padTiles && (actualWidth < config.tileSize || actualHeight < config.tileSize)
+    }
+
+    protected static Color sampleTileColour(BufferedImage tile, int actualWidth, int actualHeight) {
+        int sampleX = Math.max(0, Math.min(actualWidth - 1, actualWidth.intdiv(2)))
+        int sampleY = Math.max(0, Math.min(tile.height - 1, tile.height - actualHeight + actualHeight.intdiv(2)))
+        new Color(tile.getRGB(sampleX, sampleY), true)
+    }
+
+    protected static void assertPngPaddingTransparent(BufferedImage tile, int actualWidth, int actualHeight, ImageTilerConfig config) {
+        if (config.tileFormat != TileFormat.PNG || !shouldPad(config, actualWidth, actualHeight)) {
+            return
+        }
+
+        if (actualWidth < tile.width) {
+            assert new Color(tile.getRGB(tile.width - 1, tile.height - 1), true).alpha == 0
+        }
+        if (actualHeight < tile.height) {
+            assert new Color(tile.getRGB(0, 0), true).alpha == 0
+        }
     }
 
     /** True when every RGB channel of {@code actual} is within {@code tolerance} of {@code expected}. */

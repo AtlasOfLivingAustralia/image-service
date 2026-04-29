@@ -9,6 +9,7 @@ import com.google.common.io.ByteSink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Color;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,6 +30,8 @@ public class FfmNativeDzStreamingImageTiler implements IImageTiler {
     private final IImageTiler fallbackTiler;
     private final int tileSize;
     private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
+    private final boolean padTiles;
     private final ZoomFactorStrategy zoomFactorStrategy;
     private final NativeDzTilerLibraryFFM nativeDzLib;
     private final VipsLibraryFFM vips;
@@ -46,6 +49,8 @@ public class FfmNativeDzStreamingImageTiler implements IImageTiler {
         this.fallbackTiler = fallbackTiler;
         this.tileSize = config.getTileSize();
         this.tileFormat = config.getTileFormat();
+        this.tileBackgroundColor = config.getTileBackgroundColor();
+        this.padTiles = config.isPadTiles();
         this.zoomFactorStrategy = config.getZoomFactorStrategy();
         this.nativeDzLib = nativeDzLib;
         this.vips = vips;
@@ -90,6 +95,10 @@ public class FfmNativeDzStreamingImageTiler implements IImageTiler {
                     tileFormat == TileFormat.PNG ? ".png" : ".jpg",
                     DEFAULT_JPEG_QUALITY,
                     DEFAULT_PNG_COMPRESSION,
+                    padTiles,
+                    tileBackgroundColor.getRed(),
+                    tileBackgroundColor.getGreen(),
+                    tileBackgroundColor.getBlue(),
                     (level, x, y, contentType, data, length, userData) -> {
                         try {
                             TilerSink.LevelSink levelSink = tilerSink.getLevelSink(level);
@@ -159,4 +168,3 @@ public class FfmNativeDzStreamingImageTiler implements IImageTiler {
         return bounded.toArray(ValueLayout.JAVA_BYTE);
     }
 }
-

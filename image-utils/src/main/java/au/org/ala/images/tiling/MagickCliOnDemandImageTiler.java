@@ -6,7 +6,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.awt.Color;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -22,7 +25,9 @@ public class MagickCliOnDemandImageTiler implements IOnDemandImageTiler {
     private final IOnDemandImageTiler fallback;
     private final int tileSize;
     private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
     private final ZoomFactorStrategy zoomFactorStrategy;
+    private final boolean padTiles;
 
     public MagickCliOnDemandImageTiler(CommandExecutor commandExecutor, String magickCommand, ImageTilerConfig config, IOnDemandImageTiler fallback) {
         this.commandExecutor = commandExecutor;
@@ -31,11 +36,15 @@ public class MagickCliOnDemandImageTiler implements IOnDemandImageTiler {
         if (config != null) {
             this.tileSize = config.getTileSize();
             this.tileFormat = config.getTileFormat();
+            this.tileBackgroundColor = config.getTileBackgroundColor();
             this.zoomFactorStrategy = config.getZoomFactorStrategy();
+            this.padTiles = config.isPadTiles();
         } else {
             this.tileSize = 256;
             this.tileFormat = TileFormat.JPEG;
+            this.tileBackgroundColor = Color.gray;
             this.zoomFactorStrategy = new DefaultZoomFactorStrategy(this.tileSize);
+            this.padTiles = true;
         }
     }
 
@@ -76,21 +85,13 @@ public class MagickCliOnDemandImageTiler implements IOnDemandImageTiler {
             TilerSink.ColumnSink columnSink = levelSink.getColumnSink(x, 0, 1);
             ByteSink byteSink = columnSink.getTileSink(y);
 
-            String suffix = (tileFormat == TileFormat.PNG) ? "png:" : "jpg:";
-            
-            try (OutputStream os = byteSink.openStream()) {
-                // magick stdin -crop WxH+X+Y +repage -resize WxH stdout:
-                CommandExecutor.ExecResult res = commandExecutor.exec(magickCommand, Arrays.asList(
-                    "-", 
-                    "-crop", srcW + "x" + srcH + "+" + srcX + "+" + srcY, 
-                    "+repage", 
-                    "-resize", targetWidth + "x" + targetHeight,
-                    suffix + "-"
-                ), null, bis, 60, os);
+            CommandExecutor.ExecResult res;
+            try (OutputStream outputStream = byteSink.openStream()) {
+                res = commandExecutor.exec(magickCommand, buildMagickArgs(srcX, srcY, srcW, srcH, targetWidth, targetHeight), null, bis, 60, outputStream);
+            }
                 
-                if (res.exitCode != 0) {
-                    throw new IOException("magick crop failed: " + res.stderr);
-                }
+            if (res.exitCode != 0) {
+                throw new IOException("magick crop failed: " + res.stderr);
             }
 
             return TileGenerationResult.success();
@@ -99,6 +100,29 @@ public class MagickCliOnDemandImageTiler implements IOnDemandImageTiler {
             log.warn("Magick CLI tile generation failed, falling back: {}", e.getMessage());
             return fallback.generateTile(imageInputStream, tilerSink, level, x, y);
         }
+    }
+
+    private List<String> buildMagickArgs(int srcX, int srcY, int srcW, int srcH, int targetWidth, int targetHeight) {
+        List<String> args = new ArrayList<>();
+        args.add("-");
+        args.add("-crop");
+        args.add(srcW + "x" + srcH + "+" + srcX + "+" + srcY);
+        args.add("+repage");
+        args.add("-resize");
+        args.add(targetWidth + "x" + targetHeight);
+        if (TilePadding.requiresPadding(padTiles, tileSize, targetWidth, targetHeight)) {
+            args.add("-background");
+            args.add(tileFormat == TileFormat.PNG ? "rgba(0,0,0,0)" : String.format("rgb(%d,%d,%d)",
+                tileBackgroundColor.getRed(),
+                tileBackgroundColor.getGreen(),
+                tileBackgroundColor.getBlue()));
+            args.add("-gravity");
+            args.add("SouthWest");
+            args.add("-extent");
+            args.add(tileSize + "x" + tileSize);
+        }
+        args.add((tileFormat == TileFormat.PNG) ? "png:-" : "jpg:-");
+        return args;
     }
 
     private TilePyramidInfo getPyramidInfo(BufferedInputStream bis) throws IOException {

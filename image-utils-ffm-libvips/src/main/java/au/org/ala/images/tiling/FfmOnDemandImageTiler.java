@@ -6,12 +6,10 @@ import au.org.ala.images.ffm.OutputStreamVipsTargetFFM;
 import au.org.ala.images.ffm.VipsLibraryFFM;
 import au.org.ala.images.tiling.OnDemandImageTiler;
 import com.google.common.io.ByteSink;
-import com.google.common.io.ByteStreams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
+import java.awt.Color;
 import java.io.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -28,7 +26,9 @@ public class FfmOnDemandImageTiler implements IOnDemandImageTiler {
     private final IOnDemandImageTiler fallback;
     private final int tileSize;
     private final TileFormat tileFormat;
+    private final Color tileBackgroundColor;
     private final ZoomFactorStrategy zoomFactorStrategy;
+    private final boolean padTiles;
 
     public FfmOnDemandImageTiler(ImageTilerConfig config, IOnDemandImageTiler fallback) {
         this.vips = NativeLibraryDetectorFFM.getVipsLibrary();
@@ -36,11 +36,15 @@ public class FfmOnDemandImageTiler implements IOnDemandImageTiler {
         if (config != null) {
             this.tileSize = config.getTileSize();
             this.tileFormat = config.getTileFormat();
+            this.tileBackgroundColor = config.getTileBackgroundColor();
             this.zoomFactorStrategy = config.getZoomFactorStrategy();
+            this.padTiles = config.isPadTiles();
         } else {
             this.tileSize = 256;
             this.tileFormat = TileFormat.JPEG;
+            this.tileBackgroundColor = Color.gray;
             this.zoomFactorStrategy = new DefaultZoomFactorStrategy(this.tileSize);
+            this.padTiles = true;
         }
     }
 
@@ -117,13 +121,7 @@ public class FfmOnDemandImageTiler implements IOnDemandImageTiler {
                 TilerSink.ColumnSink columnSink = levelSink.getColumnSink(x, 0, 1);
                 ByteSink byteSink = columnSink.getTileSink(y);
 
-                try (OutputStream os = byteSink.openStream();
-                     OutputStreamVipsTargetFFM vipsTarget = new OutputStreamVipsTargetFFM(vips, os)) {
-                    String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg";
-                    if (vips.vipsImageWriteToTarget(workingImage, suffix, vipsTarget.getTarget()) != 0) {
-                        throw new IOException("vips_image_write_to_target failed: " + vips.vipsErrorBuffer());
-                    }
-                }
+                writeTileImage(workingImage, byteSink, tempArena);
 
                 return TileGenerationResult.success();
             } finally {
@@ -141,6 +139,84 @@ public class FfmOnDemandImageTiler implements IOnDemandImageTiler {
             }
             return fallback.generateTile(bis, tilerSink, level, x, y);
         }
+    }
+
+    private void writeTileImage(MemorySegment tileImage, ByteSink byteSink, Arena arena) throws IOException {
+        MemorySegment outputImage = tileImage;
+        try {
+            outputImage = prepareImageForOutput(tileImage, arena);
+            try (OutputStream outputStream = byteSink.openStream();
+                 OutputStreamVipsTargetFFM target = new OutputStreamVipsTargetFFM(vips, outputStream)) {
+                String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg";
+                if (vips.vipsImageWriteToTarget(outputImage, suffix, target.getTarget()) != 0) {
+                    throw new IOException("vips_image_write_to_target failed: " + vips.vipsErrorBuffer());
+                }
+            }
+        } catch (IOException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new IOException("Failed to write tile image", e);
+        } finally {
+            if (outputImage != null && outputImage.address() != 0 && !outputImage.equals(tileImage)) {
+                try {
+                    vips.gObjectUnref(outputImage);
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
+    private MemorySegment prepareImageForOutput(MemorySegment tileImage, Arena arena) throws IOException {
+        try {
+            int width = vips.vipsImageGetWidth(tileImage);
+            int height = vips.vipsImageGetHeight(tileImage);
+            if (!TilePadding.requiresPadding(padTiles, tileSize, width, height)) {
+                return tileImage;
+            }
+
+            MemorySegment paddedInput = tileImage;
+            MemorySegment alphaImage = null;
+            if (tileFormat == TileFormat.PNG && vips.vipsImageHasAlpha(tileImage) == 0) {
+                MemorySegment alphaPtr = arena.allocate(ValueLayout.ADDRESS);
+                if (vips.vipsAddAlpha(tileImage, alphaPtr) != 0) {
+                    throw new IOException("vips_addalpha failed: " + vips.vipsErrorBuffer());
+                }
+                alphaImage = alphaPtr.get(ValueLayout.ADDRESS, 0);
+                paddedInput = alphaImage;
+            }
+
+            MemorySegment background = null;
+            try {
+                background = vips.vipsArrayDoubleNew(resolveBackgroundArray());
+                MemorySegment paddedPtr = arena.allocate(ValueLayout.ADDRESS);
+                if (vips.vipsEmbed(paddedInput, paddedPtr, 0, tileSize - height, tileSize, tileSize, 5, background) != 0) {
+                    throw new IOException("vips_embed failed: " + vips.vipsErrorBuffer());
+                }
+                return paddedPtr.get(ValueLayout.ADDRESS, 0);
+            } finally {
+                if (background != null && background.address() != 0) {
+                    vips.vipsAreaUnref(background);
+                }
+                if (alphaImage != null && alphaImage.address() != 0) {
+                    vips.gObjectUnref(alphaImage);
+                }
+            }
+        } catch (IOException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new IOException("Failed to prepare tile image", e);
+        }
+    }
+
+    private double[] resolveBackgroundArray() {
+        if (tileFormat == TileFormat.PNG) {
+            return new double[]{0d, 0d, 0d, 0d};
+        }
+        return new double[]{
+                tileBackgroundColor.getRed(),
+                tileBackgroundColor.getGreen(),
+                tileBackgroundColor.getBlue()
+        };
     }
 
 }
