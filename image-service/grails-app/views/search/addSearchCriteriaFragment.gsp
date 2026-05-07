@@ -13,14 +13,14 @@
 - rights and limitations under the License.
 --}%
 
-<div class="form-horizontal" style="height: 200px">
+<div class="" style="height: 200px">
 
-    <div class="alert alert-error" id="errorMessageDiv" style="display: none">
+    <div class="alert alert-danger" id="errorMessageDiv" style="display: none">
     </div>
 
     <form id="criteriaForm">
-        <div class="control-group">
-            <label class="control-label" for='searchCriteriaDefinitionId'><g:message code="add.search.criteria.frament.criteria" /></label>
+        <div class="mb-3">
+            <label class="col-form-label" for='searchCriteriaDefinitionId'><g:message code="add.search.criteria.frament.criteria" /></label>
             <div class="controls">
                 <g:select id="cmbCriteria" name="searchCriteriaDefinitionId" from="${criteriaDefinitions}" optionValue="name" optionKey="id" noSelection="${[0:"<Select Criteria>"]}" />
             </div>
@@ -29,7 +29,7 @@
     </form>
 
     <div id="addButtonDiv" style="display: none">
-        <button id="btnSaveCriteria" type="button" class="btn btn-small btn-primary pull-right"><g:message code="add.search.criteria.frament.list.add.criteria" /></button>
+        <button id="btnSaveCriteria" type="button" class="btn btn-sm btn-primary"><g:message code="add.search.criteria.frament.list.add.criteria" /></button>
     </div>
 
     <script type="text/javascript">

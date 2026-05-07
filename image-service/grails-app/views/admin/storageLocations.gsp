@@ -12,134 +12,134 @@
         <content tag="adminButtonBar" />
 
         <div class="row">
-            <div class="col-md-12">
-                <button class="btn btn-success" id="btn-add-storage-location"><i class="glyphicon glyphicon-plus "> </i>&nbsp;Add</button>
+            <div class="col-12">
+                <button class="btn btn-success" id="btn-add-storage-location"><i class="fa fa-plus "> </i>&nbsp;Add</button>
             </div>
         </div>
 
         <div class="row" style="margin-top:10px;">
-            <div class="col-md-12">
-                <div id="storage-location-container" class="well well-small">
+            <div class="col-12">
+                <div id="storage-location-container" class="card p-3">
                     <asset:image src="spinner.gif" />
                 </div>
             </div>
         </div>
 
-        <div id="storage-location-modal" class="modal fade" role="dialog">
+        <div id="storage-location-modal" class="modal fade" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <button type="button" class="close" data-dismiss="modal">&times;</button>
                         <h4 class="modal-title">Storage Location</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <form id="storage-location-form">
-                            <div class="form-group">
-                                <label class="radio-inline">
-                                    <input type="radio" name="type" id="fs-type" value="fs" checked>
-                                    File system
-                                </label>
-                                <label class="radio-inline">
-                                    <input type="radio" name="type" id="s3-type" value="s3">
-                                    AWS S3 Bucket
-                                </label>
-                                <label class="radio-inline">
-                                    <input type="radio" name="type" id="swift-type" value="swift">
-                                    Swift
-                                </label>
+                            <div class="mb-3">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="type" id="fs-type" value="fs" checked>
+                                    <label class="form-check-label">File system</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="type" id="s3-type" value="s3">
+                                    <label class="form-check-label">AWS S3 Bucket</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="type" id="swift-type" value="swift">
+                                    <label class="form-check-label">Swift</label>
+                                </div>
                             </div>
                             <div id="fs-form" class="type-form">
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="basePath">Base Path</label>
                                     <input type="text" class="form-control" id="basePath" name="basePath" placeholder="/data/images/storage">
                                 </div>
                             </div>
-                            <div id="s3-form" class="type-form hidden">
-                                <div class="form-group">
+                            <div id="s3-form" class="type-form d-none">
+                                <div class="mb-3">
                                     <label for="region">Region</label>
                                     <input type="text" class="form-control" id="region" name="region" placeholder="ap-southeast-2">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="bucket">Bucket name</label>
                                     <input type="text" class="form-control" id="bucket" name="bucket" placeholder="ala-image-service">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="prefix">Object Prefix</label>
                                     <input type="text" class="form-control" id="prefix" name="prefix" placeholder="/images/prefix">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="accessKey">Access Key</label>
                                     <input type="text" class="form-control" id="accessKey" name="accessKey" placeholder="asdfasdfasdf">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="secretKey">Secret Key</label>
                                     <input type="text" class="form-control" id="secretKey" name="secretKey" placeholder="asdfasdfasdf">
                                 </div>
-                                <div class="checkbox">
+                                <div class="form-check">
                                     <label>
                                         <input type="checkbox" id="publicRead" name="publicRead"> Public read
                                     </label>
                                 </div>
-                                <div class="checkbox">
+                                <div class="form-check">
                                     <label>
                                         <input type="checkbox" id="privateAcl" name="privateAcl"> Explicit Private ACL
                                     </label>
-                                    <p class="help-block">
+                                    <p class="form-text">
                                         If checked (and Public read is not), uploaded objects get S3 canned "private" ACL.
                                         If both unchecked, no ACL header is sent and bucket defaults apply.
                                     </p>
                                 </div>
-                                <div class="checkbox">
+                                <div class="form-check">
                                     <label>
                                         <input type="checkbox" id="redirect" name="redirect"> Redirect
                                     </label>
                                 </div>
                             </div>
-                            <div id="swift-form" class="type-form hidden">
-                                <div class="form-group">
+                            <div id="swift-form" class="type-form d-none">
+                                <div class="mb-3">
                                     <label for="authUrl">Auth URL</label>
                                     <input type="url" class="form-control" id="authUrl" name="authUrl" placeholder="https://example.org/v1/auth">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="authenticationMethod">Auth Method</label>
-                                    <select class="form-control" id="authenticationMethod" name="authenticationMethod">
+                                    <select class="form-select" id="authenticationMethod" name="authenticationMethod">
                                         <g:each in="${AuthenticationMethod.values()}" var="method">
                                             <option value="${method.name()}">${method}</option>
                                         </g:each>
                                     </select>
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="username">Username</label>
                                     <input type="text" class="form-control" id="username" name="username" placeholder="test:testing">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="password">Password</label>
                                     <input type="text" class="form-control" id="password" name="password" placeholder="tester">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="tenantId">Tenant ID</label>
                                     <input type="text" class="form-control" id="tenantId" name="tenantId" placeholder="">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="tenantName">Tenant Name</label>
                                     <input type="text" class="form-control" id="tenantName" name="tenantName" placeholder="">
                                 </div>
-                                <div class="form-group">
+                                <div class="mb-3">
                                     <label for="containerName">Container Name</label>
                                     <input type="text" class="form-control" id="containerName" name="containerName" placeholder="images">
                                 </div>
-                                <div class="checkbox">
+                                <div class="form-check">
                                     <label>
                                         <input type="checkbox" id="publicContainer" name="publicContainer"> Public container
                                     </label>
                                 </div>
-                                <div class="checkbox">
+                                <div class="form-check">
                                     <label>
                                         <input type="checkbox" id="redirect" name="redirect"> Redirect
                                     </label>
                                 </div>
                             </div>
-                            <button type="button" id="btn-save-storage-location" class="btn btn-default">Add</button>
+                            <button type="button" id="btn-save-storage-location" class="btn btn-outline-dark">Add</button>
                         </form>
                     </div>
                     <div class="modal-footer">
@@ -147,12 +147,12 @@
                 </div>
             </div>
         </div>
-        <div id="update-storage-location-modal" class="modal fade" role="dialog">
+        <div id="update-storage-location-modal" class="modal fade" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <button type="button" class="close" data-dismiss="modal">&times;</button>
                         <h4 class="modal-title">Update Storage Location</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                     </div>
@@ -194,8 +194,8 @@
 
             $('input[name="type"]').on('change', function(e) {
                 let type = $("input[name='type']:checked").val();
-                $('.type-form').addClass('hidden');
-                $('#'+type+'-form').removeClass('hidden');
+                $('.type-form').addClass('d-none');
+                $('#'+type+'-form').removeClass('d-none');
             });
 
             $('#storage-location-container').on('click', '.btn-migrate', function(e) {
@@ -243,7 +243,7 @@
                 });
                 $('#update-storage-location-modal').modal('show');
             });
-            $('#update-storage-location-modal').on('hidden.bs.modal', function(e) {
+            $('#update-storage-location-modal').on('d-none.bs.modal', function(e) {
                 $("#update-storage-location-modal .modal-body").html('');
             });
             $('#update-storage-location-modal').on('click', '#btn-update-storage-location', function(e) {

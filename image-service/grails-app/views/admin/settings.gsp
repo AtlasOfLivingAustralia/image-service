@@ -12,9 +12,11 @@
     </p>
     <table class="table table-bordered table-striped">
         <thead>
-            <th>Property name</th>
-            <th>Description</th>
-            <th>Current value</th>
+            <tr>
+                <th>Property name</th>
+                <th>Description</th>
+                <th>Current value</th>
+            </tr>
         </thead>
         <g:each in="${settings}" var="setting">
             <tr>
@@ -30,6 +32,5 @@
             </tr>
         </g:each>
     </table>
-</div>
 </body>
 </html>

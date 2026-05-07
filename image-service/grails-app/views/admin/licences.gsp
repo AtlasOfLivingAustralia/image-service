@@ -19,8 +19,8 @@
 
     <div class="row">
         <h1>Update Licences</h1>
-        <div class="well">
-            <g:form class="form-horizontal" name="licencesUpdate" action="updateStoredLicences" controller="admin" method="POST">
+        <div class="card">
+            <g:form name="licencesUpdate" action="updateStoredLicences" controller="admin" method="POST">
                 <h3>Licences</h3>
                 <p>
                     Please paste in CSV data into the text box below (without column headers).
@@ -31,8 +31,8 @@
                     <li><b>url</b> - the canonical URL representing the data licence e.g. 'https://creativecommons.org/publicdomain/zero/1.0/' </li>
                     <li><b>imageUrl</b> - a URL for an icon representing the data licence  e.g. 'https://licensebuttons.net/l/zero/1.0/88x31.png' </li>
                 </ul>
-                <div class="form-group">
-                    <label class="control-label" for="licenses">Licences</label>
+                <div class="mb-3">
+                    <label class="col-form-label" for="licenses">Licences</label>
                     <textarea class="form-control" rows="10" id="licenses" name="licenses">${licenceCSV}</textarea>
                 </div>
 
@@ -45,11 +45,11 @@
                     <li><b>value</b> "Creative Commons CC BY"</li>
                 </ul>
                 </p>
-                <div class="form-group">
-                    <label class="control-label" for="licenseMapping">Licence Mapping</label>
+                <div class="mb-3">
+                    <label class="col-form-label" for="licenseMapping">Licence Mapping</label>
                     <textarea class="form-control" rows="10" id="licenseMapping" name="licenseMapping">${licenceCSVMapping}</textarea>
                 </div>
-                <div class="form-group">
+                <div class="mb-3">
                     <button type="submit" class="btn btn-primary" id="btnUploadCSVImagesFile">Update</button>
                 </div>
             </g:form>

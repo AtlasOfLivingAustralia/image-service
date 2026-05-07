@@ -25,30 +25,30 @@
                 <div class="alert alert-danger" style="display: block">${flash.errorMessage}</div>
             </g:if>
 
-            <div class="well">
+            <div class="card">
                 <p>This tool allows you to delete failed upload entries based on a regular expression pattern that matches the URL.</p>
                 <p>Enter a regular expression pattern below and click "Clear Failed Uploads" to delete all matching entries.</p>
                 <p><strong>Warning:</strong> This action cannot be undone. Make sure your pattern is correct before proceeding.</p>
             </div>
 
-            <g:form action="clearFailedUploads" method="get" class="form-horizontal" id="clearFailedUploadsForm">
+            <g:form action="clearFailedUploads" method="get" id="clearFailedUploadsForm">
                 <input type="hidden" name="preview" value="true"/>
-                <div class="control-group">
-                    <label class="control-label" for="regexPattern">Regex Pattern:</label>
+                <div class="mb-3">
+                    <label class="col-form-label" for="regexPattern">Regex Pattern:</label>
                     <div class="controls">
-                        <g:textField name="regexPattern" class="input-xxlarge" value="${params.regexPattern}" placeholder="e.g. .*example\\.com/.*"/>
+                        <g:textField class="form-control" name="regexPattern" value="${params.regexPattern}" placeholder="e.g. .*example\\.com/.*"/>
                     </div>
                 </div>
-                <div class="control-group">
-                    <label class="control-label" for="maxResults">Max Preview Results:</label>
+                <div class="mb-3">
+                    <label class="col-form-label" for="maxResults">Max Preview Results:</label>
                     <div class="controls">
                         <g:select name="maxResults" 
                                   from="${[10, 50, 100, 500, 1000]}" 
                                   value="${maxResults ?: 100}" 
-                                  class="input-small"/>
+                                  class="form-select form-select-sm"/>
                     </div>
                 </div>
-                <div class="control-group">
+                <div class="mb-3">
                     <div class="controls">
                         <button type="button" id="btnDelete" class="btn btn-danger">Clear Failed Uploads</button>
                         <button type="submit" class="btn btn-primary">Preview</button>
@@ -60,7 +60,7 @@
             <div id="previewResults" style="display: ${matchingUploads ? 'block' : 'none'}">
                 <g:if test="${matchingUploads}">
                     <div class="row">
-                        <div class="span12">
+                        <div class="col-12">
                             <h3>Preview Results (${totalCount} total, showing ${Math.min(totalCount, maxResults ?: 100)})</h3>
                             <div class="alert alert-info">
                                 <p>These are the failed uploads that will be deleted if you proceed with the current regex pattern.</p>

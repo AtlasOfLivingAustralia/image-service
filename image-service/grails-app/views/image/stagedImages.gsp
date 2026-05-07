@@ -25,21 +25,21 @@
         <img:headerContent title="Image upload">
         </img:headerContent>
 
-        <div class="well well-small">
-            <div class="row-fluid">
-                <div class="span3">
+        <div class="card p-3">
+            <div class="row">
+                <div class="col-md-3">
                     <h4><span class="numberCircle">1</span>&nbsp;<g:message code="staged.images.upload.images" /></h4>
                     <p>
                         <g:message code="staged.images.upload.your.images" />
                     </p>
                 </div>
-                <div class="span3">
+                <div class="col-md-3">
                     <h4><span class="numberCircle">2</span>&nbsp;<g:message code="staged.images.upload.data.file" /></h4>
                     <p>
                         <g:message code="staged.images.upload.a.csv.file" />
                     </p>
                 </div>
-                <div class="span3">
+                <div class="col-md-3">
                     <h4><span class="numberCircle">3</span>&nbsp;<g:message code="staged.images.configure.columns" /></h4>
                 <p>
                     <g:message code="staged.images.add.and.configure.columns" />
@@ -49,28 +49,28 @@
                     </img:helpText>
                 </p>
                 </div>
-                <div class="span3">
+                <div class="col-md-3">
                     <h4><span class="numberCircle">4</span>&nbsp;<g:message code="staged.images.upload.images.subtitle" /></h4>
                     <g:message code="staged.images.review.the.staged.images" />
                 </div>
             </div>
-            <div class="row-fluid">
-                <div class="span3" style="text-align: center">
+            <div class="row">
+                <div class="col-md-3 text-center">
                     <button id="btnSelectImages" class="btn"><g:message code="staged.images.select.files" /></button>
                 </div>
-                <div class="span3" style="text-align: center">
+                <div class="col-md-3 text-center">
                     <g:if test="${hasDataFile}">
                         <button class="btn btn-warning" id="btnClearDataFile"><g:message code="staged.images.clear.data.file" /></button>
                         <a href="${dataFileUrl}"><g:message code="staged.images.view.data.file" /></a>
                     </g:if>
                     <g:else>
-                        <button class="btn" id="btnUploadDataFile"><i class="icon-upload"></i>&nbsp;<g:message code="staged.images.staged.images.upload.data.file" /></button>
+                        <button class="btn" id="btnUploadDataFile"><i class="fa fa-upload"></i>&nbsp;<g:message code="staged.images.staged.images.upload.data.file" /></button>
                     </g:else>
                 </div>
-                <div class="span3" style="text-align: center">
-                    <button class="btnAddFieldDefinition btn"><i class="icon-plus"></i> <g:message code="staged.images.add.column" /></button>
+                <div class="col-md-3 text-center">
+                    <button class="btnAddFieldDefinition btn"><i class="fa fa-plus"></i> <g:message code="staged.images.add.column" /></button>
                 </div>
-                <div class="span3" style="text-align: center">
+                <div class="col-md-3 text-center">
                     <div style="margin-bottom: 10px">
                         <g:checkBox name="areOccurrences" id="areOccurrences" checked="${true}"/> <g:message code="staged.images.treat.as.occurrence.records" />
                         <img:helpText>
@@ -86,18 +86,18 @@
         </div>
 
         <div class="staged-files-list" style="overflow-x: scroll">
-            <table class="table table-condensed table-bordered table-striped">
+            <table class="table table-bordered table-striped">
                 <thead>
                     <th><g:message code="staged.images.filename" /></th>
                     <th><g:message code="staged.images.date.staged" /></th>
                     <g:each in="${dataFileColumns}" var="field">
                         <th columnDefinitionId="${field.id}">
-                            <div class="label" style="display: block">
-                                <g:set var="fieldTypeIcon" value="${[ (StagingColumnType.Literal) : "icon-font", (StagingColumnType.NameRegex): 'icon-asterisk'][field.fieldDefinitionType] ?: 'icon-file'}" />
-                                <i class="icon-white ${fieldTypeIcon}"></i>
+                            <div class="badge bg-secondary" style="display: block">
+                                <g:set var="fieldTypeIcon" value="${[ (StagingColumnType.Literal) : "fa fa-font", (StagingColumnType.NameRegex): 'fa fa-asterisk'][field.fieldDefinitionType] ?: 'fa fa-file'}" />
+                                <i class="fa ${fieldTypeIcon}"></i>
                                 <span style="text-align: right">
-                                <a href="#" class="btnEditField" title="Edit column definition"><i class="icon-edit icon-white"></i></a>
-                                <a href="#" class="btnDeleteField" title="Remove column"><i class="icon-remove icon-white"></i></a>
+                                <a href="#" class="btnEditField" title="Edit column definition"><i class="fa fa-edit"></i></a>
+                                <a href="#" class="btnDeleteField" title="Remove column"><i class="fa fa-remove"></i></a>
                                 </span>
                                 <br/>
                                 <div style="font-weight: normal">${field.format}</div>
@@ -122,7 +122,7 @@
                                 </td>
                             </g:each>
                             <td>
-                                <button type="button" class="btn btn-small btn-danger btnDeleteStagedFile"><i class="icon-remove icon-white"></i></button>
+                                <button type="button" class="btn btn-sm btn-danger btnDeleteStagedFile"><i class="fa fa-remove"></i></button>
                             </td>
                         </tr>
                     </g:each>

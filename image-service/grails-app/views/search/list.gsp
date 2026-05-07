@@ -20,67 +20,67 @@
                 <h1 style="margin-top:0;"><g:message code="list.total.images" args="[g.formatNumber(number:totalImageCount, format:'###,###,###')]" /></h1>
             </div>
             <!-- search box -->
-            <div class="search col-md-7" style="margin-bottom:20px;">
+            <div class="search col-md-7 mb-3">
                 <g:form action="list" controller="search" method="get">
                     <div class="input-group">
-                        <input type="text" class="input-large form-control" id="keyword" name="q" value="${params.q}" />
-                        <div class="input-group-btn">
-                            <button class="btn btn-primary" type="submit">
-                                <span class="glyphicon glyphicon-search"></span>
-                                <g:message code="list.search" />
-                            </button>
-                            <a id="btnAddCriteria" class="btn btn-default">
-                                <g:message code="list.advanced.search" />
+                        <input type="text" class="form-control" id="keyword" name="q" value="${params.q}" />
+                        <button class="btn btn-primary">
+                            <span class="fa fa-search"></span>
+                            <g:message code="list.search" />
+                        </button>
+                        <a id="btnAddCriteria" href="#" class="btn btn-outline-dark">
+                            <g:message code="list.advanced.search" />
+                        </a>
+                        <auth:ifLoggedIn>
+                            <a class="btn btn-outline-dark" href="${createLink(controller:'search', action:'download')}?${request.getQueryString()}">
+                                <span class="fa fa-download"></span>
+                                <g:message code="list.download.results" />
                             </a>
-                            <auth:ifLoggedIn>
-                                <a class="btn btn-default" href="${createLink(controller:'search', action:'download')}?${request.getQueryString()}">
-                                    <span class="glyphicon glyphicon-download"></span>
-                                    <g:message code="list.download.results" />
-                                </a>
-                            </auth:ifLoggedIn>
-                            <auth:ifNotLoggedIn>
-                                <!-- Button trigger modal -->
-                                <button type="button" class="btn btn-default" data-toggle="modal" data-target="#modal-download-login-required">
-                                    <span class="glyphicon glyphicon-download"></span>
-                                    <g:message code="list.download.results" />
-                                </button>
-                            </auth:ifNotLoggedIn>
-                        </div>
+                        </auth:ifLoggedIn>
+                        <auth:ifNotLoggedIn>
+                            <!-- Button trigger modal -->
+                            <button type="button" class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#modal-download-login-required">
+                                <span class="fa fa-download"></span>
+                                <g:message code="list.download.results" />
+                            </button>
+                        </auth:ifNotLoggedIn>
                     </div>
                 </g:form>
             </div>
 
             <div class="col-md-2">
                 <g:if test="${isAdmin}">
-                    <g:link   controller="admin" action="dashboard" class="btn btn-danger" type="submit">
-                        <span class="glyphicon glyphicon-cog"></span>
+                    <g:link   controller="admin" action="dashboard" class="btn btn-danger">
+                        <span class="fa fa-cog"></span>
                         <g:message code="list.admin" />
                     </g:link>
                 </g:if>
-                <g:link mapping="api_doc" class="btn btn-info" type="submit">
-                    <span class="glyphicon glyphicon-wrench"></span>
+                <g:link mapping="api_doc" class="btn btn-info">
+                    <span class="fa fa-wrench"></span>
                     <g:message code="list.view.api" />
                 </g:link>
             </div>
         </div>
 
         <!-- results -->
+        <div class="row" style="margin-left:1px;">
         <g:render template="imageThumbnails"
                   model="${[images: images, facets: facets, totalImageCount: totalImageCount, allowSelection: isLoggedIn,
                             selectedImageMap: selectedImageMap]}" />
+        </div>
 
-        <div id="addCriteriaModal" class="modal fade" role="dialog">
+        <div id="addCriteriaModal" class="modal fade">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <button type="button" class="close" data-dismiss="modal">&times;</button>
                         <h4 class="modal-title"><g:message code="list.advanced.search" /></h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <form id="criteriaForm">
-                            <div class="control-group">
-                                <label class="control-label" for='searchCriteriaDefinitionId'>Criteria:</label>
-                                <g:select class="form-control" id="cmbCriteria" name="searchCriteriaDefinitionId" from="${criteriaDefinitions}"
+                            <div class="mb-3">
+                                <label class="col-form-label" for='searchCriteriaDefinitionId'>Criteria:</label>
+                                <g:select class="form-select" id="cmbCriteria" name="searchCriteriaDefinitionId" from="${criteriaDefinitions}"
                                           optionValue="name" optionKey="id" noSelection="${[0:"<Select Criteria>"]}" />
                             </div>
                             <div id="criteriaDetail" style="margin-top:10px;">
@@ -88,24 +88,24 @@
                         </form>
                     </div>
                     <div class="modal-footer">
-                        <button id="btnSaveCriteria" type="button" class="btn btn-small btn-primary pull-right"><g:message code="list.add.criteria" /></button>
-                        <button type="button" class="btn btn-default" data-dismiss="modal"><g:message code="list.close" /></button>
+                        <button id="btnSaveCriteria" type="button" class="btn btn-sm btn-primary" style="order: 2;"><g:message code="list.add.criteria" /></button>
+                        <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal" style="order: 1;"><g:message code="list.close" /></button>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="modal fade" id="modal-download-login-required" tabindex="-1" role="dialog" aria-labelledby="label-download-login-required">
-            <div class="modal-dialog" role="document">
+        <div class="modal fade" id="modal-download-login-required" tabindex="-1" aria-labelledby="label-download-login-required">
+            <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
                         <h4 class="modal-title" id="label-download-login-required"><g:message code="list.download.loginRequiredModal.title" default="Login Required"/></h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
                         <p><g:message code="list.download.loginRequiredModal.body" default="Please login to download image search results."/></p>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-default" data-dismiss="modal"><g:message code="list.download.loginRequiredModal.close" default="Close"/></button>
+                        <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal"><g:message code="list.download.loginRequiredModal.close" default="Close"/></button>
                     </div>
                 </div>
             </div>
@@ -116,7 +116,8 @@
         $(document).ready(function() {
             $("#btnAddCriteria").on('click', function (e) {
                 e.preventDefault();
-                $('#addCriteriaModal').modal('show');
+                var modal = new bootstrap.Modal(document.getElementById('addCriteriaModal'));
+                modal.show();
             });
 
             $("#btnSearch").on('click', function(e) {
@@ -158,7 +159,7 @@
                             window.location.href = window.location.href + "?criteria=" + data.criteriaID;
                         }
 
-                        $('#addCriteriaModal').modal('hide');
+                        bootstrap.Modal.getInstance(document.getElementById('addCriteriaModal')).hide();
                     }
                 });
             });
@@ -187,7 +188,7 @@
                     doAjaxSearch($(this).attr("href"));
                 });
                 layoutImages();
-                $('.thumb-caption').removeClass('hide');
+                $('.thumb-caption').removeClass('d-none');
             });
         }
 

@@ -21,11 +21,11 @@
         <tr>
             <td>
                 <div style="margin-top: 5px; margin-bottom: 5px;">
-                    <g:select class="form-control" id="fieldListBox" name="fieldValue" from="${allowedValues?.sort({ it.value })}" optionValue="value" optionKey="name" multiple="multiple" size="12" style="width: 300px" value="${criteria?.value?.split("\\|")?.toList()}" />
+                    <g:select class="form-select" id="fieldListBox" name="fieldValue" from="${allowedValues?.sort({ it.value })}" optionValue="value" optionKey="name" multiple="multiple" size="12" style="width: 300px" value="${criteria?.value?.split("\\|")?.toList()}" />
                 </div>
             </td>
             <td style="vertical-align: top">
-                <div style="margin-left: 10px" class="muted">
+                <div style="margin-left: 10px" class="text-muted">
                     <strong><g:message code="string.multi.selected.values" /></strong>
                     <div id="selectedItemsList">
                     </div>

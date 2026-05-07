@@ -1,5 +1,5 @@
 <div>
-    <table class="table table-striped table-condensed table-bordered">
+    <table class="table table-striped table-bordered">
         <thead>
             <tr>
                 <th>Name</th>
@@ -15,8 +15,8 @@
                     <td>${field.fieldType}</td>
                     <td>${field.value}</td>
                     <td>
-                        <button class="btn btn-sm btn-danger btnDeleteFieldDefinition"><i class="glyphicon glyphicon-remove"></i></button>
-                        <button class="btn btn-sm btn-default btnEditFieldDefinition"><i class="glyphicon glyphicon-edit"></i></button>
+                        <button class="btn btn-sm btn-danger btnDeleteFieldDefinition"><i class="fa fa-remove"></i></button>
+                        <button class="btn btn-sm btn-outline-dark btnEditFieldDefinition"><i class="fa fa-edit"></i></button>
                     </td>
                 </tr>
             </g:each>

@@ -404,20 +404,20 @@ class ImagesTagLib {
                 break
             case BatchService.LOADING:
             case BatchService.WAITING__PROCESSING:
-                out << "info"
+                out << "table-info"
                 break
             case BatchService.COMPLETE:
-                out << "success"
+                out << "table-success"
                 break
             case BatchService.PARTIALLY__COMPLETE:
-                out << "primary"
+                out << "table-primary"
                 break
             case BatchService.QUEUED:
-                out << "warning"
+                out << "table-warning"
                 break
             case BatchService.STOPPED:
             case BatchService.CORRUPT__AVRO__FILES:
-                out << "danger"
+                out << "table-danger"
                 break
         }
     }

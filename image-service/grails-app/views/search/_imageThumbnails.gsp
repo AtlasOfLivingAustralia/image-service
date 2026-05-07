@@ -1,6 +1,6 @@
 <!-- results list -->
-<div id="facetWell" class="col-md-2 well well-sm">
-    <h2 class="hidden-xs"><g:message code="imagethumb.refine.results" /></h2>
+<div id="facetWell" class="col-md-2 card bg-light p-3">
+    <h2 class="d-none d-sm-block"><g:message code="imagethumb.refine.results" /></h2>
     <g:if test="${filters || searchCriteria}">
         <h5><g:message code="imagethumb.selected.filters" /></h5>
         <ul class="facets list-unstyled">
@@ -51,14 +51,14 @@
 
             <g:if test="${facet.value.size() >= 10}">
             <a href="#multipleFacets" class="multipleFacetsLink" id="multi-${facet.key}"
-               role="button" data-toggle="modal" data-target="#multipleFacets" data-facet="${facet.key}">
-                <span class="glyphicon glyphicon-hand-right" aria-hidden="true"></span> <g:message code="imagethumb.choose.more" />
+               role="button" data-bs-toggle="modal" data-bs-target="#multipleFacets" data-facet="${facet.key}">
+                <span class="fa fa-hand-point-right" aria-hidden="true"></span> <g:message code="imagethumb.choose.more" />
             </a>
             </g:if>
         </ul>
     </g:each>
 </div>
-<div class="col-md-10" style="margin-right:0px; padding-right:0px;">
+<div class="col-md-10">
     <div id="imagesList">
         <g:each in="${images}" var="image" status="imageIdx">
             <g:if test="${image}">
@@ -88,20 +88,20 @@
 
 
 <!-- modal popup for "choose more" link -->
-<div id="multipleFacets" class="modal fade " tabindex="-1" role="dialog" aria-labelledby="multipleFacetsLabel"><!-- BS modal div -->
-    <div class="modal-dialog" role="document">
+<div id="multipleFacets" class="modal fade " tabindex="-1" aria-labelledby="multipleFacetsLabel"><!-- BS modal div -->
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
-                <h3 id="multipleFacetsLabel"><g:message code="imagethumb.refine.your.search" /></h3>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-hidden="true"></button>
+                <h3 class="modal-title" id="multipleFacetsLabel"><g:message code="imagethumb.refine.your.search" /></h3>
             </div>
             <div class="modal-body">
                 <div id="facetContent" class="tableContainer" style="max-height: 500px; overflow-y: auto;">
 
                 </div>
             </div>
-            <div id='submitFacets' class="modal-footer" style="text-align: left;">
-                <button class="btn btn-default btn-small" data-dismiss="modal" aria-hidden="true" style="float:right;"><g:message code="imagethumb.list.close" /></button>
+            <div id='submitFacets' class="modal-footer justify-content-between">
+                <button class="btn btn-outline-dark btn-sm ms-auto" data-bs-dismiss="modal" aria-hidden="true" style="float:right;"><g:message code="imagethumb.list.close" /></button>
             </div>
         </div>
     </div>

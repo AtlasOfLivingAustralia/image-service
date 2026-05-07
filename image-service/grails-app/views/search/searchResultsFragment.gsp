@@ -1,4 +1,4 @@
-<div class="">
+<div>
     <%
         def toolButtons = []
         toolButtons << [label: "Select all matching images (${totalCount})", id:"btnSelectAllImages"]

@@ -21,7 +21,7 @@
     </g:if>
     <g:each in="${results}" var="resultsPeriod">
         <h3><g:message code="${resultsPeriod.key}" default="${resultsPeriod.key}"/> - total views: ${resultsPeriod.value.totalEvents}</h3>
-        <table class="table table-condensed table-striped">
+        <table class="table table-striped">
             <g:each in="${resultsPeriod.value.entities.sort({  a, b -> a.name <=> b.name })}" var="entity">
                 <tr>
                     <td>${entity.name}</td>

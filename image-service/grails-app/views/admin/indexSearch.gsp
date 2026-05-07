@@ -15,13 +15,13 @@
             <content tag="pageTitle">Tools - Index Search</content>
             <content tag="adminButtonBar" />
 
-            <div class="form-horizontal" action="indexSearch">
-                <div class="control-group">
+            <div action="indexSearch">
+                <div class="mb-3">
                     <div class="controls">
-                        <g:textArea name="q" class="input-xxlarge" rows="10" value="${query}">${query}</g:textArea>
+                        <g:textArea name="q" class="form-control" rows="10" value="${query}">${query}</g:textArea>
                     </div>
                 </div>
-                <div class="control-group">
+                <div class="mb-3">
                     <div class="controls">
                         <button type="button" id="btnDoSearch" class="btn btn-primary">Search</button>
                     </div>

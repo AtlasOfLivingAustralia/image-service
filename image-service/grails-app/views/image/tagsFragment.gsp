@@ -1,7 +1,7 @@
 <%@ page import="au.org.ala.web.CASRoles" %>
 <style>
 
-.image-tag button.close {
+.image-tag .btn-close {
     line-height: 16px;
     font-size: 14px;
 }
@@ -13,9 +13,9 @@
 <g:each in="${tags}" var="tag">
     <g:set var="deleteButtonContent" value="" />
 %{--    <auth:ifAnyGranted roles="${CASRoles.ROLE_ADMIN}">--}%
-%{--        <g:set var="deleteButtonContent"><button type="button" class="close btnDetachTag" tagId="${tag.id}">&times;</button></g:set>--}%
+%{--        <g:set var="deleteButtonContent"><button type="button" class="btn-close btnDetachTag" tagId="${tag.id}">&times;</button></g:set>--}%
 %{--    </auth:ifAnyGranted>--}%
-    <div class="badge image-tag" style="white-space: pre-wrap">${tag.label}&nbsp;&nbsp;${raw(deleteButtonContent)}</div>
+    <div class="badge bg-secondary image-tag" style="white-space: pre-wrap">${tag.label}&nbsp;&nbsp;${raw(deleteButtonContent)}</div>
 </g:each>
 </g:if>
 <script>

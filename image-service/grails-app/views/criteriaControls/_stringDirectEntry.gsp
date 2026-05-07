@@ -15,6 +15,6 @@
 <div>
     <span><g:message code="string.direct.enter.a.value.to.match" /></span>
     <div>
-        <g:textField class="form-control input-xlarge" name="fieldValue" value="${value}" />
+        <g:textField class="form-control" name="fieldValue" value="${value}" />
     </div>
 </div>

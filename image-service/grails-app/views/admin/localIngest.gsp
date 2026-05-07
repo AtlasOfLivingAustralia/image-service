@@ -12,22 +12,22 @@
         <div>
             <h2>Image Metadata</h2>
 
-            <div class="pull-right">
+            <div class="text-end">
                 <button class="btn btn-primary" id="btnStartImageImport">
-                    <i class="glyphicon glyphicon-cog"> </i>
+                    <i class="fa fa-cog"> </i>
                     Start Import
                 </button>
                 <div id="startMessage"></div>
             </div>
             <p>Add field definitions here to attach meta data to each image as it is ingested into the image service.</p>
-            <button class="btn btn-small btn-success" id="btnAddField"><i class=" glyphicon glyphicon-plus glyphicon-white"></i>&nbsp;Add Field</button>
+            <button class="btn btn-sm btn-success" id="btnAddField"><i class=" fa fa-plus"></i>&nbsp;Add Field</button>
             <div class="" id="fieldDefinitions" style="margin-top: 5px"></div>
         </div>
 
         <div>
-            <div class="pull-right">
-                <button class="btn btn-default" id="btnRefreshFileList">
-                    <i class="glyphicon glyphicon-cog"> </i>
+            <div class="text-end">
+                <button class="btn btn-outline-dark" id="btnRefreshFileList">
+                    <i class="fa fa-cog"> </i>
                     Refresh file list
                 </button>
             </div>
@@ -39,12 +39,12 @@
             <tr></tr>
         </table>
 
-        <div id="ingestModal" class="modal fade" role="dialog">
+        <div id="ingestModal" class="modal fade" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <button type="button" class="close" data-dismiss="modal">&times;</button>
                         <h4 class="modal-title">Ingest</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
 
