@@ -1,0 +1,17 @@
+[package]
+name = "ala-vips-dz-tiler-bridge"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[lib]
+name = "ala_vips_dztiler"
+crate-type = ["cdylib"]
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+pkg-config = "0.3"
+

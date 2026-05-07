@@ -118,13 +118,17 @@ phases:
             name: elasticsearch-images-${CLEAN_BRANCH}
           single_node_es: ${SINGLE_NODE_ES}
         elasticsearch:
-          tls.disableTrust: ${ELASTICSEARCH_DISABLE_TLS_TRUST_VERIFICATION}
+          tls:
+            disableTrust: ${ELASTICSEARCH_DISABLE_TLS_TRUST_VERIFICATION}
           host: "${ELASTICSEARCH_HOST}"
           indexName: "${INDEX_NAME}"
           username: "${ELASTICSEARCH_USERNAME}"
           password: $ELASTICSEARCH_PASSWORD
           port: ${ELASTIC_PORT}
           scheme: "${ES_SCHEME}"
+        tiling:
+          levelThreads: ${TILING_LEVEL_THREADS}
+          ioThreads: ${TILING_IO_THREADS}
         app:
           url: https://$DOMAIN_NAME
         db:
@@ -180,8 +184,8 @@ phases:
         bie:
           baseURL: $BIE_BASE_URL
         podEnvironment: "${POD_ENVIRONMENT}"
-        xmx: "${HEAP_SIZE_INITIAL}"
-        xms: "${HEAP_SIZE_MAX}"
+        xmx: "${HEAP_SIZE_MAX}"
+        xms: "${HEAP_SIZE_INITIAL}"
         ingress:
           accessLogsPrefix: "logs"
           accessLogsBucket: "${ACCESS_LOGS_S3_BUCKET_NAME}"
@@ -202,8 +206,8 @@ phases:
               metrics:
                 enabled: ${IMAGE_SERVICE_S3_CLOUDWATCH_METRICS_ENABLED}
         imageservice:
-          storage: 
-            locations: ${IMAGE_SERVICE_STORAGE_LOCATIONS}
+          bucket:
+            name: ${S3_BUCKET}
           optimisation:
             enabled: ${IMAGE_SERVICE_IMAGE_OPTIMISATION_ENABLED}
           metadata:
@@ -218,6 +222,15 @@ phases:
                 maxLoadAverage: ${IMAGE_SERVICE_METADATA_JSONB_MAX_LOAD_AVERAGE}
         images:
           disableCache: ${IMAGE_SERVICE_DISABLE_CACHE}
+          store:
+            container:
+              credentials: ${CONTAINER_CREDENTIALS}
+            prefix: ${PREFIX}
+            privateAcl: ${PRIVATE_ACL}
+            publicRead: ${PUBLIC_READ}
+            redirect: ${REDIRECT}
+            cloudfront:
+              domain: ${CLOUDFRONT_DOMAIN}
         iiif:
           enabled: ${IMAGE_SERVICE_IIIF_ENABLED}
         imageServiceUrls: ${IMAGE_SERVICE_URLS}

@@ -74,6 +74,7 @@ info:
     version: {{ .Values.version }}
 
 flyway:
+  enabled: false
   baselineOnMigrate: true
 
 dataSource:
@@ -81,7 +82,7 @@ dataSource:
   driverClassName: org.postgresql.Driver
   username: {{ .Values.db.db_username }}
   password: {{ .Values.db.db_password }}
-  dbCreate: validate
+  dbCreate: update
 
 imageservice:
   imagestore:
@@ -92,7 +93,17 @@ imageservice:
     multiple_roots:  "{{ .Values.app.url }}/store/"
     exportDir: "/data/image-service/exports"
   storage:
-    locations: {{ .Values.imageservice.storage.locations }}
+    locations:
+      s3_ap-southeast-2_ala-images_store:
+        bucket: {{ .Values.imageservice.bucket.name }}
+        containerCredentials: {{ .Values.images.store.container.credentials }}
+        prefix: {{ .Values.images.store.prefix }}
+        privateAcl: {{ .Values.images.store.privateAcl }}
+        publicRead: {{ .Values.images.store.publicRead }}
+        redirect: {{ .Values.images.store.redirect }}
+        region: ap-southeast-2
+        type: s3
+        cloudfrontDomain: {{ .Values.images.store.cloudfront.domain }}
   optimisation:
     enabled: {{ .Values.imageservice.optimisation.enabled }}
   metadata:
@@ -175,6 +186,10 @@ elasticsearch:
 
 images:
   disableCache: {{ .Values.images.disableCache }}
+
+tiling:
+  levelThreads: {{ .Values.tiling.levelThreads }}
+  ioThreads: {{ .Values.tiling.ioThreads }}
 
 iiif.enabled: {{ .Values.iiif.enabled }}
 imageServiceUrls: {{ .Values.imageServiceUrls }}

@@ -76,12 +76,11 @@ startupProbe:
     path: /actuator/health
     port: 8080
     scheme: HTTP
-  initialDelaySeconds: 90
-  periodSeconds: 5
-  timeoutSeconds: 15
+  initialDelaySeconds: 180
+  periodSeconds: 10
+  timeoutSeconds: 30
   successThreshold: 1
-  failureThreshold: 40 # 40 failures + initial delay of 90 seconds = 290 seconds
-
+  failureThreshold: 120
 readinessProbe:
   enabled: true
   httpGet:
@@ -209,8 +208,8 @@ elasticsearch-images:
   single_node_es: false
 
 imageservice:
-  storage:
-    locations: []
+  bucket:
+    name:
   optimisation:
     enabled: false
   metadata:
@@ -235,6 +234,15 @@ aws:
 
 images:
   disableCache: false
+  store:
+    container:
+      credentials:
+    prefix:
+    privateAcl:
+    publicRead:
+    redirect:
+    cloudfront:
+      domain:
 
 iiif:
   enabled: false
@@ -250,3 +258,6 @@ management:
         enabled: false
   tags:
     environment:
+tiling:
+  levelThreads: 2
+  ioThreads: 32

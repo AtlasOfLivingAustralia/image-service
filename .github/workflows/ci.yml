@@ -3,101 +3,227 @@ name: CI Build and Deploy
 on:
   push:
     branches:
-      # Corresponds to 'branches: only:'
       - master
       - develop
       - 'feature/**'
       - 'hotfix/**'
   pull_request:
-    # Runs on pull requests to these branches
     branches:
       - master
       - develop
 
 env:
-  # Corresponds to 'env: global:'
   JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
   GRADLE_OPTS_BASE: -Dgrails.env=ghactions
   TRAVIS_DEPLOY_USERNAME: ${{ secrets.TRAVIS_DEPLOY_USERNAME }}
   TRAVIS_DEPLOY_PASSWORD: ${{ secrets.TRAVIS_DEPLOY_PASSWORD }}
 
 jobs:
-  build:
-    # GitHub Actions defaults to the latest Ubuntu runner (equivalent to a recent 'dist: noble')
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Native DZ tiler bridge – compiled per platform
+  #    Produces one shared library per runner, uploaded as an artifact so the
+  #    Java build can assemble a fat JAR containing all three.
+  # ──────────────────────────────────────────────────────────────────────────
+  native-bridge:
+    name: Native bridge (${{ matrix.platform.classifier }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { runs-on: ubuntu-24.04,     classifier: linux-x86_64  }
+          - { runs-on: ubuntu-24.04-arm, classifier: linux-aarch64 }
+          - { runs-on: macos-15,         classifier: macos-aarch64 }
+    runs-on: ${{ matrix.platform.runs-on }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install libvips (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev
+
+      - name: Install libvips (macOS)
+        if: runner.os == 'macOS'
+        run: brew install vips
+
+      - name: Compile native bridge
+        run: ./gradlew :image-utils-native-bridge:stageNativeBridge
+
+      # Stage with classifier directory to avoid lib filename collisions when
+      # artifacts are merged in the downstream download step.
+      - name: Prepare native artifact layout
+        run: |
+          mkdir -p native-artifact/${{ matrix.platform.classifier }}
+          cp -f image-utils-native-bridge/build/native/${{ matrix.platform.classifier }}/* native-artifact/${{ matrix.platform.classifier }}/
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.platform.classifier }}
+          path: native-artifact/
+          if-no-files-found: error
+          retention-days: 3
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. image-utils Java build
+  #    Downloads all native artifacts, assembles a fat JAR containing native
+  #    libs for every target platform, then runs tests and publishes.
+  # ──────────────────────────────────────────────────────────────────────────
+  image-utils-build:
+    name: image-utils (JDK 11)
+    needs: [native-bridge]
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Set up JDK 11
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+          cache: 'gradle'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
 
-    # --- Environment Setup (Replaces 'language:', 'jdk:', and 'before_install:') ---
+      # Download all native bridge artifacts in one go.
+      # pattern matches artifact names, not filesystem paths.
+      - name: Download all native binaries
+        uses: actions/download-artifact@v8
+        with:
+          path: image-utils/build/native-prebuilt/
+          pattern: native-*
+          merge-multiple: true
 
-    - name: Set up Java 21
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '21'
+      # Skip the local native compile and bundle all
+      # three pre-built libs via the nativeDzBridgePrebuiltDir property.
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
+      - name: Build and Test image-utils
+        run: |
+          ./gradlew :image-utils:build \
+            -PskipNativeDzBridgeBuild=true \
+            -PnativeDzBridgePrebuiltDir="${{ github.workspace }}/image-utils/build/native-prebuilt"
+        env:
+          GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
 
-    # --- Setup Gradle action, (includes replacment for 'cache: directories:' and 'before_cache:') ---
+      - name: Publish image-utils (on push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: |
+          ./gradlew :image-utils:publish \
+            -PskipNativeDzBridgeBuild=true \
+            -PnativeDzBridgePrebuiltDir="${{ github.workspace }}/image-utils/build/native-prebuilt"
+        env:
+          GRADLE_OPTS: -Dgrails.env=production
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v6
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v5
-      # uses: gradle/actions/setup-gradle@v5.0.0 # use this for act
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. image-service Grails build
+  # ──────────────────────────────────────────────────────────────────────────
+  image-service-build:
+    name: image-service (JDK 21)
+    needs: [image-utils-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install image optimisation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvips-dev libvips-tools \
+            libjpeg-progs jpegoptim \
+            pngquant optipng zopfli gifsicle \
+            webp libavif-bin imagemagick
+      - name: Install SVGO
+        run: |
+          sudo install -m 0755 /dev/stdin /usr/local/bin/svgo <<'EOF'
+          #!/usr/bin/env bash
+          npx --yes svgo "$@"
+          EOF
+          svgo --version
+      - name: Start ElasticSearch
+        run: docker compose -f image-service/elastic-dc2.yml up -d
+      - name: Wait for services to be ready
+        run: sleep 10
+      - name: Build and Test
+        run: ./gradlew :image-service:clean :image-service:build
+        env:
+          GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
+      - name: Publish image-service (on push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: ./gradlew :image-service:publish
+        env:
+          GRADLE_OPTS: -Dgrails.env=production
+      - name: Stop ElasticSearch
+        if: always()
+        run: docker compose -f image-service/elastic-dc2.yml down
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v6
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'
 
-    - name: Start ElasticSearch with Docker Compose
-      run: docker compose -f elastic-dc2.yml up -d
-
-    - name: Wait for services to be ready
-      run: |
-        # Simple check to wait for the ElasticSearch service to be ready
-        # You might need a more robust check based on your application's requirements
-        echo "Waiting for ElasticSearch..."
-        sleep 10 
-
-      # --- Install/Build Phase (Replaces 'install:' and 'travis_wait') ---
-
-    - name: Clean build
-      # We don't need 'travis_wait 30' as GitHub Actions handles timeouts differently.
-      # Run with the base environment option.
-      run: ./gradlew clean
-      env:
-        GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
-
-    - name: Assemble project
-      run: ./gradlew assemble
-      env:
-        GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
-
-    - name: Test project
-      run: ./gradlew check
-      env:
-        GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
-
-    # --- Failure Reporting (Replaces 'after_failure:') ---
-
-    - name: Publish Unit Test Report
-      id: unit-test-report
-      uses: mikepenz/action-junit-report@v5
-      if: failure()
-      with:
-        report_paths: '**/build/test-results/test/*.xml'
-
-    - name: Publish Integration Test Report
-      id: integration-test-report
-      uses: mikepenz/action-junit-report@v5
-      if: failure()
-      with:
-        report_paths: '**/build/test-results/integrationTest/*.xml'
-
-      # --- Deployment/Success Phase (Replaces 'after_success:') ---
-
-    - name: Publish (on successful master/develop/feature/hotfix push, not PR)
-      if: github.event_name == 'push' && success()
-      run: ./gradlew publish --stacktrace
-      env:
-        GRADLE_OPTS: -Dgrails.env=production
-
-      # --- Cleanup Phase (Replaces 'after_script:') ---
-
-    - name: Stop Docker Compose services
-      if: always() # Run even if previous steps fail
-      run: docker compose -f elastic.yml down
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. FFM libraries (JDK 25, nested Gradle builds)
+  # ──────────────────────────────────────────────────────────────────────────
+  ffm-libs-build:
+    name: FFM Libraries (JDK 25)
+    needs: [image-utils-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools
+      - name: Build FFM libraries
+        run: |
+          cd image-utils-ffm-libvips
+          chmod +x gradlew
+          ./gradlew build
+          cd ../image-utils-photofox
+          chmod +x gradlew
+          ./gradlew build
+      - name: Publish FFM libraries (on push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop') && success()
+        run: |
+          cd image-utils-ffm-libvips
+          ./gradlew publish
+          cd ../image-utils-photofox
+          ./gradlew publish
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v6
+        if: failure()
+        with:
+          report_paths: '**/build/test-results/**/*.xml'
