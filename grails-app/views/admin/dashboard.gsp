@@ -21,7 +21,7 @@
             <div class="alert alert-warning" style="display: block">WARNING: CAS authentication disabled - this means admin functions are exposed!</div>
         </g:if>
 
-        <div class="well well-small">
+        <div class="card p-3">
             <h4>Database statistics <i id="update-repo-stats" style="cursor: pointer" class="fa fa-refresh" title="${g.message(code: 'admin.stats.refresh', default: 'Click here to refresh database stats')}"></i></h4>
             <table id="statTable" class="table table-striped">
                 <tr>

@@ -1,5 +1,5 @@
 <div>
-    <div class="well well-small">
+    <div class="card p-3">
         <g:if test="${parentTag}">
                 Enter a name for your new tag. It will be created under <strong>${parentTag.path}</strong>.
         </g:if>
@@ -8,15 +8,15 @@
         </g:else>
     </div>
     <form>
-        <div class="form-group">
+        <div class="mb-3">
             <label for="tag">Tag name</label>
-            <input type="text" id="tag" class="form-control input-lg" placeholder="<new tag>">
+            <input type="text" id="tag" class="form-control form-control-lg" placeholder="<new tag>">
         </div>
 
-        <div class="control-group">
+        <div class="mb-3">
             <div class="controls">
                 <button class="btn btn-primary" id="btnAddTag">Create Tag</button>
-                <button class="btn btn-default" id="btnCancelAddTag">Cancel</button>
+                <button class="btn btn-outline-dark" id="btnCancelAddTag">Cancel</button>
             </div>
         </div>
     </form>
@@ -25,7 +25,7 @@
 
     $("#btnCancelAddTag").on('click', function(e) {
         e.preventDefault();
-        $('#tagModal').modal('hide');
+        bootstrap.Modal.getInstance(document.getElementById('tagModal')).hide();
     });
 
     $("#btnAddTag").on('click', function(e) {

@@ -57,8 +57,8 @@ dependencies {
     implementation group: 'org.grails.plugins', name: 'ala-auth', version: alaSecurityLibsVersion, changing: true
     implementation group: 'org.grails.plugins', name: 'ala-ws-plugin', version: alaSecurityLibsVersion, changing: true
     implementation group: 'org.grails.plugins', name: 'ala-ws-security-plugin', version: alaSecurityLibsVersion, changing: true
-    implementation group: 'org.grails.plugins', name: 'ala-bootstrap3', version: '4.1.0', changing: true
-    implementation group: 'org.grails.plugins', name: 'ala-admin-plugin', version: '2.3.0', changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-bootstrap5', version: '1.0.0-SNAPSHOT', changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-admin-plugin', version: '2.4.0-SNAPSHOT', changing: true
     implementation group: 'au.org.ala.plugins.grails', name:'images-client-plugin', version: '1.1', changing: true
 
     // Added dependencies

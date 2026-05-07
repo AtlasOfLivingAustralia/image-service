@@ -23,25 +23,24 @@
 Individual file details for the upload ${batchFileUpload.id} received on upload ${batchFileUpload.dateCreated}
 </p>
 <div class="btn-toolbar">
-    <div class="btn-group mr-2 pull-right" role="group" aria-label="First group">
-        <button type="button" class="btn btn-default" data-toggle="modal" data-target="#helpModal">
-            <span class="glyphicon glyphicon-info-sign" aria-hidden="true"></span>
+    <div class="btn-group me-2 text-end" role="group" aria-label="First group">
+        <button type="button" class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#helpModal">
+            <span class="fa fa-info-sign" aria-hidden="true"></span>
             Help
         </button>
-        <g:link controller="admin" action="batchUploads" class="btn-default btn">
-            <span class="glyphicon glyphicon-list" aria-hidden="true"></span>
+        <g:link controller="admin" action="batchUploads" class="btn-outline-dark btn">
+            <span class="fa fa-list" aria-hidden="true"></span>
             Back to batch uploads
         </g:link>
     </div>
 </div>
 
-<div id="helpModal" class="modal fade" role="dialog">
-    <div class="modal-dialog" role="document">
+<div id="helpModal" class="modal fade">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title">Processing status Information</h3>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close">
                 </button>
             </div>
             <div class="modal-body">
@@ -77,14 +76,14 @@ Individual file details for the upload ${batchFileUpload.id} received on upload 
                 </p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
 </div>
 
 <h3>Files in this batch
-<span class="pull-right">
+<span class="text-end">
     total: ${files.size()},
     completed: ${files.findAll({it.status == 'COMPLETE'}).size()},
     loading: ${files.findAll({it.status == 'LOADING'}).size()},
@@ -93,8 +92,8 @@ Individual file details for the upload ${batchFileUpload.id} received on upload 
 </span>
 </h3>
 <g:if test="${files}">
-    <table class="table table-condensed table-bordered ">
-    <thead class="thead-dark">
+    <table class="table table-bordered ">
+    <thead class="table-dark">
     <th>fileID</th>
     <th>recordCount</th>
     <th>processedCount</th>
@@ -110,7 +109,7 @@ Individual file details for the upload ${batchFileUpload.id} received on upload 
     </thead>
     <tbody>
     <g:each in="${files}" var="batchFile">
-        <tr class="${batchFile.status == 'LOADING' ? 'active' : ''} ${batchFile.status == 'COMPLETE' ? 'success' : ''} ${batchFile.status == 'QUEUED' ? 'warning' : ''} ${batchFile.status == 'STOPPED' ? 'danger' : ''}">
+        <tr class="${batchFile.status == 'LOADING' ? 'table-active' : ''} ${batchFile.status == 'COMPLETE' ? 'table-success' : ''} ${batchFile.status == 'QUEUED' ? 'table-warning' : ''} ${batchFile.status == 'STOPPED' ? 'table-danger' : ''}">
             <td>
                 <a href="#" title="${batchFile.filePath}">
                     ${batchFile.id}
@@ -142,11 +141,11 @@ Individual file details for the upload ${batchFileUpload.id} received on upload 
             <td>${batchFile.status}</td>
             <td>
                 <div class="btn-group" role="group">
-                    <g:link action="batchReloadFile" params="${[fileId: batchFile.id]}" class="btn btn-default btn-sm ">
-                        <span class="glyphicon glyphicon-refresh" aria-hidden="true"></span>
+                    <g:link action="batchReloadFile" params="${[fileId: batchFile.id]}" class="btn btn-outline-dark btn-sm ">
+                        <span class="fa fa-refresh" aria-hidden="true"></span>
                         Reload</g:link>
                     <g:link action="batchFileDeleteFromQueue" params="${[fileId: batchFile.id]}" class="btn btn-danger btn-sm ">
-                        <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+                        <span class="fa fa-remove" aria-hidden="true"></span>
                         Delete
                     </g:link>
                 </div>

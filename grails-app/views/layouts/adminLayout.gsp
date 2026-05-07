@@ -20,10 +20,10 @@
     <body>
         <asset:stylesheet src="application.css" />
         <div class="container-fluid">
-            <div class="row-fluid">
+            <div class="row">
                 <div class="col-md-2">
-                    <h1>Admin tools</h1>
-                    <ul class="nav nav-pills nav-stacked">
+                    <h1 class="mb-3">Admin tools</h1>
+                    <ul class="nav nav-pills flex-column">
                         <img:menuNavItem href="${createLink(controller: 'admin', action: 'dashboard')}" title="Dashboard" />
                         <img:menuNavItem href="${createLink(controller: 'admin', action: 'batchUploads')}" title="Batch uploads" />
                         <img:menuNavItem href="${createLink(controller: 'admin', action: 'upload')}" title="Upload images" />

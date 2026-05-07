@@ -1,19 +1,19 @@
 <%@ page import="au.org.ala.web.CASRoles; au.org.ala.images.MetaDataSourceType" %>
 <auth:ifAnyGranted roles="${CASRoles.ROLE_ADMIN},${CASRoles.ROLE_USER}">
 <g:if test="${source == MetaDataSourceType.UserDefined}">
-    <btn class="btn btn-success" id="btnAddUserMetaData" style="margin-bottom: 5px"><i class="icon-plus icon-white"></i>&nbsp;Add item</btn>
+    <button type="button" class="btn btn-success" id="btnAddUserMetaData" style="margin-bottom: 5px"><i class="fa fa-plus"></i>&nbsp;Add item</button>
 </g:if>
 </auth:ifAnyGranted>
 
 <g:if test="${metaData}">
-    <table class="table table-bordered table-condensed table-striped">
+    <table class="table table-bordered table-striped">
         <g:each in="${metaData}" var="md">
             <tr metaDataKey="${md.key}">
                 <td class="property-name">${md.key}</td>
                 <td class="property-value"><img:renderMetaDataValue metaDataItem="${md}" />
                     <auth:ifAnyGranted roles="${CASRoles.ROLE_ADMIN}">
                         <g:if test="${source == MetaDataSourceType.UserDefined}">
-                            <button class="btn btn-small btn-danger btnDeleteMetadataItem pull-right"><i class="icon-remove icon-white"></i></button>
+                            <button class="btn btn-sm btn-danger btnDeleteMetadataItem float-end"><i class="fa fa-remove"></i></button>
                         </g:if>
                     </auth:ifAnyGranted>
                 </td>
@@ -22,7 +22,7 @@
     </table>
 </g:if>
 <g:else>
-    <div class="muted">
+    <div class="text-muted">
         No items
     </div>
 </g:else>

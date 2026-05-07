@@ -65,9 +65,9 @@
         <content tag="pageTitle">Search Criteria</content>
 
         <content tag="adminButtonBar">
-            <button id="btnImport" class="btn btn-small"><i class="icon-upload"></i>&nbsp;Import criteria</button>
-            <button id="btnExport" class="btn btn-small"><i class="icon-download-alt"></i>&nbsp;Export criteria</button>
-            <button class="btn btn-small btn-primary" id="btnAddCriteria"><i class="icon-plus icon-white"></i>&nbsp;Add Criteria Definition</button>
+            <button id="btnImport" class="btn btn-sm"><i class="fa fa-upload"></i>&nbsp;Import criteria</button>
+            <button id="btnExport" class="btn btn-sm"><i class="fa fa-download-alt"></i>&nbsp;Export criteria</button>
+            <button class="btn btn-sm btn-primary" id="btnAddCriteria"><i class="fa fa-plus"></i>&nbsp;Add Criteria Definition</button>
         </content>
 
         <table class="table table-bordered table-striped">
@@ -93,8 +93,8 @@
                         <td>${criteria.units}</td>
                         <td style="">
                             <div class="btn-group-vertical">
-                                <button class="btn btn-sm btn-danger btnDeleteCriteria"><span class="glyphicon glyphicon-remove icon-white"></span> Delete</button>
-                                <button class="btn btn-sm btn-default btnEditCriteria"><span class="glyphicon glyphicon-edit"></span> Edit</button>
+                                <button class="btn btn-sm btn-danger btnDeleteCriteria"><span class="fa fa-remove"></span> Delete</button>
+                                <button class="btn btn-sm btn-outline-dark btnEditCriteria"><span class="fa fa-edit"></span> Edit</button>
                             </div>
                         </td>
                     </tr>

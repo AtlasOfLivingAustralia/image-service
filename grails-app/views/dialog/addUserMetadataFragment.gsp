@@ -2,19 +2,19 @@
 <div>
 
     <form>
-        <div class="form-group">
-            <label class="control-label" for="metaDataKey">Name:</label>
-            <input type="text" class="form-control input-lg" id="metaDataKey" placeholder="Metadata key">
+        <div class="mb-3">
+            <label class="col-form-label" for="metaDataKey">Name:</label>
+            <input type="text" class="form-control form-control-lg" id="metaDataKey" placeholder="Metadata key">
         </div>
 
-        <div class="form-group">
-            <label class="control-label" for="metaDataValue"><g:message code="add.user.metadata.value" /></label>
-            <input type="text" class="form-control input-lg" id="metaDataValue" placeholder="Value">
+        <div class="mb-3">
+            <label class="col-form-label" for="metaDataValue"><g:message code="add.user.metadata.value" /></label>
+            <input type="text" class="form-control form-control-lg" id="metaDataValue" placeholder="Value">
         </div>
 
-        <div class="form-group">
+        <div class="mb-3">
             <button class="btn btn-primary" id="btnAddNewUserMetadata"><g:message code="add.user.metadata.add" /></button>
-            <button class="btn btn-default" id="btnCancelAddUserMetaData"><g:message code="add.user.metadata.cancel" /></button>
+            <button class="btn btn-outline-dark" id="btnCancelAddUserMetaData"><g:message code="add.user.metadata.cancel" /></button>
         </div>
     </form>
 

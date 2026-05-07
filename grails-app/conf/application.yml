@@ -331,7 +331,7 @@ skin:
     fluidLayout: true
 headerAndFooter:
   version: "2"
-  baseURL: "https://www.ala.org.au/commonui-bs3-2019"
+  baseURL: "https://www.test.ala.org.au/commonui-bs5-2019"
 
 quartz:
     autoStartup: true

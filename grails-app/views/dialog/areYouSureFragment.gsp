@@ -2,9 +2,9 @@
     <p>
     ${message}
     </p>
-    <div class="form-horizontal">
-        <div class="control-group">
-            <button id="btnNo" class="btn btn-default">${negativeText}</button>
+    <div>
+        <div class="mb-3">
+            <button id="btnNo" class="btn btn-outline-dark">${negativeText}</button>
             <button id="btnYes" class="btn btn-primary">${affirmativeText}</button>
         </div>
     </div>

@@ -13,7 +13,7 @@
   - rights and limitations under the License.
 --}%
 
-<div class="alert alert-error">
+<div class="alert alert-danger">
     <h4>${title}</h4>
     ${errorMessage}
 </div>

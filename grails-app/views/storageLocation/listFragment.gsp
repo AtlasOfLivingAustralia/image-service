@@ -2,7 +2,7 @@
 <table class="table">
     <thead>
         <tr>
-            <td>id</td>
+            <th>id</th>
             <th>Type</th>
             <th>Detail</th>
             <th>Default</th>
@@ -46,34 +46,34 @@
                 </g:else>
             </td>
             <td>
-                <g:radio class="radio-default" name="default" value="${sl.id}" checked="${sl.id == defaultId}"></g:radio>
+                <g:radio class="form-check-input radio-default" name="default" value="${sl.id}" checked="${sl.id == defaultId}"></g:radio>
             </td>
             <td>
-                <g:if test="${verifieds[sl.id]}"><i class="fa fa-check"></i></g:if><g:else><i class="fa fa-times"</g:else>
+                <g:if test="${verifieds[sl.id]}"><i class="fa fa-check"></i></g:if><g:else><i class="fa fa-times"></i></g:else>
             </td>
             <td>
-                <button class="btn btn-xs btn-default btn-migrate" data-source="${sl.id}"><i class="fa fa-suitcase"></i></button>
-                <button class="btn btn-xs btn-default btn-edit" data-id="${sl.id}"><i class="fa fa-edit"></i></button>
+                <button class="btn btn-sm btn-outline-dark btn-migrate" data-source="${sl.id}"><i class="fa fa-suitcase"></i></button>
+                <button class="btn btn-sm btn-outline-dark btn-edit" data-id="${sl.id}"><i class="fa fa-edit"></i></button>
             </td>
         </tr>
     </g:each>
     </tbody>
 </table>
 
-<div id="storage-location-migrate-modal" class="modal fade" role="dialog">
+<div id="storage-location-migrate-modal" class="modal fade">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
                 <h4 class="modal-title">Storage Location</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <form id="migrate-form">
 
 
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label for="destination">Migrate to</label>
-                        <select class="form-control" id="destination" name="destination">
+                        <select class="form-select" id="destination" name="destination">
                             <g:each in="${storageLocationList}" var="sl">
                                 <option value="${sl.id}">
                                     <g:if test="${sl instanceof FileSystemStorageLocation}">
@@ -93,13 +93,13 @@
                         </select>
                     </div>
 
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label>
                             <input type="checkbox" id="deleteSrc" name="deleteSrc"> Delete source image?
                         </label>
                     </div>
 
-                    <button type="button" id="btn-migrate-storage" class="btn btn-default">Do it</button>
+                    <button type="button" id="btn-migrate-storage" class="btn btn-outline-dark">Do it</button>
                 </form>
             </div>
             <div class="modal-footer">

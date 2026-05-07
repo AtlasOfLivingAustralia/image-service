@@ -37,9 +37,9 @@
             </g:each>
         </table>
 
-        <div class="pagination">
+        <nav>
             <tb:paginate total="${totalCount}" prev="" next="" />
-        </div>
+        </nav>
     </div>
 </body>
 </html>
