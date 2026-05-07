@@ -1,0 +1,5 @@
+rootProject.name = 'image-utils-photofox'
+include ':image-utils'
+include ':image-utils-native-bridge'
+project(':image-utils').projectDir = new File(settingsDir, '../image-utils')
+project(':image-utils-native-bridge').projectDir = new File(settingsDir, '../image-utils-native-bridge')

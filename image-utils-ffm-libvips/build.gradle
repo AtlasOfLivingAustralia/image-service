@@ -1,0 +1,155 @@
+plugins {
+    id 'groovy'
+    id 'java-library'
+    id 'maven-publish'
+}
+
+// Share version and group from parent gradle.properties if present
+def parentPropertiesFile = new File(rootDir.parentFile, 'gradle.properties')
+if (parentPropertiesFile.exists()) {
+    def parentProps = new Properties()
+    parentPropertiesFile.withInputStream { parentProps.load(it) }
+    if (parentProps.version) version = parentProps.version
+    if (parentProps.group) group = parentProps.group
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://nexus.ala.org.au/content/groups/public/" }
+}
+
+def nativeOs = System.getProperty('os.name').toLowerCase().contains('mac') ? 'macos' :
+        (System.getProperty('os.name').toLowerCase().contains('linux') ? 'linux' : System.getProperty('os.name').toLowerCase().replaceAll('[^a-z0-9]', ''))
+def nativeArch = ['amd64', 'x86_64'].contains(System.getProperty('os.arch').toLowerCase()) ? 'x86_64' :
+        (['aarch64', 'arm64'].contains(System.getProperty('os.arch').toLowerCase()) ? 'aarch64' : System.getProperty('os.arch').toLowerCase().replaceAll('[^a-z0-9_]', ''))
+def nativeClassifier = "${nativeOs}-${nativeArch}"
+def nativeLibFileName = nativeOs == 'macos' ? 'libala_vips_dztiler.dylib' : 'libala_vips_dztiler.so'
+def useSanitizedNativeDzBridge = providers.gradleProperty('useSanitizedNativeDzBridge')
+        .orElse(providers.systemProperty('useSanitizedNativeDzBridge'))
+        .map { it.toBoolean() }
+        .orElse(false)
+def nativeBridgeSanitizers = providers.gradleProperty('nativeBridgeSanitizers')
+        .orElse(useSanitizedNativeDzBridge.map { enabled -> enabled ? 'asan' : '' })
+        .map { value ->
+            value.split(',')
+                    .collect { it.trim().toLowerCase() }
+                    .findAll { !it.isEmpty() }
+                    .unique()
+        }
+def sanitizedBridgeRelativeDir = nativeBridgeSanitizers.map { sanitizers -> sanitizers.join('-') }
+def sanitizedBridgePath = project(':image-utils-native-bridge').layout.buildDirectory.file(
+        sanitizedBridgeRelativeDir.map { dirName -> "native-sanitized/${nativeClassifier}/${dirName}/${nativeLibFileName}" }
+)
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java21']
+        }
+    }
+    java22 {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java22']
+        }
+    }
+}
+
+// Inherit classpaths for java22 sourceSet
+configurations {
+    java22CompileClasspath.extendsFrom compileClasspath
+    java22RuntimeClasspath.extendsFrom runtimeClasspath
+    jextract
+}
+
+dependencies {
+    implementation localGroovy()
+    api 'org.slf4j:slf4j-api:1.7.36'
+    implementation 'com.google.guava:guava:33.2.1-jre'
+    compileOnly project(':image-utils')
+    testImplementation project(':image-utils')
+    testImplementation testFixtures(project(':image-utils'))
+    
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    jextract 'org.openjdk.jextract:jextract:22.0.1'
+}
+
+tasks.named('compileJava', JavaCompile) {
+    options.compilerArgs << '--enable-preview'
+}
+
+tasks.named('compileJava22Java', JavaCompile) {
+    description = 'Compile Java 22 stable classes'
+    options.release = 22
+    // Use JDK 25 compiler to target Java 22 stable
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+jar {
+    manifest {
+        attributes(
+                'Multi-Release': 'true',
+                'Enable-Native-Access': 'ALL-UNNAMED'
+        )
+    }
+    into('META-INF/versions/22') {
+        from compileJava22Java.destinationDirectory
+    }
+    dependsOn compileJava22Java
+}
+
+test {
+    useJUnitPlatform()
+    def runBenchmarks = providers.gradleProperty('runBenchmarks')
+            .orElse(providers.systemProperty('runBenchmarks'))
+            .map { it.toBoolean() }
+            .orElse(false)
+
+    if (!runBenchmarks.get()) {
+        filter {
+            excludeTestsMatching '*Benchmark*'
+        }
+    }
+
+    jvmArgs = [
+        '--enable-preview',
+        '--enable-native-access=ALL-UNNAMED',
+        "-Dtiler.bench.warmupRounds=${System.getProperty('tiler.bench.warmupRounds', '0')}",
+        "-Dtiler.bench.measureRounds=${System.getProperty('tiler.bench.measureRounds', '1')}",
+        "-Dtiler.bench.image=${System.getProperty('tiler.bench.image', 'all')}",
+        "-Dtiler.bench.vips.concurrency=${System.getProperty('tiler.bench.vips.concurrency', '1')}"
+    ]
+
+    if (useSanitizedNativeDzBridge.get()) {
+        dependsOn(':image-utils-native-bridge:stageNativeBridgeSanitized')
+        systemProperty 'images.nativeDzTiler.bridgeLibraryPath', sanitizedBridgePath.get().asFile.absolutePath
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            name 'Nexus'
+            url "https://nexus.ala.org.au/content/repositories/${project.version.endsWith('-SNAPSHOT') ? 'snapshots' : 'releases' }"
+            credentials {
+                username = System.getenv('TRAVIS_DEPLOY_USERNAME')
+                password = System.getenv('TRAVIS_DEPLOY_PASSWORD')
+            }
+        }
+    }
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            artifactId = 'image-utils-ffm-libvips'
+        }
+    }
+}

@@ -1,0 +1,304 @@
+plugins {
+    id "groovy"
+    id "org.grails.grails-web" version "6.2.4"
+    id "org.grails.grails-gsp" version "6.2.4"
+    id "com.github.erdi.webdriver-binaries" version "3.2"
+    id "war"
+    id "idea"
+    id "com.bertramlabs.asset-pipeline" version "4.3.0"
+    id "application"
+    id "eclipse"
+    id "maven-publish"
+    id "com.gorylenko.gradle-git-properties" version "2.5.4"
+    id "org.flywaydb.flyway" version "9.4.0"
+}
+
+repositories {
+    mavenLocal()
+    maven { url "https://nexus.ala.org.au/content/groups/public/" }
+    mavenCentral()
+    maven { url "https://repo.grails.org/grails/core/" }
+}
+
+def nativeOs = System.getProperty('os.name').toLowerCase().contains('mac') ? 'macos' :
+        (System.getProperty('os.name').toLowerCase().contains('linux') ? 'linux' : System.getProperty('os.name').toLowerCase().replaceAll('[^a-z0-9]', ''))
+def nativeArch = ['amd64', 'x86_64'].contains(System.getProperty('os.arch').toLowerCase()) ? 'x86_64' :
+        (['aarch64', 'arm64'].contains(System.getProperty('os.arch').toLowerCase()) ? 'aarch64' : System.getProperty('os.arch').toLowerCase().replaceAll('[^a-z0-9_]', ''))
+def nativeClassifier = "${nativeOs}-${nativeArch}"
+def nativeLibFileName = nativeOs == 'macos' ? 'libala_vips_dztiler.dylib' : 'libala_vips_dztiler.so'
+def useSanitizedNativeDzBridge = providers.gradleProperty('useSanitizedNativeDzBridge')
+        .orElse(providers.systemProperty('useSanitizedNativeDzBridge'))
+        .map { it.toBoolean() }
+        .orElse(false)
+def nativeBridgeSanitizers = providers.gradleProperty('nativeBridgeSanitizers')
+        .orElse(useSanitizedNativeDzBridge.map { enabled -> enabled ? 'asan' : '' })
+        .map { value ->
+            value.split(',')
+                    .collect { it.trim().toLowerCase() }
+                    .findAll { !it.isEmpty() }
+                    .unique()
+        }
+def sanitizedBridgeRelativeDir = nativeBridgeSanitizers.map { sanitizers -> sanitizers.join('-') }
+def sanitizedBridgePath = project(':image-utils-native-bridge').layout.buildDirectory.file(
+        sanitizedBridgeRelativeDir.map { dirName -> "native-sanitized/${nativeClassifier}/${dirName}/${nativeLibFileName}" }
+)
+
+configurations {
+    all {
+        resolutionStrategy.force 'org.codehaus.groovy:groovy-xml:3.0.13'
+        resolutionStrategy.eachDependency { DependencyResolveDetails details->
+            if (details.requested.group == 'org.seleniumhq.selenium') {
+                details.useVersion('4.14.1')
+            }
+        }
+    }
+}
+
+configurations.all {
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
+dependencies {
+
+//    implementation 'org.grails.plugins:async:5.0.2'
+    implementation group: 'org.grails', name: 'grails-async-gpars'
+    implementation group: 'org.grails', name: 'grails-datastore-gorm-async'
+
+    implementation group: 'org.grails.plugins', name: 'grails-pretty-time', version: '4.0.0'
+    implementation 'org.grails.plugins:csv:1.0.1'
+
+    implementation 'xml-apis:xml-apis:1.4.01' // TODO do we need these??
+
+    implementation 'com.opencsv:opencsv:5.7.1'
+    implementation group: 'com.googlecode.owasp-java-html-sanitizer', name: 'owasp-java-html-sanitizer', version: '20211018.1'
+
+    // ALA plugins
+    implementation group: 'org.grails.plugins', name: 'ala-auth', version: alaSecurityLibsVersion, changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-ws-plugin', version: alaSecurityLibsVersion, changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-ws-security-plugin', version: alaSecurityLibsVersion, changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-bootstrap3', version: '4.5.0', changing: true
+    implementation group: 'org.grails.plugins', name: 'ala-admin-plugin', version: '2.3.0', changing: true
+    implementation group: 'au.org.ala.plugins.grails', name:'images-client-plugin', version: '1.1', changing: true
+
+    // Added dependencies
+    runtimeOnly 'com.zaxxer:HikariCP:5.1.0'
+    implementation 'org.grails.plugins:postgresql-extensions:7.0.0'
+//    implementation 'io.github.gpc:grails-postgresql-extensions:8.0.0'
+    implementation "org.flywaydb:flyway-core:9.4.0"
+    implementation 'org.grails.plugins:cache-headers:2.0.2'
+    runtimeOnly 'org.codehaus.groovy:groovy-dateutil'
+    runtimeOnly 'org.codehaus.groovy:groovy-datetime'
+    implementation 'dk.glasius:external-config:3.1.1'
+
+    implementation 'org.grails.plugins:quartz:3.0.0'
+//    implementation 'org.quartz-scheduler:quartz:2.3.2' // Is not pulled in by default
+
+    implementation group: 'org.locationtech.spatial4j', name: 'spatial4j', version: '0.7'
+    implementation group: 'org.locationtech.jts', name: 'jts-core', version: '1.15.0'
+    // AWS SDK v2
+    implementation platform("software.amazon.awssdk:bom:$awsSdk2Version")
+    implementation "software.amazon.awssdk:apache-client"
+    implementation "software.amazon.awssdk:cloudwatch-metric-publisher"
+    implementation "software.amazon.awssdk:netty-nio-client"
+    implementation "software.amazon.awssdk:aws-crt-client"
+    implementation "software.amazon.awssdk:s3"
+    implementation "software.amazon.awssdk:s3-transfer-manager"
+    implementation "software.amazon.awssdk:sts"
+    implementation "software.amazon.awssdk:auth"
+    implementation("software.amazon.awssdk.crt:aws-crt:0.45.1")
+    // TEMP: Keep AWS SDK v1 during migration; remove once all code/tests are v2
+//    implementation "com.amazonaws:aws-java-sdk-s3:1.12.418"
+    implementation 'org.javaswift:joss:0.10.4'
+    runtimeOnly 'org.postgresql:postgresql:42.7.8'
+
+    implementation 'co.elastic.clients:elasticsearch-java:7.17.29'
+    implementation 'org.elasticsearch.client:elasticsearch-rest-client:7.17.29'
+    implementation 'jakarta.json:jakarta.json-api:2.1.3'
+
+    implementation 'org.imgscalr:imgscalr-lib:4.2'
+    implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
+//    implementation platform('org.apache.tika:tika-bom:3.2.3') // TODO need to keep this in sync with image-utils
+    implementation 'org.apache.tika:tika-core:3.2.3' // TODO need to keep this in sync with image-utils
+    implementation 'org.apache.commons:commons-lang3:3.20.0'
+    implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
+    implementation project(':image-utils')
+
+    // JNA for native library access (libvips, etc)
+    implementation 'net.java.dev.jna:jna:5.14.0'
+    implementation 'net.java.dev.jna:jna-platform:5.14.0'
+
+    implementation 'net.lingala.zip4j:zip4j:2.11.3'
+    implementation 'com.google.guava:guava:33.2.1-jre'
+    implementation 'com.github.ben-manes.caffeine:caffeine:2.9.3'
+
+    implementation 'org.apache.avro:avro:1.11.4'
+    implementation 'org.xerial.snappy:snappy-java:1.1.10.4'
+
+    // Retry library for exponential backoff
+    implementation 'dev.failsafe:failsafe:3.3.2'
+
+    // Swagger
+    implementation 'au.org.ala.plugins:openapi:1.1.0'
+
+    // Google analytics requirement
+    implementation 'com.google.api-client:google-api-client:1.33.4'
+    implementation 'com.google.apis:google-api-services-analytics:v3-rev20190807-1.32.1'
+
+    // Micrometer metrics
+    implementation 'io.micrometer:micrometer-core'
+    implementation 'io.micrometer:micrometer-registry-datadog'
+    implementation 'io.micrometer:micrometer-registry-cloudwatch2'
+    implementation 'io.micrometer:micrometer-registry-statsd'
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Standard grails
+    implementation("org.grails:grails-core")
+    implementation("org.grails:grails-logging")
+    implementation("org.grails:grails-plugin-databinding")
+    implementation("org.grails:grails-plugin-i18n")
+    implementation("org.grails:grails-plugin-interceptors")
+    implementation("org.grails:grails-plugin-rest")
+    implementation("org.grails:grails-plugin-services")
+    implementation("org.grails:grails-plugin-url-mappings")
+    implementation("org.grails:grails-web-boot")
+    implementation("org.grails.plugins:gsp")
+    implementation("org.grails.plugins:hibernate5")
+    implementation("org.grails.plugins:scaffolding")
+    implementation("org.hibernate:hibernate-core:5.6.15.Final")
+    implementation("org.springframework.boot:spring-boot-autoconfigure")
+    implementation("org.springframework.boot:spring-boot-starter")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-logging")
+    implementation("org.springframework.boot:spring-boot-starter-tomcat")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
+    compileOnly("io.micronaut:micronaut-inject-groovy")
+    console("org.grails:grails-console")
+    runtimeOnly("com.bertramlabs.plugins:asset-pipeline-grails:4.3.0")
+    runtimeOnly("com.h2database:h2")
+    runtimeOnly("javax.xml.bind:jaxb-api:2.3.1")
+    runtimeOnly("org.apache.tomcat:tomcat-jdbc")
+    runtimeOnly("org.fusesource.jansi:jansi:1.18")
+    runtimeOnly("org.glassfish.web:el-impl:2.2.1-b05")
+    testImplementation("io.micronaut:micronaut-inject-groovy")
+    testImplementation("org.grails:grails-gorm-testing-support")
+    testImplementation("org.grails:grails-web-testing-support")
+    testImplementation("org.grails.plugins:geb")
+    testImplementation("org.seleniumhq.selenium:selenium-api:4.14.1")
+    testImplementation("org.seleniumhq.selenium:selenium-remote-driver:4.14.1")
+    testImplementation("org.seleniumhq.selenium:selenium-support:4.14.1")
+    testImplementation("org.spockframework:spock-core")
+    testRuntimeOnly("org.seleniumhq.selenium:selenium-chrome-driver:4.14.1")
+    testRuntimeOnly("org.seleniumhq.selenium:selenium-firefox-driver:4.14.1")
+    testRuntimeOnly("org.seleniumhq.selenium:selenium-safari-driver:4.14.1")
+    testImplementation("io.micronaut:micronaut-http-client")
+
+    implementation "org.grails.plugins:cache-ehcache:3.0.0"
+    implementation "org.hibernate:hibernate-jcache"
+    runtimeOnly 'org.ehcache:ehcache'
+    implementation "com.amazonaws:aws-java-sdk-sts:1.12.418"
+
+//    testImplementation 'io.micronaut:micronaut-http-client'
+
+    // Testing
+    testImplementation 'ru.vyarus:spock-junit5:1.0.1'
+    testImplementation 'io.zonky.test:embedded-postgres:2.0.3'
+    testImplementation enforcedPlatform('io.zonky.test.postgres:embedded-postgres-binaries-bom:11.19.0')
+//    testImplementation "com.opentable.components:otj-pg-embedded:1.0.1" // required transitive dependency from the plugin.
+    testImplementation 'cloud.localstack:localstack-utils:0.2.23'
+    // TEMP: Keep AWS SDK v1 full in tests during migration (Localstack utils may depend on it)
+    testImplementation "com.amazonaws:aws-java-sdk:1.12.418"
+    testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:2.3.0'
+
+}
+
+application {
+    mainClass.set("au.org.ala.images.Application")
+}
+
+java {
+    sourceCompatibility = JavaVersion.toVersion("21")
+    targetCompatibility = JavaVersion.toVersion("21")
+}
+
+tasks.withType(Test) {
+    useJUnitPlatform()
+    systemProperty "geb.env", System.getProperty('geb.env')
+    systemProperty "geb.build.reportsDir", reporting.file("geb/integrationTest")
+    systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
+    systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
+    testLogging {
+        showStandardStreams = Boolean.getBoolean('testLogging')
+        exceptionFormat = 'full'
+    }
+    doFirst {
+      jvmArgs = [
+        '--add-opens', 'java.base/java.lang=ALL-UNNAMED', '--add-opens', 'java.base/java.lang.reflect=ALL-UNNAMED'
+      ]
+    }
+
+    if (useSanitizedNativeDzBridge.get()) {
+        dependsOn(':image-utils-native-bridge:stageNativeBridgeSanitized')
+        systemProperty 'images.nativeDzTiler.bridgeLibraryPath', sanitizedBridgePath.get().asFile.absolutePath
+    }
+}
+
+tasks.withType(JavaExec).configureEach {
+    if (useSanitizedNativeDzBridge.get()) {
+        dependsOn(':image-utils-native-bridge:stageNativeBridgeSanitized')
+        systemProperty 'images.nativeDzTiler.bridgeLibraryPath', sanitizedBridgePath.get().asFile.absolutePath
+    }
+}
+tasks.withType(War).configureEach { War war ->
+    war.dependsOn compileGroovyPages
+}
+webdriverBinaries {
+    chromedriver '110.0.5481.77'
+    geckodriver '0.32.2'
+//    edgedriver '110.0.1587.57'
+}
+assets {
+    minifyJs = true
+    minifyCss = true
+}
+
+bootJar {
+    enabled = true
+    archiveClassifier = 'exec'
+    launchScript()
+    manifest {
+        attributes 'Enable-Native-Access': 'ALL-UNNAMED'
+    }
+}
+
+bootWar {
+    enabled = false
+}
+
+springBoot {
+    buildInfo()
+//    layout = 'WAR'
+}
+
+test {
+    testLogging.showStandardStreams = Boolean.getBoolean('testLogging')
+}
+
+publishing {
+    repositories {
+        maven {
+            name 'Nexus'
+            url "https://nexus.ala.org.au/content/repositories/${project.version.endsWith('-SNAPSHOT') ? 'snapshots' : 'releases' }"
+            credentials {
+                username = System.getenv('TRAVIS_DEPLOY_USERNAME')
+                password = System.getenv('TRAVIS_DEPLOY_PASSWORD')
+            }
+        }
+    }
+    publications {
+        mavenJar(MavenPublication) {
+            artifact bootJar
+        }
+    }
+}

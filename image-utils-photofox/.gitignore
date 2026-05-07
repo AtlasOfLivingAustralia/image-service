@@ -1,0 +1,7 @@
+# Standard Gradle/IntelliJ
+.gradle/
+build/
+out/
+*.iml
+*.iws
+*.ipr

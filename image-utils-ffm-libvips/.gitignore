@@ -1,0 +1,10 @@
+# Standard Gradle/IntelliJ
+.gradle/
+build/
+out/
+*.iml
+*.iws
+*.ipr
+
+# Generated bindings
+src/main/java/au/org/ala/images/ffm/generated/
