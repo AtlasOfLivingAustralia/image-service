@@ -7,8 +7,69 @@ import spock.lang.Unroll
 
 class ImageServiceSpec extends Specification implements ServiceUnitTest<ImageService>, DataTest {
 
+    private static final List<String> TEST_IMAGE_SERVICE_URLS = ['https://images.ala.org.au/']
+
+    @Override
+    Closure doWithConfig() {
+        { config ->
+            config.imageServiceUrls = TEST_IMAGE_SERVICE_URLS
+        }
+    }
+
     def setup() {
-        mockDomains Image, FileSystemStorageLocation
+        mockDomains Image, FileSystemStorageLocation, License, LicenseMapping
+        service.initImagePropertyMap()
+        stubSessionFactory()
+    }
+
+    def "batchUpdate keeps recognisedLicense in sync for existing images"() {
+        setup:
+        def originalLicense = persistLicense('OLD', 'Original License')
+        def updatedLicense = persistLicense('CC-BY', 'Creative Commons Attribution')
+        persistImage('img-2', 'existing-image.jpg', 'dr-2', originalLicense.acronym, originalLicense)
+
+        when:
+        def result = service.batchUpdate([[identifier: 'existing-image.jpg', dataResourceUid: 'dr-2', license: updatedLicense.acronym]], 'tester')
+
+        then:
+        result['existing-image.jpg'].success
+        result['existing-image.jpg'].alreadyStored
+        result['existing-image.jpg'].metadataUpdated
+
+        with(Image.findByImageIdentifier('img-2')) {
+            license == updatedLicense.acronym
+            recognisedLicense == updatedLicense
+        }
+    }
+
+    private void stubSessionFactory() {
+        def session = Stub(org.hibernate.Session) {
+            setFlushMode(_) >> null
+            flush() >> null
+        }
+        service.sessionFactory = Stub(org.hibernate.SessionFactory) {
+            getCurrentSession() >> session
+        }
+    }
+
+    private License persistLicense(String acronym, String name) {
+        new License(
+                acronym: acronym,
+                name: name,
+                url: "https://example.org/licenses/${acronym.toLowerCase()}",
+                imageUrl: "https://example.org/licenses/${acronym.toLowerCase()}.png"
+        ).save(failOnError: true)
+    }
+
+    private Image persistImage(String imageIdentifier, String originalFilename, String dataResourceUid, String license, License recognisedLicense) {
+        new Image(
+                imageIdentifier: imageIdentifier,
+                originalFilename: originalFilename,
+                dataResourceUid: dataResourceUid,
+                license: license,
+                recognisedLicense: recognisedLicense,
+                storageLocationName: 'test-storage'
+        ).save(failOnError: true)
     }
 
     def "test migrate storage location happy path"() {

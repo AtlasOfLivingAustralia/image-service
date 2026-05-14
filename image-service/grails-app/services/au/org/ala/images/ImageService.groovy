@@ -456,6 +456,7 @@ unnest(all_urls) AS unnest_url;
                             }
 
                             if (metadataUpdated){
+                                syncRecognisedLicenseIfNeeded(image)
                                 image.save()
                             }
 
@@ -576,6 +577,11 @@ unnest(all_urls) AS unnest_url;
 
                 log.trace("uploadImage: metadataUpdated={} for imageUrl: {}", metadataUpdated, imageUrl)
                 if (metadataUpdated){
+                    if (image.isDirty('license')) {
+                        // if the license has changed we need to rematch the recognised license
+                        updateLicence(image)
+                    }
+
                     if (image.isDirty()) {
                         image.save()
                         status.flush()
@@ -757,6 +763,12 @@ unnest(all_urls) AS unnest_url;
                 }
             }
             if (toSave) {
+                if (toUpdate.containsKey('license')) {
+                    image.license = toUpdate.license
+                    syncRecognisedLicenseIfNeeded(image)
+                    toUpdate.recognisedLicense = image.recognisedLicense
+                }
+
                 //this has been changed to use executeUpdate to avoid
                 // StaleStateExceptions which are thrown due to
                 // this method being called on the same image multiple times
@@ -1095,6 +1107,12 @@ unnest(all_urls) AS unnest_url;
             image.recognisedLicense = null
         }
         image
+    }
+
+    private void syncRecognisedLicenseIfNeeded(Image image) {
+        if (image?.isDirty('license')) {
+            updateLicence(image)
+        }
     }
 
     //this is slow on large tables
