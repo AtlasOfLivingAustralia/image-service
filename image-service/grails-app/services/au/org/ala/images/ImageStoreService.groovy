@@ -42,6 +42,7 @@ import javax.annotation.PostConstruct
 import javax.imageio.IIOException
 import javax.imageio.ImageIO
 import javax.imageio.ImageReadParam
+import javax.imageio.ImageReader
 import java.awt.Color
 import java.awt.Rectangle
 import java.awt.image.BufferedImage
@@ -54,6 +55,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.function.BiFunction
+import java.util.function.Consumer
 
 @Slf4j
 class ImageStoreService implements MetricsSupport {
@@ -368,7 +370,7 @@ class ImageStoreService implements MetricsSupport {
 
             if (parentImage) {
                 def imageBytes = retrieveImageBytes(parentImage)
-                ImageReaderUtils.withImageReader(ByteSource.wrap(imageBytes)) { reader ->
+                ImageReaderUtils.withImageReader(ByteSource.wrap(imageBytes), { reader ->
                     Rectangle stripRect = new Rectangle(x, y, width, height);
                     ImageReadParam params = reader.getDefaultReadParam();
                     params.setSourceRegion(stripRect);
@@ -379,14 +381,14 @@ class ImageStoreService implements MetricsSupport {
                     if (!ImageIO.write(subimage, "PNG", bos)) {
                         log.debug("Could not create subimage in PNG format. Giving up")
                         incrementCounter('imagestore.retrieve.rectangle.failure', 'Failed rectangle retrievals')
-                        return null
+                        return
                     } else {
                         results.contentType = "image/png"
                     }
                     results.bytes = bos.toByteArray()
                     bos.close()
                     incrementCounter('imagestore.retrieve.rectangle.success', 'Successful rectangle retrievals')
-                }
+                } as Consumer<ImageReader>)
             }
 
             return results
