@@ -41,10 +41,15 @@
         <asset:javascript src="ala/images-client.js"/>
         <script>
             $(document).ready(function() {
+                var baseUrl = "${createLink(absolute: true, uri: '/')}";
+                // Remove trailing slash if exists
+                if (baseUrl.endsWith('/')) {
+                    baseUrl = baseUrl.slice(0, -1);
+                }
                 var options = {
                     auxDataUrl : "${auxDataUrl ? auxDataUrl : ''}",
-                    imageServiceBaseUrl : "${createLink(absolute: true, uri: '/')}",
-                    imageClientBaseUrl : "${createLink(absolute: true, uri: '/')}"
+                    imageServiceBaseUrl : baseUrl,
+                    imageClientBaseUrl : baseUrl
                 };
                 imgvwr.viewImage($("#imageViewer"), "${imageInstance.imageIdentifier}", "", "", options);
             });

@@ -19,7 +19,8 @@
 
     <div class="row">
         <h1>Update Licences</h1>
-        <div class="card">
+        <div class="card bg-light">
+            <div class="card-body">
             <g:form name="licencesUpdate" action="updateStoredLicences" controller="admin" method="POST">
                 <h3>Licences</h3>
                 <p>
@@ -53,6 +54,7 @@
                     <button type="submit" class="btn btn-primary" id="btnUploadCSVImagesFile">Update</button>
                 </div>
             </g:form>
+        </div>
         </div>
     </div>
 </div>

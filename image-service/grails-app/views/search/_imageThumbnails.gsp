@@ -59,7 +59,7 @@
     </g:each>
 </div>
 <div class="col-md-10">
-    <div id="imagesList">
+    <div id="imagesList" class="mb-3">
         <g:each in="${images}" var="image" status="imageIdx">
             <g:if test="${image}">
               <div class="imgCon" imageId="${image.imageIdentifier}">

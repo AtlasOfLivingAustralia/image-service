@@ -157,9 +157,9 @@
                 <i class="fa fa-wrench"> </i>
             </g:link>
             <g:if test="${isImage}">
-                <button class="btn btn-outline-dark" id="btnViewImage" title="View zoomable image"><span class="fa fa-eye-open"> </span></button>
+                <button class="btn btn-outline-dark" id="btnViewImage" title="View zoomable image"><span class="fa fa-eye"> </span></button>
             </g:if>
-            <a class="btn btn-outline-dark" href="${createLink(controller:'image', action:'getOriginalFile', id:imageInstance.id, params:[contentDisposition: 'true'])}" title="${g.message(code:'core.image.metadata.download', default: 'Download full image')}" target="imageWindow"><i class="fa fa-download-alt"></i></a>
+            <a class="btn btn-outline-dark" href="${createLink(controller:'image', action:'getOriginalFile', id:imageInstance.id, params:[contentDisposition: 'true'])}" title="${g.message(code:'core.image.metadata.download', default: 'Download full image')}" target="imageWindow"><i class="fa fa-download"></i></a>
             <g:if test="${isAdminView}">
                 <button class="btn btn-danger" id="btnDeleteImage" title="Delete image (admin)">
                     <i class="fa fa-remove"></i>

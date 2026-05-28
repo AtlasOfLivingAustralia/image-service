@@ -20,7 +20,7 @@
         <div class="row" style="margin-top:10px;">
             <div class="col-12">
                 <div id="storage-location-container" class="card p-3">
-                    <asset:image src="spinner.gif" />
+                    <asset:image src="spinner.gif" class="img-fluid" style="max-width:20px;"/>
                 </div>
             </div>
         </div>
@@ -75,12 +75,12 @@
                                     <label for="secretKey">Secret Key</label>
                                     <input type="text" class="form-control" id="secretKey" name="secretKey" placeholder="asdfasdfasdf">
                                 </div>
-                                <div class="form-check">
+                                <div class="form-check ps-0">
                                     <label>
                                         <input type="checkbox" id="publicRead" name="publicRead"> Public read
                                     </label>
                                 </div>
-                                <div class="form-check">
+                                <div class="form-check ps-0">
                                     <label>
                                         <input type="checkbox" id="privateAcl" name="privateAcl"> Explicit Private ACL
                                     </label>
@@ -89,7 +89,7 @@
                                         If both unchecked, no ACL header is sent and bucket defaults apply.
                                     </p>
                                 </div>
-                                <div class="form-check">
+                                <div class="form-check ps-0">
                                     <label>
                                         <input type="checkbox" id="redirect" name="redirect"> Redirect
                                     </label>
@@ -128,12 +128,12 @@
                                     <label for="containerName">Container Name</label>
                                     <input type="text" class="form-control" id="containerName" name="containerName" placeholder="images">
                                 </div>
-                                <div class="form-check">
+                                <div class="form-check ps-0">
                                     <label>
                                         <input type="checkbox" id="publicContainer" name="publicContainer"> Public container
                                     </label>
                                 </div>
-                                <div class="form-check">
+                                <div class="form-check ps-0">
                                     <label>
                                         <input type="checkbox" id="redirect" name="redirect"> Redirect
                                     </label>

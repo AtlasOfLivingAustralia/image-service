@@ -44,29 +44,25 @@ class ImagesTagLib {
             }
 
             if (!attrs.hideCrumbs) {
-                mb.nav(id:'breadcrumb') {
-                    ol {
-                        li {
+                mb.nav('aria-label':'breadcrumb') {
+                    ol(class: 'breadcrumb') {
+                        li(class: 'breadcrumb-item') {
                             a(href:createLink(uri:'/')) {
                                 mkp.yield("Home")
                             }
-                            span(class:"icon icon-arrow-right")
                         }
                         if (crumbList) {
                             for (int i = 0; i < crumbList?.size(); i++) {
                                 def item = crumbList[i]
-                                li {
+                                li(class: 'breadcrumb-item') {
                                     a(href: item.link) {
                                         mkp.yield(item.label)
                                     }
-                                    span(class:"icon icon-arrow-right")
                                 }
                             }
                         }
-                        li(class:'last') {
-                            span {
-                                mkp.yield(crumbLabel)
-                            }
+                        li(class: 'breadcrumb-item active', 'aria-current': 'page') {
+                            mkp.yield(crumbLabel)
                         }
                     }
                 }
@@ -205,8 +201,8 @@ class ImagesTagLib {
         def current = pageProperty(name:'page.pageTitle')?.toString()
 
         def mb = new MarkupBuilder(out)
-        mb.li(class: active == current ? 'active' : '') {
-            a(href:attrs.href) {
+        mb.li {
+            a(href:attrs.href , class: active == current ? 'nav-link active' : 'nav-link') {
 //                i(class:'icon-chevron-right') { mkp.yieldUnescaped('&nbsp;')}
                 mkp.yield(attrs.title)
             }
