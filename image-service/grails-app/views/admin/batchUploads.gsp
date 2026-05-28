@@ -19,10 +19,10 @@
 <h2>
     Batch processing
 </h2>
-<div class="btn-toolbar">
-    <div class="btn-group me-2 text-end" role="group" aria-label="First group">
+<div class="btn-toolbar d-flex justify-content-end">
+    <div class="btn-group me-2" role="group" aria-label="First group">
         <button type="button" class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#helpModal">
-            <span class="fa fa-info-sign" aria-hidden="true"></span>
+            <span class="fa fa-info-circle" aria-hidden="true"></span>
             Help
         </button>
         <g:if test="${params.boolean('hideEmpty', true)}">

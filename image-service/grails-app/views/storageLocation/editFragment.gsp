@@ -38,7 +38,7 @@
                 <label for="prefix">Object Prefix</label>
                 <g:textField class="form-control" name="prefix" value="${s3StorageLocation.prefix}" placeholder="images/prefix" />
             </div>
-            <div class="mb-3 form-check">
+            <div class="mb-3 form-check ps-0">
                 <label>
                     <g:checkBox name="containerCredentials" value="${s3StorageLocation.containerCredentials}" /> Use Container Credentials instead of Access Key and Secret Key
                 </label>
@@ -51,7 +51,7 @@
                 <label for="secretKey">Secret Key</label>
                 <g:textField class="form-control" name="secretKey" value="${s3StorageLocation.secretKey}" placeholder="" />
             </div>
-            <div class="form-check">
+            <div class="form-check ps-0">
                 <label>
                     <g:checkBox name="publicRead" value="${s3StorageLocation.publicRead}" /> Public read
                 </label>
@@ -60,7 +60,7 @@
                     When both are unchecked, no ACL header is sent and bucket defaults apply.
                 </p>
             </div>
-            <div class="form-check">
+            <div class="form-check ps-0">
                 <label>
                     <g:checkBox name="privateAcl" value="${s3StorageLocation.privateAcl}" /> Explicit Private ACL
                 </label>
@@ -69,7 +69,7 @@
                     When both are unchecked, no ACL header is sent and bucket defaults apply.
                 </p>
             </div>
-            <div class="form-check">
+            <div class="form-check ps-0">
                 <label>
                     <g:checkBox name="redirect" value="${s3StorageLocation.redirect}" /> Redirect
                 </label>
@@ -110,12 +110,12 @@
                 <label for="containerName">Container Name</label>
                 <g:textField class="form-control" name="containerName" value="${swiftStorageLocation.containerName}" placeholder="images" />
             </div>
-            <div class="form-check">
+            <div class="form-check ps-0">
                 <label>
                     <g:checkBox name="publicContainer" value="${swiftStorageLocation.publicContainer}"/> Public container
                 </label>
             </div>
-            <div class="form-check">
+            <div class="form-check ps-0">
                 <label>
                     <g:checkBox name="redirect" value="${swiftStorageLocation.redirect}"/> Redirect
                 </label>

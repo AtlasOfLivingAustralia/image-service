@@ -18,7 +18,7 @@
         <content tag="pageTitle">Tags</content>
         <content tag="adminButtonBar" />
 
-        <div class="row">
+        <div class="row mb-3">
             <div class="col-12">
                 <form class="d-flex flex-wrap gap-2 align-items-center">
                     <button class="btn btn-success" id="btnCreateNewTag"><i class="fa fa-plus "> </i>&nbsp;Add</button>
@@ -26,14 +26,19 @@
                     <button class="btn btn-danger" id="btnDeleteSelectedTag">
                         <i class="fa fa-remove"></i>&nbsp;Delete
                     </button>
-                    <button class="btn btn-outline-dark ms-auto" id="btnUploadTags"><i class="fa fa-upload"> </i>&nbsp;Upload tags from CSV file</button>
-                    <input type="text" id="searchTags" class="form-control input" placeholder="Find tags">
+                    <div class="d-flex align-items-center gap-2">
+                        <input type="text"
+                               id="searchTags"
+                               class="px-3 py-2 border rounded"
+                               placeholder="Find tags">
+                    </div>
                     <button id="btnSearchTags" class="btn btn-outline-dark"><i class="fa fa-search"> </i>&nbsp;Search</button>
+                    <button class="btn btn-outline-dark ms-auto" id="btnUploadTags"><i class="fa fa-arrow-circle-up"> </i>&nbsp;Upload tags from CSV file</button>
                 </form>
             </div>
         </div>
 
-        <div class="row" style="margin-top:10px;">
+        <div class="row">
             <div class="col-12">
                 <div id="tagContainer" class="card p-3">
                     <img:spinner />

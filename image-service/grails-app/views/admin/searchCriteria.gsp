@@ -66,7 +66,7 @@
 
         <content tag="adminButtonBar">
             <button id="btnImport" class="btn btn-sm"><i class="fa fa-upload"></i>&nbsp;Import criteria</button>
-            <button id="btnExport" class="btn btn-sm"><i class="fa fa-download-alt"></i>&nbsp;Export criteria</button>
+            <button id="btnExport" class="btn btn-sm"><i class="fa fa-download"></i>&nbsp;Export criteria</button>
             <button class="btn btn-sm btn-primary" id="btnAddCriteria"><i class="fa fa-plus"></i>&nbsp;Add Criteria Definition</button>
         </content>
 

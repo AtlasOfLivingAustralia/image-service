@@ -1,5 +1,5 @@
 <div>
-    <div class="card p-3">
+    <div class="card p-3 bg-light mb-3">
         <g:if test="${parentTag}">
                 Enter a name for your new tag. It will be created under <strong>${parentTag.path}</strong>.
         </g:if>
@@ -10,7 +10,7 @@
     <form>
         <div class="mb-3">
             <label for="tag">Tag name</label>
-            <input type="text" id="tag" class="form-control form-control-lg" placeholder="<new tag>">
+            <input type="text" id="tag" class="form-control" placeholder="<new tag>">
         </div>
 
         <div class="mb-3">
