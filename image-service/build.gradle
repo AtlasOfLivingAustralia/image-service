@@ -209,6 +209,7 @@ dependencies {
     // TEMP: Keep AWS SDK v1 full in tests during migration (Localstack utils may depend on it)
     testImplementation "com.amazonaws:aws-java-sdk:1.12.418"
     testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:2.3.0'
+    testImplementation 'org.jasig.cas.client:cas-client-core:3.6.4'
 
 }
 
