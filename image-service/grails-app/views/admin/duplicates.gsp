@@ -1,4 +1,3 @@
-<%@ page import="au.org.ala.cas.util.AuthenticationUtils" %>
 <!doctype html>
 <html>
 <head>
