@@ -1,4 +1,3 @@
-<%@ page import="au.org.ala.cas.util.AuthenticationUtils" %>
 <!doctype html>
 <html>
     <head>
@@ -60,7 +59,7 @@
 
             $("#btnStartImageImport").on('click', function(e) {
                 e.preventDefault();
-                $.ajax("${createLink(controller:'webService', action:'scheduleInboxPoll', params: [userId:AuthenticationUtils.getUserId(request)])}").done(function(results) {
+                $.ajax("${createLink(controller:'webService', action:'scheduleInboxPoll', params: [userId:userId])}").done(function(results) {
                     $("#startMessage").html('<div class="alert alert-info">Import started with batch id ' + results.importBatchId + '</div>' );
                 });
             });
