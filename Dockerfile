@@ -6,6 +6,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Update package list and install OpenJDK 21
 RUN apt-get update && apt-get install -y \
     openjdk-21-jdk \
+    pkg-config \
+    libvips-dev \
     imagemagick \
     libjpeg-turbo-progs \
     jpegoptim \
