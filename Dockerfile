@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
     openjdk-21-jdk \
     pkg-config \
     libvips-dev \
-    libglib2.0-dev \
     imagemagick \
     libjpeg-turbo-progs \
     jpegoptim \
