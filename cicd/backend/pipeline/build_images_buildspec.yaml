@@ -21,7 +21,8 @@ phases:
         && curl -s "https://get.sdkman.io" | bash
         && chmod a+x /root/.sdkman/bin/sdkman-init.sh
         && GRAILS_VERSION=$(grep '^grailsVersion=' gradle.properties | cut -d'=' -f2)
-        && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails $GRAILS_VERSION /root/.sdkman/candidates/grails/$GRAILS_VERSION
+        && echo "GRAILS_VERSION=$GRAILS_VERSION"
+        && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails "$GRAILS_VERSION" /root/.sdkman/candidates/grails/$GRAILS_VERSION
         && apt-get install -y apt-transport-https ca-certificates software-properties-common
         && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
         && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
