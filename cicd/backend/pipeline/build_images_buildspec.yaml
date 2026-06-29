@@ -36,6 +36,8 @@ phases:
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
       - export GRADLE_OPTS="-Dgrails.env=travis"
+      - ./gradlew clean
+      - ./gradlew assemble
 
   build:
     commands:
@@ -47,7 +49,7 @@ phases:
       - chown -R postgresuser:postgresuser /tmp
       - chown -R postgresuser .
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
-      - ./gradlew clean build bootJar
+      - ./gradlew bootJar
 
   post_build:
     commands:
