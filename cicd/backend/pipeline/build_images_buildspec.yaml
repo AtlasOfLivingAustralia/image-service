@@ -29,14 +29,13 @@ phases:
         && apt-get update
         && apt-get install -y docker-ce
       - apt-get install -y postgresql postgresql-contrib
+      - apt-get install -y build-essential pkg-config libvips-dev libglib2.0-dev
       - java -version
       - echo Logging in to Docker Hub...
       - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
       - export GRADLE_OPTS="-Dgrails.env=travis"
-      - ./gradlew clean
-      - ./gradlew assemble
 
   build:
     commands:
@@ -48,7 +47,7 @@ phases:
       - chown -R postgresuser:postgresuser /tmp
       - chown -R postgresuser .
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
-      - ./gradlew bootJar
+      - ./gradlew clean build bootJar
 
   post_build:
     commands:
