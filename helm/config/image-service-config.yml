@@ -82,7 +82,7 @@ dataSource:
   driverClassName: org.postgresql.Driver
   username: {{ .Values.db.db_username }}
   password: {{ .Values.db.db_password }}
-  dbCreate: update
+  dbCreate: validate
 
 imageservice:
   imagestore:
