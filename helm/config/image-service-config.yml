@@ -74,7 +74,7 @@ info:
     version: {{ .Values.version }}
 
 flyway:
-  enabled: false
+  enabled: {{ .Values.flyway.enabled }}
   baselineOnMigrate: true
 
 dataSource:
@@ -136,6 +136,7 @@ biocache:
 headerAndFooter:
   version: {{ .Values.headerAndFooter.version }}
   baseURL: {{ .Values.headerAndFooter.baseURL }}
+  challengeJsUrl: {{ .Values.headerAndFooter.challengeJsUrl }}
 ala:
   baseURL: {{ .Values.ala.baseURL }}
 bie:

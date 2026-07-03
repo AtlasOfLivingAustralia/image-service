@@ -168,6 +168,9 @@ phases:
         headerAndFooter:
           baseURL: $HEADER_AND_FOOTER_BASEURL
           version: $HEADER_AND_FOOTER_VERSION
+          challengeJsUrl: $HEADER_AND_FOOTER_CHALLENGEJS_URL
+        flyway:
+          enabled: $FLYWAY_ENABLED
         userdetails:
           app:
            url: "${USERDETAILS_WEB_URL}"

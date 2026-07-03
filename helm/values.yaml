@@ -175,6 +175,7 @@ bie:
 headerAndFooter:
   baseURL: "https://www.ala.org.au/commonui-bs3-2019"
   version: "2"
+  challengeJsUrl: ""
 podEnvironment: "production"
 xmx: "3g"
 xms: "3g"
@@ -261,3 +262,5 @@ management:
 tiling:
   levelThreads: 2
   ioThreads: 32
+flyway:
+  enabled: true
