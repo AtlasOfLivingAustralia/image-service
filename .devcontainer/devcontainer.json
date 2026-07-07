@@ -1,0 +1,119 @@
+{
+  "name": "ALA Regolith CloudFormation Dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "mounts": [
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/ubuntu/.ssh,type=bind,consistency=cached,readonly",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/ubuntu/.aws,type=bind,consistency=cached",
+  ],
+  "containerEnv": {
+    "AWS_PROFILE": "${localEnv:AWS_PROFILE}"
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "customizations": {
+    "vscode": {
+      "mcp" : {
+        "servers": {
+		        "io.github.ChromeDevTools/chrome-devtools-mcp": {
+		        	"type": "stdio",
+		        	"command": "/usr/share/nodejs/corepack/shims/npx",
+		        	"args": [
+		        		"--registry",
+		        		"https://registry.npmjs.org",
+		        		"chrome-devtools-mcp@1.3.0"
+		        	]
+		        },
+		        "aws-mcp-server-proxy": {
+		        	"type": "stdio",
+		        	"command": "/home/ubuntu/.local/bin/mcp-proxy-for-aws",
+		        	"args": [
+		        		"https://aws-mcp.us-east-1.api.aws/mcp", "--metadata", "AWS_REGION=ap-southeast-2"
+		        	]
+		        },
+		        "eks-mcp-server-proxy": {
+		        	"type": "stdio",
+		        	"command": "/home/ubuntu/.local/bin/mcp-proxy-for-aws",
+		        	"args": [
+		        		"https://eks-mcp.ap-southeast-2.api.aws/mcp",
+                        "--service",
+                        "eks-mcp",
+                        "--profile",
+                        "${localEnv:AWS_PROFILE}",
+                        "--region",
+                        "ap-southeast-2",
+                        "--read-only"
+		        	]
+		        },
+		        "aws-iac": {
+		        	"type": "stdio",
+		        	"command": "/home/ubuntu/.local/bin/awslabs.aws-iac-mcp-server",
+		        	"args": [],
+		        	"env": {
+		        		"AWS_REGION": "ap-southeast-2",
+		        		"AWS_PROFILE": "${localEnv:AWS_PROFILE}"
+		        	}
+		        }
+        }
+      },
+      "extensions": [
+        "aws-scripting-guy.cform",
+        "eastman.vscode-cfn-nag",
+        "kddejong.vscode-cfn-lint",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "redhat.vscode-yaml",
+        "streetsidesoftware.code-spell-checker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/home/ubuntu/pyenv/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": false,
+        "python.formatting.provider": "black",
+        "cfnLint.path": "/home/ubuntu/pyenv/bin/cfn-lint",
+        "cfnNagLint.path": "cfn_nag",
+        "aws.cloudformation.completion.enabled": false,
+        "aws.cloudformation.diagnostics.cfnLint.path": "/home/ubuntu/pyenv/bin/cfn-lint",
+        "aws.cloudformation.diagnostics.cfnGuard.enabledRulePacks": [
+          "wa-Security-Pillar",
+          "acsc-essential-8"
+        ],
+        "files.associations": {
+          "*.yaml": "yaml",
+          "*.yml": "yaml"
+        },
+        "yaml.customTags": [
+                "!And sequence",
+                "!Base64 scalar",
+                "!Cidr sequence",
+                "!Condition scalar",
+                "!Equals sequence",
+                "!FindInMap sequence",
+                "!GetAtt scalar",
+                "!GetAtt sequence",
+                "!GetAZs scalar",
+                "!If sequence",
+                "!ImportValue scalar",
+                "!ImportValue sequence",
+                "!ImportValue mapping",
+                "!Join sequence",
+                "!Not sequence",
+                "!Or sequence",
+                "!Ref scalar",
+                "!Select sequence",
+                "!Split sequence",
+                "!Sub scalar",
+                "!Sub sequence",
+                "!Transform mapping",
+                "!ValueOf sequence",
+                "!ValueOfAll sequence"
+              ]
+      }
+    }
+  },
+  "remoteUser": "ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/aws-cli:1": {},
+    "ghcr.io/devcontainers/features/git:1": {}
+  }
+}
