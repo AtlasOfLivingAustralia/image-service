@@ -10,6 +10,8 @@ phases:
     commands:
       - echo Installing dependencies...
       - cat /etc/lsb-release
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
       - apt update -y
         && apt-get -q -y install openjdk-21-jdk
         && pip3 install jinja2

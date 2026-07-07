@@ -6,27 +6,15 @@ version: 0.2
 env:
   shell: bash
   git-credential-helper: yes
+  secrets-manager:
+    DB_PASSWORD: $SECRET_NAME:db-password
+    CAS_CLIENT_SECRET: $SECRET_NAME:cas-client-secret
+    ELASTICSEARCH_PASSWORD: $ELASTICSEARCH_SECRET_NAME:password
   variables:
     DEBIAN_FRONTEND: "noninteractive"
   exported-variables:
     - BASE_STACK_FILE_PFIX
     - BASE_STACK_NAME
-    - CODEBUILD_BUILD_NUMBER
-    - COGNITO_STACK_NAME
-    - DB_READ_ENDPOINT
-    - DB_WRITE_ENDPOINT
-    - DOMAIN_NAME
-    - EKS_CLUSTER_NAME
-    - HELM_RELEASE_NAME
-    - CERTIFICATE_ARN
-    - HOSTED_ZONE
-    - PRODUCT_COMPONENT
-    - PRODUCT_NAME
-    - SECRET_NAME
-    - EKS_NAMESPACE
-    - ACCESS_LOGS_S3_BUCKET_NAME
-    - SLACK_ALERT_CHANNEL
-    - SLACK_DEPLOY_NOTIFICATION
 
 phases:
 
@@ -43,12 +31,12 @@ phases:
       - # we need to run a specific commit, not the latest. In this case the pipeline is set NOT to
       - # autorun on update. It will have to be manually started after the rollback pipeline
       - # has finished launching
-      - | 
+      - |
           if [[ $PIPELINE_FINGERPRINT != $CUR_PIPELINE_FINGERPRINT ]]; then
             echo existing pipeline is out of sync with current code revision, relaunching!
             cd cicd/$PRODUCT_COMPONENT/pipeline/
             ./deploy_pipeline.sh -e ${ENVIRONMENT:0:4} -b $SRC_BRANCH
-            # pipeline execution should now stop if this is a rollback, 
+            # pipeline execution should now stop if this is a rollback,
             # or restart automatically if this a normal branch deploy
             exit 1
           else
@@ -65,6 +53,12 @@ phases:
       - echo Environment is $ENVIRONMENT
       - echo generating environment vars...
       - cicd/gen_env_vars.py --env $ENVIRONMENT --clean-branch $CLEAN_BRANCH --conf cicd/$PRODUCT_COMPONENT/config.ini > env.txt
+      - echo EXECUTION_ID=$EXECUTION_ID >> env.txt
+      - echo AUTHOR=\"$AUTHOR\" >> env.txt
+      - echo SRC_BRANCH=$SRC_BRANCH >> env.txt
+      - echo COMMIT_ID=$COMMIT_ID >> env.txt
+      - echo REPO=$REPO >> env.txt
+      - echo BUILD_TAG=$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER >> env.txt
       - echo loading config..
       - set -a ; source env.txt ; set +a
       - ECR_REPO=$(aws cloudformation list-exports --query "Exports[?Name=='$BASE_STACK_NAME-ImagesRepositoryUri'].Value" --output text)
@@ -83,12 +77,12 @@ phases:
       - echo WEB_SERVICE_CLIENT_ID=$WEB_SERVICE_CLIENT_ID
       - echo SECRET_NAME=$SECRET_NAME
       - echo BASE_STACK_NAME=$BASE_STACK_NAME
-      - DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["db-password"]')
-      - CAS_CLIENT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["cas-client-secret"]')
+      - #DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["db-password"]')
+      - #CAS_CLIENT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["cas-client-secret"]')
       - export USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $COGNITO_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
       - export CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $OIDC_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
       - export WEB_SERVICE_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $WEB_SERVICE_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
-      - export ELASTICSEARCH_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$ELASTICSEARCH_SECRET_NAME" --query 'SecretString' --output text | jq -r '.["password"]')
+      - #export ELASTICSEARCH_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$ELASTICSEARCH_SECRET_NAME" --query 'SecretString' --output text | jq -r '.["password"]')
       - echo creating the configmap for the images deployment...
       - |
         source cicd/unset_codebuild_env_vars.sh

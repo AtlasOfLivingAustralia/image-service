@@ -7,14 +7,14 @@ env:
   secrets-manager:
     DOCKER_USERNAME: ala-secrets-production:dockerhub-username
     DOCKER_PASSWORD: ala-secrets-production:dockerhub-password
-  exported-variables:
-    - BUILD_TAG
 
 phases:
   install:
     runtime-versions:
       java: corretto21
     commands:
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
       - echo Installing dependencies...
       - apt update -y
         && cat /etc/lsb-release
@@ -58,9 +58,7 @@ phases:
       - echo Building the Docker image...
       - docker build -t ala-images .
       - echo Tagging the Docker image...
-      - BUILD_TAG=$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER
       - echo build tag is $BUILD_TAG
-      - echo "$BUILD_TAG" > /tmp/build_tag.txt
       - echo tagging
       - docker tag ala-images:latest $ECR_REPO:$BUILD_TAG
       - docker tag ala-images:latest $ECR_REPO:latest
