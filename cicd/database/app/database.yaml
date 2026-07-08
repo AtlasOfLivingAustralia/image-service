@@ -139,7 +139,7 @@ Conditions:
   RestoreFromSnapshot: !Not
     - !Equals
       - !Ref pRdsSnapshotRestore
-      - false
+      - "false"
 
   IsProvisioned: !Equals
     - !Ref pEngineMode
@@ -155,11 +155,11 @@ Conditions:
 
   CreateReplica: !Equals
     - !Ref pCreateReplica
-    - true
+    - "true"
 
   ExportLogs: !Equals
     - !Ref pExportLogs
-    - true
+    - "true"
 
   EnhancedMonitoring: !Not
     - !Equals
@@ -172,7 +172,7 @@ Conditions:
       - provisioned
     - !Equals
       - !Ref pCreateReplica
-      - true
+      - "true"
 
   IsServerlessV2: !Equals
     - !Ref pEngineMode
@@ -188,7 +188,7 @@ Conditions:
 
   PerformanceInsights: !Equals
     - !Ref pPerformanceInsights
-    - true
+    - "true"
 
 Resources:
   DbParamGrp:
