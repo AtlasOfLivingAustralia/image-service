@@ -137,6 +137,7 @@ aws cloudformation deploy \
     --region $REGION \
     --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
     --parameter-overrides \
+        pAllowTeardown=$ALLOW_TEARDOWN \
         pAutoDeploy=$AUTO_DEPLOY \
         pBootstrapStackName=$BOOTSTRAP_STACK_NAME \
         pBaseStackName=$BASE_STACK_NAME \
@@ -150,4 +151,3 @@ aws cloudformation deploy \
         pProductComponent=$PRODUCT_COMPONENT \
         pProductName=$PRODUCT_NAME \
         pRestartExecutionOnUpdate=$RESTART_PIPELINE_ON_UPDATE \
-

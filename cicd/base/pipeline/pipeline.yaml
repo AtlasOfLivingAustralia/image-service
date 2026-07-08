@@ -3,6 +3,13 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Code pipeline for the images service
 
 Parameters:
+  pAllowTeardown:
+    Description: enables or disables the teardown stage
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+
   pAutoDeploy:
     Description: Sets the pipeline to auto deploy on repo changes
     Type: String
@@ -51,8 +58,8 @@ Parameters:
     Description: Restart that pipeline if it's been updated
     Type: String
     AllowedValues:
-      - true
-      - false
+      - "true"
+      - "false"
 
 Conditions:
   IsDev: !Equals
@@ -62,6 +69,10 @@ Conditions:
   AutoDeploy: !Equals
     - !Ref pAutoDeploy
     - true
+
+  AllowTeardown: !Equals
+    - !Ref pAllowTeardown
+    - "true"
 
 Resources:
   ExportConfig:
@@ -149,9 +160,11 @@ Resources:
         Type: S3
         Location: !ImportValue
           Fn::Sub: ${pBucketsStackName}-${AWS::Region}-CodePipelineArtifactBucketName
-      DisableInboundStageTransitions:
-        - Reason: To prevent accidental teardown
-          StageName: Teardown
+      DisableInboundStageTransitions: !If
+        - AllowTeardown
+        - - Reason: To prevent accidental teardown
+            StageName: Teardown
+        - !Ref AWS::NoValue
       RestartExecutionOnUpdate: !Ref pRestartExecutionOnUpdate
       Triggers:
         - ProviderType: CodeStarSourceConnection
@@ -256,68 +269,71 @@ Resources:
               InputArtifacts:
                 - Name: ExportConfigArtifact
               RunOrder: 3
-        - Name: Teardown
-          Actions:
-            - Name: Approval
-              ActionTypeId:
-                Owner: AWS
-                Category: Approval
-                Version: 1
-                Provider: Manual
-              Configuration:
-                CustomData: Approval required to tear down this stack
-              RunOrder: 1
-            - Name: EmptyBucket
-              ActionTypeId:
-                Owner: AWS
-                Category: Build
-                Version: 1
-                Provider: CodeBuild
-              Configuration:
-                ProjectName: !Ref EmptyBucket
-                EnvironmentVariables: |
-                  [
-                    { "name":"LOAD_BALANCER_ACCESS_LOGS_BUCKET", "value":"#{BaseCloudFormationOutNS.LoadBalancerAccessLogsBucket}" }
-                  ]
-              Namespace: EmptyBucketNS
-              InputArtifacts:
-                - Name: ExportConfigArtifact
-              OutputArtifacts:
-                - Name: EmptyBucketArtifact
-              RunOrder: 2
-            - Name: TeardownBaseStack
-              ActionTypeId:
-                Owner: AWS
-                Category: Deploy
-                Version: 1
-                Provider: CloudFormation
-              Configuration:
-                ActionMode: DELETE_ONLY
-                StackName: '#{ExportConfigNS.BASE_STACK_NAME}'
-                RoleArn: !ImportValue
-                  Fn::Sub: ${pBootstrapStackName}-CloudFormationServiceRoleArn
-              RunOrder: 3
-            - Name: ApprovalForPipelineTeardown
-              ActionTypeId:
-                Owner: AWS
-                Category: Approval
-                Version: 1
-                Provider: Manual
-              Configuration:
-                CustomData: Approval required to tear down this stack
-              RunOrder: 4
-            - Name: TeardownCodePipeline
-              ActionTypeId:
-                Owner: AWS
-                Category: Deploy
-                Version: 1
-                Provider: CloudFormation
-              Configuration:
-                ActionMode: DELETE_ONLY
-                StackName: !Ref AWS::StackName
-                RoleArn: !ImportValue
-                  Fn::Sub: ${pBootstrapStackName}-CloudFormationServiceRoleArn
-              RunOrder: 5
+        - !If
+          - AllowTeardown
+          - Name: Teardown
+            Actions:
+              - Name: Approval
+                ActionTypeId:
+                  Owner: AWS
+                  Category: Approval
+                  Version: 1
+                  Provider: Manual
+                Configuration:
+                  CustomData: Approval required to tear down this stack
+                RunOrder: 1
+              - Name: EmptyBucket
+                ActionTypeId:
+                  Owner: AWS
+                  Category: Build
+                  Version: 1
+                  Provider: CodeBuild
+                Configuration:
+                  ProjectName: !Ref EmptyBucket
+                  EnvironmentVariables: |
+                    [
+                      { "name":"LOAD_BALANCER_ACCESS_LOGS_BUCKET", "value":"#{BaseCloudFormationOutNS.LoadBalancerAccessLogsBucket}" }
+                    ]
+                Namespace: EmptyBucketNS
+                InputArtifacts:
+                  - Name: ExportConfigArtifact
+                OutputArtifacts:
+                  - Name: EmptyBucketArtifact
+                RunOrder: 2
+              - Name: TeardownBaseStack
+                ActionTypeId:
+                  Owner: AWS
+                  Category: Deploy
+                  Version: 1
+                  Provider: CloudFormation
+                Configuration:
+                  ActionMode: DELETE_ONLY
+                  StackName: '#{ExportConfigNS.BASE_STACK_NAME}'
+                  RoleArn: !ImportValue
+                    Fn::Sub: ${pBootstrapStackName}-CloudFormationServiceRoleArn
+                RunOrder: 3
+              - Name: ApprovalForPipelineTeardown
+                ActionTypeId:
+                  Owner: AWS
+                  Category: Approval
+                  Version: 1
+                  Provider: Manual
+                Configuration:
+                  CustomData: Approval required to tear down this stack
+                RunOrder: 4
+              - Name: TeardownCodePipeline
+                ActionTypeId:
+                  Owner: AWS
+                  Category: Deploy
+                  Version: 1
+                  Provider: CloudFormation
+                Configuration:
+                  ActionMode: DELETE_ONLY
+                  StackName: !Ref AWS::StackName
+                  RoleArn: !ImportValue
+                    Fn::Sub: ${pBootstrapStackName}-CloudFormationServiceRoleArn
+                RunOrder: 5
+          - !Ref AWS::NoValue
 
   ExportConfigCodeBuildLogGroup:
     DeletionPolicy: Delete
