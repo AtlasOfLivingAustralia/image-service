@@ -80,6 +80,8 @@ phases:
       - export WEB_SERVICE_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $WEB_SERVICE_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
       - export ELASTICSEARCH_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$ELASTICSEARCH_SECRET_NAME" --query 'SecretString' --output text | jq -r '.["password"]')
       - echo creating the configmap for the images deployment...
+      - echo "**** env ******"
+      - env
       - |
         source cicd/unset_codebuild_env_vars.sh
         for var in $(printenv | awk -F= '{print $1}'); do
