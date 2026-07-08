@@ -1,6 +1,7 @@
 {
   "Parameters" : {
     "pAdminUser"           : "{{ admin_user }}",
+    "pBacktrackWindow"     : "{{ backtrack_window }}",
     "pBackupRetention"     : "{{ backup_retention }}",
     "pBuild"               : "{{ codebuild_build_number }}",
     "pCleanBranch"         : "{{ clean_branch }}",
@@ -13,14 +14,14 @@
     "pEnhancedMonitoring"  : "{{ enhanced_monitoring }}",
     "pEnvironment"         : "{{ environment }}",
     "pExportLogs"          : "{{ export_logs }}",
+    "pDbEngine"            : "{{ db_engine }}",
+    "pDbParamGrpFamily"    : "{{ db_param_grp_family }}",
     "pInstanceClass"       : "{{ instance_class }}",
     "pPerformanceInsights" : "{{ performance_insights }}",
     "pProductName"         : "{{ product_name }}",
     "pRdsSnapshotRestore"  : "{{ rds_snapshot_restore }}",
     "pSecretName"          : "{{ secret_name }}",
-    "pVpcStackName"        : "{{ vpc_stack_name }}",
-    "pDbEngine"            : "{{ db_engine }}",
-    "pDbParamGrpFamily"    : "{{ db_param_grp_family }}"
+    "pVpcStackName"        : "{{ vpc_stack_name }}"
   },
   "Tags" : {
     "product"     : "{{ product_name }}",

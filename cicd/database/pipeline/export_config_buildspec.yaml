@@ -9,14 +9,8 @@ env:
   variables:
     DEBIAN_FRONTEND: "noninteractive"
   exported-variables:
-    - CODEBUILD_BUILD_NUMBER
     - DATABASE_STACK_FILE_PFIX
     - DATABASE_STACK_NAME
-    - PRODUCT_NAME
-    - PRODUCT_COMPONENT
-    - SLACK_DEPLOY_NOTIFICATION
-    - SLACK_ALERT_CHANNEL
-    - SECRET_NAME
 
 phases:
 
@@ -33,12 +27,12 @@ phases:
       - # we need to run a specific commit, not the latest. In this case the pipeline is set NOT to
       - # autorun on update. It will have to be manually started after the rollback pipeline
       - # has finished launching
-      - | 
+      - |
           if [[ $PIPELINE_FINGERPRINT != $CUR_PIPELINE_FINGERPRINT ]]; then
             echo existing pipeline is out of sync with current code revision, relaunching!
             cd cicd/$PRODUCT_COMPONENT/pipeline/
             ./deploy_pipeline.sh -e ${ENVIRONMENT:0:4} -b $SRC_BRANCH
-            # pipeline execution should now stop if this is a rollback, 
+            # pipeline execution should now stop if this is a rollback,
             # or restart automatically if this a normal branch deploy
             exit 1
           else
@@ -55,6 +49,11 @@ phases:
       - echo Environment is $ENVIRONMENT
       - echo generating environment vars...
       - cicd/gen_env_vars.py --env $ENVIRONMENT --clean-branch $CLEAN_BRANCH --conf cicd/$PRODUCT_COMPONENT/config.ini > env.txt
+      - echo EXECUTION_ID=$EXECUTION_ID >> env.txt
+      - echo AUTHOR=\"$AUTHOR\" >> env.txt
+      - echo SRC_BRANCH=$SRC_BRANCH >> env.txt
+      - echo COMMIT_ID=$COMMIT_ID >> env.txt
+      - echo REPO=$REPO >> env.txt
       - echo loading config..
       - set -a ; source env.txt ; set +a
     finally:
@@ -87,5 +86,8 @@ phases:
 artifacts:
   files:
     - cicd/$PRODUCT_COMPONENT/app/*
+    - cicd/$PRODUCT_COMPONENT/pipeline/*
+    - cicd/*
+    - env.txt
   name: BuildTemplateConfigArtifact
   discard-paths: no
