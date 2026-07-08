@@ -16,11 +16,13 @@ parser.add_argument("--clean-branch", "-cb", help="The clean branch name, used f
 
 args = parser.parse_args()
 
+aws_account_id = os.popen('aws sts get-caller-identity --query Account --output text').read().strip()
+
 config_defaults = {
                      'CLEAN_BRANCH' : args.clean_branch,
                      'ENVIRONMENT'  : args.env,
-                     'AWS_ACCOUNT_ID_TRUNC' : os.popen('aws sts get-caller-identity --query Account --output text').read().strip()[:6],
-                     'AWS_ACCOUNT_ID' : os.popen('aws sts get-caller-identity --query Account --output text').read().strip(),
+                     'AWS_ACCOUNT_ID_TRUNC' : aws_account_id[:6],
+                     'AWS_ACCOUNT_ID' : aws_account_id,
                      'REGION' : os.popen('aws configure get region').read().strip()
                   }
 
