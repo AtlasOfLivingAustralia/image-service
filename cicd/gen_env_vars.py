@@ -19,7 +19,8 @@ args = parser.parse_args()
 config_defaults = {
                      'CLEAN_BRANCH' : args.clean_branch,
                      'ENVIRONMENT'  : args.env,
-                     'AWS_ACCOUNT_ID' : os.popen('aws sts get-caller-identity --query Account --output text').read().strip()[:6],
+                     'AWS_ACCOUNT_ID_TRUNC' : os.popen('aws sts get-caller-identity --query Account --output text').read().strip()[:6],
+                     'AWS_ACCOUNT_ID' : os.popen('aws sts get-caller-identity --query Account --output text').read().strip(),
                      'REGION' : os.popen('aws configure get region').read().strip()
                   }
 
@@ -38,4 +39,3 @@ env_config = config[args.env]
 for key in env_config:
   value = env_config[key].replace("\n", "")
   print(f"{key.upper()}={value}")
-

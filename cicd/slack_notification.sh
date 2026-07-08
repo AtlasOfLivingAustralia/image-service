@@ -26,7 +26,6 @@ case $ENVIRONMENT in
     ;;
 esac
 
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 case $AWS_ACCOUNT_ID in
   "736913556139")
     AWS_ACCOUNT_NAME="Production"
