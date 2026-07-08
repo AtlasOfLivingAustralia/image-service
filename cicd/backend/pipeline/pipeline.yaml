@@ -305,7 +305,7 @@ Resources:
                   - EcrRepo: !ImportValue
                       Fn::Sub: ${pBaseStackName}-ImagesRepositoryUri
               InputArtifacts:
-                - Name: SourceArtifact
+                - Name: ExportConfigArtifact
               Namespace: BuildImagesNS
               RunOrder: 2
             - Name: DeployImages
@@ -323,9 +323,7 @@ Resources:
                     ]
                   - EcrRepo: !ImportValue
                       Fn::Sub: ${pBaseStackName}-ImagesRepositoryUri
-                PrimarySource: SourceArtifact
               InputArtifacts:
-                - Name: SourceArtifact
                 - Name: ExportConfigArtifact
               RunOrder: 3
             - Name: DeployNotification
@@ -338,7 +336,7 @@ Resources:
                 ProjectName: !Ref DeployNotification
               Namespace: DeployNotificationNS
               InputArtifacts:
-                - Name: SourceArtifact
+                - Name: ExportConfigArtifact
               RunOrder: 4
         - !If
           - AllowTeardown
