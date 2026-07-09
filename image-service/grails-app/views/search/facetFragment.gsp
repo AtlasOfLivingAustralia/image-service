@@ -25,7 +25,7 @@
             </g:else>
         </a>
     </td>
-    <td class="multiple-facet-count border-end-0">${facetField.value}</td>
+    <td class="multiple-facet-count">${facetField.value}</td>
 </tr>
 </g:each>
 </tbody>

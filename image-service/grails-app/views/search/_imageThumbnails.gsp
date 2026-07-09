@@ -92,8 +92,8 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-hidden="true"></button>
                 <h3 class="modal-title" id="multipleFacetsLabel"><g:message code="imagethumb.refine.your.search" /></h3>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-hidden="true"></button>
             </div>
             <div class="modal-body">
                 <div id="facetContent" class="tableContainer" style="max-height: 500px; overflow-y: auto;">
