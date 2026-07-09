@@ -116,6 +116,11 @@ Resources:
         Fn::Sub: ${pBootstrapStackName}-CodeBuildServiceRoleArn
       Artifacts:
         Type: CODEPIPELINE
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_DOCKER_LAYER_CACHE
+          - LOCAL_CUSTOM_CACHE
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_MEDIUM

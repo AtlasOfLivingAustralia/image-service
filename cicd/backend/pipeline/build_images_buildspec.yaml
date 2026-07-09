@@ -16,28 +16,20 @@ phases:
       - echo loading all exported vars..
       - set -a ; source env.txt ; set +a
       - echo Installing dependencies...
+      - cat /etc/lsb-release
       - apt update -y
-        && cat /etc/lsb-release
-        && curl -s "https://get.sdkman.io" | bash
-        && chmod a+x /root/.sdkman/bin/sdkman-init.sh
-        && GRAILS_VERSION=$(grep '^grailsVersion=' gradle.properties | cut -d'=' -f2)
+        && apt-get install -y apt-transport-https ca-certificates software-properties-common build-essential pkg-config libvips-dev libglib2.0-dev
+      - curl -s "https://get.sdkman.io" | bash
+      - chmod a+x /root/.sdkman/bin/sdkman-init.sh
+      - GRAILS_VERSION=$(grep '^grailsVersion=' gradle.properties | cut -d'=' -f2)
         && echo "GRAILS_VERSION=$GRAILS_VERSION"
         && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails "$GRAILS_VERSION" /root/.sdkman/candidates/grails/$GRAILS_VERSION
-        && apt-get install -y apt-transport-https ca-certificates software-properties-common
-        && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-        && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-        && apt-get update
-        && apt-get install -y docker-ce
-      - apt-get install -y postgresql postgresql-contrib
-      - apt-get install -y build-essential pkg-config libvips-dev libglib2.0-dev
       - java -version
       - echo Logging in to Docker Hub...
       - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
       - export GRADLE_OPTS="-Dgrails.env=travis"
-      - ./gradlew clean
-      - ./gradlew assemble
 
   build:
     commands:
@@ -56,7 +48,9 @@ phases:
       - echo Post-build phase...
       - echo Build completed on $(date)
       - echo Building the Docker image...
-      - docker build -t ala-images .
+      - export DOCKER_BUILDKIT=1
+      - docker pull $ECR_REPO:latest
+      - docker build --cache-from $ECR_REPO:latest --build-arg BUILDKIT_INLINE_CACHE=1 -t ala-images .
       - echo Tagging the Docker image...
       - echo build tag is $BUILD_TAG
       - echo tagging
@@ -67,3 +61,11 @@ phases:
       - docker push $ECR_REPO:latest
       - echo Cleaning up LocalStack...
       - docker rm -f localstack || true
+
+
+cache:
+  paths:
+    - '/root/.gradle/caches/**/*'
+    - '/root/.gradle/wrapper/**/*'
+    - '/root/.sdkman/candidates/grails/**/*'
+    - '/root/.cargo/registry/**/*'
