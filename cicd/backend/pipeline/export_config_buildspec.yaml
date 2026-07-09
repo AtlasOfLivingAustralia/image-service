@@ -59,29 +59,36 @@ phases:
       - set -a ; source env.txt ; set +a
       - ECR_REPO=$(aws cloudformation list-exports --query "Exports[?Name=='$BASE_STACK_NAME-ImagesRepositoryUri'].Value" --output text)
       - echo ECR_REPO=$ECR_REPO
+      - echo ECR_REPO=$ECR_REPO >> env.txt
       - DB_READ_ENDPOINT=$(aws cloudformation describe-stacks --stack-name $DATABASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ReadEndpoint'].OutputValue" --output text)
       - DB_WRITE_ENDPOINT=$(aws cloudformation describe-stacks --stack-name $DATABASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='WriteEndpoint'].OutputValue" --output text)
       - echo DB_READ_ENDPOINT=$DB_READ_ENDPOINT
       - echo DB_WRITE_ENDPOINT=$DB_WRITE_ENDPOINT
+      - echo DB_READ_ENDPOINT=$DB_READ_ENDPOINT >> env.txt
+      - echo DB_WRITE_ENDPOINT=$DB_WRITE_ENDPOINT >> env.txt
       - ACCESS_LOGS_S3_BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerAccessLogsBucket'].OutputValue" --output text)
       - echo ACCESS_LOGS_S3_BUCKET_NAME=$ACCESS_LOGS_S3_BUCKET_NAME
+      - echo ACCESS_LOGS_S3_BUCKET_NAME=$ACCESS_LOGS_S3_BUCKET_NAME >> env.txt
       - export EKS_CLUSTER_NAME=$(aws cloudformation list-exports --query "Exports[?Name=='$REGOLITH_STACK_NAME-ClusterName'].Value" --output text)
       - echo EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME
+      - echo EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME >> env.txt
       - export OIDC_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesAppClient'].OutputValue" --output text)
       - echo OIDC_CLIENT_ID=$OIDC_CLIENT_ID
+      - echo OIDC_CLIENT_ID=$OIDC_CLIENT_ID >> env.txt
       - export WEB_SERVICE_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $BASE_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ImagesServerToServerAppClient'].OutputValue" --output text)
       - echo WEB_SERVICE_CLIENT_ID=$WEB_SERVICE_CLIENT_ID
+      - echo WEB_SERVICE_CLIENT_ID=$WEB_SERVICE_CLIENT_ID >> env.txt
       - echo SECRET_NAME=$SECRET_NAME
       - echo BASE_STACK_NAME=$BASE_STACK_NAME
       - DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["db-password"]')
       - CAS_CLIENT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text | jq -r '.["cas-client-secret"]')
       - export USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $COGNITO_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
+      - echo USER_POOL_ID=$USER_POOL_ID
+      - echo USER_POOL_ID=$USER_POOL_ID >> env.txt
       - export CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $OIDC_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
       - export WEB_SERVICE_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id $USER_POOL_ID --client-id $WEB_SERVICE_CLIENT_ID --query "UserPoolClient.ClientSecret" --output text)
       - export ELASTICSEARCH_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$ELASTICSEARCH_SECRET_NAME" --query 'SecretString' --output text | jq -r '.["password"]')
       - echo creating the configmap for the images deployment...
-      - echo "**** env ******"
-      - env
       - |
         source cicd/unset_codebuild_env_vars.sh
         for var in $(printenv | awk -F= '{print $1}'); do
