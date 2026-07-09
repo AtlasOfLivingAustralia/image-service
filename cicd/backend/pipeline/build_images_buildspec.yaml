@@ -16,6 +16,7 @@ phases:
       - echo loading all exported vars..
       - set -a ; source env.txt ; set +a
       - echo Installing dependencies...
+      - ls -l
       - apt update -y
         && cat /etc/lsb-release
         && curl -s "https://get.sdkman.io" | bash
