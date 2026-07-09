@@ -2,7 +2,6 @@ plugins {
     id "groovy"
     id "org.grails.grails-web" version "6.2.4"
     id "org.grails.grails-gsp" version "6.2.4"
-    id "com.github.erdi.webdriver-binaries" version "3.2"
     id "war"
     id "idea"
     id "com.bertramlabs.asset-pipeline" version "4.3.0"
@@ -46,11 +45,6 @@ def sanitizedBridgePath = project(':image-utils-native-bridge').layout.buildDire
 configurations {
     all {
         resolutionStrategy.force 'org.codehaus.groovy:groovy-xml:3.0.13'
-        resolutionStrategy.eachDependency { DependencyResolveDetails details->
-            if (details.requested.group == 'org.seleniumhq.selenium') {
-                details.useVersion('4.14.1')
-            }
-        }
     }
 }
 
@@ -184,14 +178,7 @@ dependencies {
     testImplementation("io.micronaut:micronaut-inject-groovy")
     testImplementation("org.grails:grails-gorm-testing-support")
     testImplementation("org.grails:grails-web-testing-support")
-    testImplementation("org.grails.plugins:geb")
-    testImplementation("org.seleniumhq.selenium:selenium-api:4.14.1")
-    testImplementation("org.seleniumhq.selenium:selenium-remote-driver:4.14.1")
-    testImplementation("org.seleniumhq.selenium:selenium-support:4.14.1")
     testImplementation("org.spockframework:spock-core")
-    testRuntimeOnly("org.seleniumhq.selenium:selenium-chrome-driver:4.14.1")
-    testRuntimeOnly("org.seleniumhq.selenium:selenium-firefox-driver:4.14.1")
-    testRuntimeOnly("org.seleniumhq.selenium:selenium-safari-driver:4.14.1")
     testImplementation("io.micronaut:micronaut-http-client")
 
     implementation "org.grails.plugins:cache-ehcache:3.0.0"
@@ -224,10 +211,6 @@ java {
 
 tasks.withType(Test) {
     useJUnitPlatform()
-    systemProperty "geb.env", System.getProperty('geb.env')
-    systemProperty "geb.build.reportsDir", reporting.file("geb/integrationTest")
-    systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
-    systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
     testLogging {
         showStandardStreams = Boolean.getBoolean('testLogging')
         exceptionFormat = 'full'
@@ -252,11 +235,6 @@ tasks.withType(JavaExec).configureEach {
 }
 tasks.withType(War).configureEach { War war ->
     war.dependsOn compileGroovyPages
-}
-webdriverBinaries {
-    chromedriver '110.0.5481.77'
-    geckodriver '0.32.2'
-//    edgedriver '110.0.1587.57'
 }
 assets {
     minifyJs = true
