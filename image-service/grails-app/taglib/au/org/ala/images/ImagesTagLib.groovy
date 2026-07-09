@@ -201,7 +201,7 @@ class ImagesTagLib {
         def current = pageProperty(name:'page.pageTitle')?.toString()
 
         def mb = new MarkupBuilder(out)
-        mb.li {
+        mb.li(class: 'nav-item') {
             a(href:attrs.href , class: active == current ? 'nav-link active' : 'nav-link') {
 //                i(class:'icon-chevron-right') { mkp.yieldUnescaped('&nbsp;')}
                 mkp.yield(attrs.title)

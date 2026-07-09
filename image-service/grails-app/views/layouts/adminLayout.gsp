@@ -24,39 +24,17 @@
                 <div class="col-md-2">
                     <h1 class="mb-3">Admin tools</h1>
                     <ul class="nav nav-pills flex-column">
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'dashboard')}" title="Dashboard" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'batchUploads')}" title="Batch uploads" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'upload')}" title="Upload images" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'tools')}" title="Tools" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'duplicates')}" title="Duplicates" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'searchCriteria')}" title="Search Criteria" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'licences')}" title="Update Licences" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'tags')}" title="Tags" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'storageLocations')}" title="Storage Locations" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'settings')}" title="Settings" />
-                        </li>
-                        <li class="nav-item">
-                            <img:menuNavItem href="${createLink(controller: 'admin', action: 'analytics')}" title="Analytics" />
-                        </li>
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'dashboard')}" title="Dashboard" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'batchUploads')}" title="Batch uploads" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'upload')}" title="Upload images" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'tools')}" title="Tools" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'duplicates')}" title="Duplicates" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'searchCriteria')}" title="Search Criteria" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'licences')}" title="Update Licences" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'tags')}" title="Tags" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'storageLocations')}" title="Storage Locations" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'settings')}" title="Settings" />
+                        <img:menuNavItem href="${createLink(controller: 'admin', action: 'analytics')}" title="Analytics" />
                     </ul>
                 </div>
                 <div class="col-md-10">
