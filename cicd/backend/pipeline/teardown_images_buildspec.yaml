@@ -33,8 +33,3 @@ phases:
     commands:
       - echo Post-build phase...
       - echo Build completed on $(date)
-
-artifacts:
-  base-directory: $CODEBUILD_SRC_DIR
-  files:
-    - '**/*'
