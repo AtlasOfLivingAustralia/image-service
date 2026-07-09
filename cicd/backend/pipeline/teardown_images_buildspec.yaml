@@ -8,6 +8,8 @@ env:
 phases:
   install:
     commands:
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
       - echo Installing dependencies...
       - cat /etc/lsb-release
       - apt update -y
