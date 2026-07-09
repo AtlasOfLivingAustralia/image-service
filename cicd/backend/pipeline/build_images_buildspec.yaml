@@ -37,11 +37,12 @@ phases:
       - echo Building the project...
       - chmod 666 /var/run/docker.sock
       - useradd -ms /bin/bash postgresuser
+      - chown -R postgresuser:postgresuser /home/postgresuser # makes sure restored gradle cache is owned by postgresuser
       - echo "Non-root user 'postgresuser' created"
       - chown -R postgresuser:postgresuser /tmp
       - chown -R postgresuser .
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
-      - ./gradlew bootJar
+      - su - postgresuser -c "cd $(pwd) && exec ./gradlew bootJar"
 
   post_build:
     commands:
@@ -65,7 +66,7 @@ phases:
 
 cache:
   paths:
-    - '/root/.gradle/caches/**/*'
-    - '/root/.gradle/wrapper/**/*'
+    - '/home/postgresuser/.gradle/caches/**/*'
+    - '/home/postgresuser/.gradle/wrapper/**/*'
     - '/root/.sdkman/candidates/grails/**/*'
     - '/root/.cargo/registry/**/*'
