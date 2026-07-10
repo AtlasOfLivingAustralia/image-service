@@ -2,8 +2,6 @@ version: 0.2
 
 env:
   shell: bash
-  variables:
-    JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
 
 phases:
   install:
