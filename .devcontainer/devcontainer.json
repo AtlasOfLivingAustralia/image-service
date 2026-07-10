@@ -1,11 +1,11 @@
 {
-  "name": "ALA Regolith CloudFormation Dev",
+  "name": "image-service CloudFormation Dev",
   "build": {
     "dockerfile": "Dockerfile"
   },
   "mounts": [
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/ubuntu/.ssh,type=bind,consistency=cached,readonly",
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/ubuntu/.aws,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/ubuntu/.aws,type=bind,consistency=cached"
   ],
   "containerEnv": {
     "AWS_PROFILE": "${localEnv:AWS_PROFILE}"
