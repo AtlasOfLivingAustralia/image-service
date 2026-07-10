@@ -27,6 +27,10 @@ phases:
         else
           echo "Release $HELM_RELEASE_NAME does not exist."
         fi
+      - echo "Deleting Elasticsearch resources kept by helm.sh/resource-policy=keep..."
+      - kubectl delete deployment elasticsearch-images-$CLEAN_BRANCH -n $EKS_NAMESPACE --ignore-not-found
+      - kubectl delete service elasticsearch-images-$CLEAN_BRANCH -n $EKS_NAMESPACE --ignore-not-found
+      - kubectl delete pvc elasticsearch-images-$CLEAN_BRANCH-pvc elasticsearch-images-$CLEAN_BRANCH-backups-pvc -n $EKS_NAMESPACE --ignore-not-found
   post_build:
     commands:
       - echo Post-build phase...
