@@ -196,14 +196,17 @@ Resources:
                 EnvironmentVariables: !Sub
                   - |
                     [
-                      { "name":"ARTIFACTS_BUCKET", "value":"${ArtifactsBucket}" },
-                      { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" },
-                      { "name":"COMMIT_ID", "value":"#{CheckoutSrcNS.CommitId}" },
-                      { "name":"ENVIRONMENT", "value":"${pEnvironment}" },
-                      { "name":"PIPELINE_FINGERPRINT", "value":"#{variables.PIPELINE_FINGERPRINT}" },
-                      { "name":"PRODUCT_COMPONENT", "value":"${pProductComponent}" },
-                      { "name":"SRC_BRANCH", "value":"${pGitHubBranch}" }
-                    ]
+                       { "name":"ARTIFACTS_BUCKET", "value":"${ArtifactsBucket}" },
+                       { "name":"AUTHOR", "value": "#{CheckoutSrcNS.AuthorDisplayName}" },
+                       { "name":"CLEAN_BRANCH", "value":"${pCleanBranch}" },
+                       { "name":"COMMIT_ID", "value":"#{CheckoutSrcNS.CommitId}" },
+                       { "name":"ENVIRONMENT", "value":"${pEnvironment}" },
+                       { "name":"EXECUTION_ID", "value":"#{codepipeline.PipelineExecutionId}" },
+                       { "name":"PIPELINE_FINGERPRINT", "value":"#{variables.PIPELINE_FINGERPRINT}" },
+                       { "name":"PRODUCT_COMPONENT", "value":"${pProductComponent}" },
+                       { "name":"REPO", "value":"#{CheckoutSrcNS.FullRepositoryName}" },
+                       { "name":"SRC_BRANCH", "value":"${pGitHubBranch}" }
+                     ]
                   - ArtifactsBucket: !ImportValue
                       Fn::Sub: ${pBucketsStackName}-${AWS::Region}-CodePipelineArtifactBucketName
               Namespace: ExportConfigNS
