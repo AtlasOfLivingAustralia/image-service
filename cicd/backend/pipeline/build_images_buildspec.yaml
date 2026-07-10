@@ -4,6 +4,7 @@ env:
   shell: bash
   variables:
     JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+    DOCKER_BUILDKIT: 1
   secrets-manager:
     DOCKER_USERNAME: ala-secrets-production:dockerhub-username
     DOCKER_PASSWORD: ala-secrets-production:dockerhub-password
@@ -49,7 +50,6 @@ phases:
       - echo Post-build phase...
       - echo Build completed on $(date)
       - echo Building the Docker image...
-      - export DOCKER_BUILDKIT=1
       - docker pull $ECR_REPO:latest
       - docker build --cache-from $ECR_REPO:latest --build-arg BUILDKIT_INLINE_CACHE=1 -t ala-images .
       - echo Tagging the Docker image...
