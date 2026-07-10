@@ -68,7 +68,7 @@ Conditions:
 
   AutoDeploy: !Equals
     - !Ref pAutoDeploy
-    - true
+    - "true"
 
   AllowTeardown: !Equals
     - !Ref pAllowTeardown
