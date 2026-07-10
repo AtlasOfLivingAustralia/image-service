@@ -365,7 +365,7 @@ Resources:
                 Configuration:
                   ProjectName: !Ref TeardownImages
                 InputArtifacts:
-                  - Name: SourceArtifact
+                  - Name: ExportConfigArtifact
                 RunOrder: 2
               - Name: ApprovalForPipelineTeardown
                 ActionTypeId:
