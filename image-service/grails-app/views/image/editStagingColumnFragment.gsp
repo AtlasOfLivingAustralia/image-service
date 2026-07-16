@@ -5,7 +5,7 @@
         <label class="col-form-label" for="fieldType"><g:message code="edit.staging.column.field.type" /></label>
         <div class="controls">
             <g:select class="form-select fieldType" name="fieldType" from="${StagingColumnType.values()}" value="${fieldDefinition?.fieldDefinitionType}"/>
-            <img:helpText tooltipPosition="topMiddle" targetPosition="bottomMiddle" tipPosition="topMiddle" width="600">
+            <img:helpText placement="top">
                 <ul>
                     <li><g:message code="edit.staging.column.li1" /></li>
                     <li><g:message code="edit.staging.column.li2" /></li>

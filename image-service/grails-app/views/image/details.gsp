@@ -186,7 +186,7 @@
 
             var options = {
                 auxDataUrl : "${auxDataUrl ? auxDataUrl : ''}",
-                imageServiceBaseUrl : "${createLink(absolute: true, uri: '/')}",
+                imageServiceBaseUrl : "${createLink(absolute: true, uri: '/').replaceFirst('/$', '')}",
                 imageClientBaseUrl : "${createLink(absolute: true, uri: '/')}",
                 zoomFudgeFactor: 0.65
             };
@@ -268,23 +268,7 @@
                 imgvwr.areYouSure(options);
             });
 
-            $(".image-info-button").each(function() {
-                var imageId = $(this).closest("[imageId]").attr("imageId");
-                if (imageId) {
-                    $(this).qtip({
-                        content: {
-                            text: function(event, api) {
-                                $.ajax("${createLink(absolute: true, controller:'image', action:"imageTooltipFragment")}/" + imageId).then(function(content) {
-                                    api.set("content.text", content);
-                                },
-                                function(xhr, status, error) {
-                                    api.set("content.text", status + ": " + error);
-                                });
-                            }
-                        }
-                    });
-                }
-            });
+            imgvwr.bindImageTagTooltips();
 
             loadTags();
         });

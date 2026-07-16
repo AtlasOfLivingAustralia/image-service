@@ -329,30 +329,18 @@ class ImagesTagLib {
 
     /**
      * @attr markdown defaults to true, will invoke the markdown service
-     * @attr tooltipPosition (one of 'topLeft, 'topMiddle', 'topRight', 'bottomLeft', 'bottomMiddle', 'bottomRight')
-     * @attr tipPosition (one of 'topLeft, 'topMiddle', 'topRight', 'bottomLeft', 'bottomMiddle', 'bottomRight')
-     * @attr targetPosition (one of 'topLeft, 'topMiddle', 'topRight', 'bottomLeft', 'bottomMiddle', 'bottomRight')
+     * @attr placement (one of 'top', 'bottom', 'Left', 'Right')
      */
     def helpText = { attrs, body ->
         def mb = new MarkupBuilder(out)
         def helpText = (body() as String)?.trim()?.replaceAll("[\r\n]", "");
         if (helpText) {
             // helpText = markdownService.markdown(helpText)
-            def attributes = [href:'#', class:'fieldHelp', title:helpText, tabindex: "-1"]
-            if (attrs.tooltipPosition) {
-                attributes.tooltipPosition = attrs.tooltipPosition
+            def attributes = [href:'#', class:'fieldHelp', tabindex: "-1", "data-bs-toggle": "popover", "data-bs-trigger": "click",
+                              "data-bs-html": "true", "data-bs-content": helpText]
+            if (attrs.placement) {
+                attributes.placement = attrs.placement
             }
-            if (attrs.tipPosition) {
-                attributes.tipPosition = attrs.tipPosition
-            }
-            if (attrs.targetPosition) {
-                attributes.targetPosition = attrs.targetPosition
-            }
-
-            if (attrs.width) {
-                attributes.width = attrs.width
-            }
-
             mb.a(attributes) {
                 span(class:'help-container') {
                     mkp.yieldUnescaped('&nbsp;')
