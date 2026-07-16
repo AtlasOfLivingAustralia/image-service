@@ -17,7 +17,7 @@
             text-align: center;
         }
         </style>
-        <r:require modules="qtip,image-viewer"/>
+        <r:require modules="image-viewer"/>
     </head>
 
     <body class="content">
@@ -134,7 +134,7 @@
 
             $(document).ready(function () {
 
-                imgvwr.bindTooltips("a.fieldHelp", 650);
+                imgvwr.bindTooltips("a.fieldHelp");
 
                 $(".btnDeleteStagedFile").on('click', function (e) {
                     e.preventDefault();

@@ -121,14 +121,14 @@
     </g:if>
     <g:if test="${parentImage}">
         <tr>
-            <td colspan="2">
+            <td colspan="2" imageId="${parentImage.imageIdentifier}">
                 <h5>Parent image</h5>
                 <g:link controller="image" action="details" id="${parentImage.imageIdentifier}">
                 <img class="subimages_thumbs card" src="${g.createLink(controller: 'image', action: 'proxyImageThumbnail', params: ['id':parentImage.imageIdentifier])}"
                      alt="${ parentImage.imageIdentifier}"
                 />
                 </g:link>
-                <i class="fa fa-info-sign image-info-button"></i>
+                <i class="fa fa-info-circle image-tags-button"></i>
             </td>
         </tr>
     </g:if>
@@ -143,7 +143,7 @@
                             <img class="subimages_thumbs card" src="${g.createLink(controller: 'image', action: 'proxyImageThumbnail', params: ['id':subimage.imageIdentifier])}"
                                 alt="${ subimage.imageIdentifier}"
                             />
-                            <i class="fa fa-info-sign image-info-button"></i>
+                            <i class="fa fa-info-circle image-tags-button"></i>
                             </g:link>
                         </li>
                     </g:each>
