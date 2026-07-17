@@ -17,7 +17,8 @@
             text-align: center;
         }
         </style>
-        <r:require modules="image-viewer"/>
+        <asset:stylesheet src="ala/images-client.css"/>
+        <asset:javascript src="ala/images-client.js"/>
     </head>
 
     <body class="content">
