@@ -121,14 +121,14 @@
     </g:if>
     <g:if test="${parentImage}">
         <tr>
-            <td colspan="2">
+            <td colspan="2" data-image-id="${parentImage.imageIdentifier}">
                 <h5>Parent image</h5>
                 <g:link controller="image" action="details" id="${parentImage.imageIdentifier}">
                 <img class="subimages_thumbs card" src="${g.createLink(controller: 'image', action: 'proxyImageThumbnail', params: ['id':parentImage.imageIdentifier])}"
                      alt="${ parentImage.imageIdentifier}"
                 />
                 </g:link>
-                <i class="fa fa-info-sign image-info-button"></i>
+                <i class="fa fa-info-circle image-tags-button"></i>
             </td>
         </tr>
     </g:if>
@@ -138,12 +138,12 @@
                 <h5><g:message code="core.image.metadata.sub.images" /></h5>
                 <ul class="list-unstyled list-inline">
                     <g:each in="${subimages}" var="subimage">
-                        <li class="list-inline-item" imageId="${subimage.id}">
+                        <li class="list-inline-item" data-image-id="${subimage.id}">
                             <g:link controller="image" action="details" id="${subimage.imageIdentifier}">
                             <img class="subimages_thumbs card" src="${g.createLink(controller: 'image', action: 'proxyImageThumbnail', params: ['id':subimage.imageIdentifier])}"
                                 alt="${ subimage.imageIdentifier}"
                             />
-                            <i class="fa fa-info-sign image-info-button"></i>
+                            <i class="fa fa-info-circle image-tags-button"></i>
                             </g:link>
                         </li>
                     </g:each>

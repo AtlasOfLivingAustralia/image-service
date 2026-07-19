@@ -25,7 +25,7 @@ Individual file details for the upload ${batchFileUpload.id} received on upload 
 <div class="btn-toolbar">
     <div class="btn-group me-2 text-end" role="group" aria-label="First group">
         <button type="button" class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#helpModal">
-            <span class="fa fa-info-sign" aria-hidden="true"></span>
+            <span class="fa fa-info-circle" aria-hidden="true"></span>
             Help
         </button>
         <g:link controller="admin" action="batchUploads" class="btn-outline-dark btn">
