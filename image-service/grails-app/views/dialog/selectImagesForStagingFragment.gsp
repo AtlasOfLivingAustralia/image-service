@@ -14,7 +14,7 @@
 
         <div class="mb-3">
             <div class="controls">
-                <button id="btnCancelUploadImages" class="btn"><g:message code="select.images.for.staging.cancel" /></button>
+                <button id="btnCancelUploadImages" class="btn btn-outline-dark"><g:message code="select.images.for.staging.cancel" /></button>
                 <button id="btnUploadImages" class="btn btn-primary"><g:message code="select.images.for.staging.stage.images" /></button>
             </div>
         </div>
