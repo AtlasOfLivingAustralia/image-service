@@ -1,5 +1,5 @@
 <div>
-    <g:uploadForm  class="form-horizontal" action="uploadTagsFile">
+    <g:uploadForm action="uploadTagsFile">
 
         <p>
             The selected file should be simply a list of tag paths, with each hierarchical component separated by a slash '/'.
@@ -10,13 +10,13 @@
 /tag1/tag2/tag4
         </pre>
 
-        <div class="form-group">
-            <label class="form-control" for="tagfile">Tag file</label>
+        <div class="mb-3">
+            <label class="form-label" for="tagfile">Tag file</label>
             <input type="file" name="tagfile" id="tagfile" />
         </div>
 
-        <div class="form-group">
-            <button id="btnCancelUpload" class="btn btn-default">Cancel</button>
+        <div class="mb-3">
+            <button id="btnCancelUpload" class="btn btn-outline-dark">Cancel</button>
             <button id="btnUploadTags" type="submit" class="btn btn-primary">Load tags</button>
         </div>
     </g:uploadForm>

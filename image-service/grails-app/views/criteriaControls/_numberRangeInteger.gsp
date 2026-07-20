@@ -20,30 +20,30 @@
             <g:set var="evaluator" value="${new SearchCriteriaUtils.IntegerCriteriaTranslator(value as String)}" />
         </g:if>
 
-        <div class="radio">
+        <div class="form-check">
             <label>
-                <g:radio class="radioButton" name="operator" value="eq" checked="${evaluator == null || evaluator?.operator == 'eq' ? 'checked' : ''}"/>
+                <g:radio class="form-check-input radioButton" name="operator" value="eq" checked="${evaluator == null || evaluator?.operator == 'eq' ? 'checked' : ''}"/>
                 <g:message code="number.equal.to" />
             </label>
         </div>
 
-        <div class="radio">
+        <div class="form-check">
             <label>
-                <g:radio class="radioButton" name="operator" value="gt" checked="${evaluator?.operator == 'gt' ? 'checked' : ''}"/>
+                <g:radio class="form-check-input radioButton" name="operator" value="gt" checked="${evaluator?.operator == 'gt' ? 'checked' : ''}"/>
                 <g:message code="number.greater.than.or.equal.to" />
             </label>
         </div>
 
-        <div class="radio">
+        <div class="form-check">
             <label>
-                <g:radio class="radioButton" name="operator" value="lt" checked="${evaluator?.operator == 'lt' ? 'checked' : ''}" />
+                <g:radio class="form-check-input radioButton" name="operator" value="lt" checked="${evaluator?.operator == 'lt' ? 'checked' : ''}" />
                 <g:message code="number.less.than.or.equal.to" />
             </label>
         </div>
 
-        <div class="radio">
+        <div class="form-check">
             <label>
-                <g:radio class="radioButton" name="operator" value="bt" checked="${evaluator?.operator == 'bt' ? 'checked' : ''}" />
+                <g:radio class="form-check-input radioButton" name="operator" value="bt" checked="${evaluator?.operator == 'bt' ? 'checked' : ''}" />
                 <g:message code="number.date.range.between" />
             </label>
         </div>
@@ -52,7 +52,7 @@
         <g:textField class="form-control" name="numberValue" placeholder="Value" value="${evaluator?.value1}"/>
         <span class="numberRangeOther" style="display: ${evaluator?.operator == 'bt' ? 'inline-block' : 'none' }">
             &nbsp;<g:message code="number.and" />&nbsp;
-            <g:textField class="input-small" style="margin-left: 20px" name="numberValue2" placeholder="Value" value="${evaluator?.value2}"/>
+            <g:textField class="form-control form-control-sm" style="margin-left: 20px" name="numberValue2" placeholder="Value" value="${evaluator?.value2}"/>
         </span>
         <g:if test="${units}">
             <span>&nbsp;(${units})</span>

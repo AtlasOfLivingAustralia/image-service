@@ -12,34 +12,34 @@
     <body class="content">
         <div class="container-fluid">
             <h1>Advanced search</h1>
-            <div class="row-fluid">
-                <div class="well well-small">
-                    <button type="button" id="btnAddCriteria" class="btn btn-small btn-info"><i class="icon-plus icon-white"></i>&nbsp;<g:message code="advanced.search.add.criteria" /></button>
-                    <button type="button" id="btnSearch" class="btn btn-primary pull-right">
-                        <i class="icon-search icon-white"></i>&nbsp;<g:message code="advanced.search.list.search" />
+            <div class="row">
+                <div class="card p-3">
+                    <button type="button" id="btnAddCriteria" class="btn btn-sm btn-info"><i class="fa fa-plus"></i>&nbsp;<g:message code="advanced.search.add.criteria" /></button>
+                    <button type="button" id="btnSearch" class="btn btn-primary text-end">
+                        <i class="fa fa-search"></i>&nbsp;<g:message code="advanced.search.list.search" />
                     </button>
-                    <button type="button" id="btnStartOver" class="btn btn-default pull-right" style="margin-right: 5px">
-                        <i class="icon-remove-circle"></i>&nbsp;<g:message code="advanced.search.start.over" />
+                    <button type="button" id="btnStartOver" class="btn btn-outline-dark text-end" style="margin-right: 5px">
+                        <i class="fa fa-remove-circle"></i>&nbsp;<g:message code="advanced.search.start.over" />
                     </button>
-                    <div class="row-fluid">
+                    <div class="row">
                         <div id="searchCriteria">
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div id="addCriteriaModal" class="modal fade" role="dialog">
+        <div id="addCriteriaModal" class="modal fade">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <button type="button" class="close" data-dismiss="modal">&times;</button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         <h4 class="modal-title"><g:message code="advanced.search.add.search.criteria" /></h4>
                     </div>
                     <div class="modal-body">
                         <form id="criteriaForm">
-                            <div class="control-group">
-                                <label class="control-label" for='searchCriteriaDefinitionId'><g:message code="advanced.search.fragment.criteria" /></label>
-                                <g:select class="form-control" id="cmbCriteria" name="searchCriteriaDefinitionId" from="${criteriaDefinitions}"
+                            <div class="mb-3">
+                                <label class="col-form-label" for='searchCriteriaDefinitionId'><g:message code="advanced.search.fragment.criteria" /></label>
+                                <g:select class="form-select" id="cmbCriteria" name="searchCriteriaDefinitionId" from="${criteriaDefinitions}"
                                           optionValue="name" optionKey="id" noSelection="${[0:"<Select Criteria>"]}" />
                             </div>
                             <div id="criteriaDetail" style="margin-top:10px;">
@@ -48,8 +48,8 @@
                         </form>
                     </div>
                     <div class="modal-footer">
-                        <button id="btnSaveCriteria" type="button" class="btn btn-small btn-primary pull-right"><g:message code="advanced.search.add.criteria" /></button>
-                        <button type="button" class="btn btn-default" data-dismiss="modal"><g:message code="advanced.search.close" /></button>
+                        <button id="btnSaveCriteria" type="button" class="btn btn-sm btn-primary" style="order: 2;"><g:message code="advanced.search.add.criteria" /></button>
+                        <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal" style="order: 1;"><g:message code="advanced.search.close" /></button>
                     </div>
                 </div>
             </div>
@@ -62,7 +62,8 @@
         $(document).ready(function() {
             $("#btnAddCriteria").on('click', function (e) {
                 e.preventDefault();
-                $('#addCriteriaModal').modal('show');
+                var modal = new bootstrap.Modal(document.getElementById('addCriteriaModal'));
+                modal.show();
             });
 
             $("#btnStartOver").on('click', function(e) {
@@ -107,7 +108,7 @@
                     } else {
                         console.log(data);
                         renderCriteria()
-                        $('#addCriteriaModal').modal('hide');
+                        bootstrap.Modal.getInstance(document.getElementById('addCriteriaModal')).hide();
                     }
                 });
             });

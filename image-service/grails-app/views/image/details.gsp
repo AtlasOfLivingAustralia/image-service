@@ -28,37 +28,39 @@
         <div class="container-fluid" style="padding-left:1px; padding-top:0px;">
             <div class="row">
                 <div id="viewerContainerId" class="col-md-9">
-                    <g:if test="${!imageInstance.mimeType.startsWith('image')}">
-                    <div class="col-md-3"></div>
-                    <div class="col-md-6">
-                        <div class="document-icon" style="height: 500px; margin-bottom: 30px;"></div>
-                        <g:if test="${imageInstance.mimeType.startsWith('audio')}">
-                            <audio src="${createLink(controller: 'image', action:'proxyImage', params: [imageId: imageInstance.imageIdentifier])}" preload="auto" />
+                    <div class="row">
+                        <g:if test="${!imageInstance.mimeType.startsWith('image')}">
+                        <div class="col-md-3"></div>
+                        <div class="col-md-6">
+                            <div class="document-icon" style="height: 500px; margin-bottom: 30px;"></div>
+                            <g:if test="${imageInstance.mimeType.startsWith('audio')}">
+                                <audio src="${createLink(controller: 'image', action:'proxyImage', params: [imageId: imageInstance.imageIdentifier])}" preload="auto" />
+                            </g:if>
+                        </div>
+                        <div class="col-md-3"></div>
                         </g:if>
                     </div>
-                    <div class="col-md-3"></div>
-                    </g:if>
                 </div>
                 <div id="imageTabs" class="col-md-3">
                     <div class="tabbable" >
                         <ul class="nav nav-tabs">
-                            <li class="active">
-                                <a href="#tabProperties" data-toggle="tab">${mediaTitle}</a>
+                            <li class="nav-item">
+                                <a class="nav-link active" href="#tabProperties" data-bs-toggle="tab">${mediaTitle}</a>
                             </li>
                             <li>
-                                <a href="#tabExif" data-toggle="tab"><g:message code="details.embedded" /></a>
+                                <a class="nav-link" href="#tabExif" data-bs-toggle="tab"><g:message code="details.embedded" /></a>
                             </li>
                             <li>
-                                <a href="#tabSystem" data-toggle="tab"><g:message code="details.system" /></a>
+                                <a class="nav-link" href="#tabSystem" data-bs-toggle="tab"><g:message code="details.system" /></a>
                             </li>
                             <g:if test="${isImage}">
                                 <li>
-                                    <a href="#tabThumbnails" data-toggle="tab"><g:message code="details.thumbnails" /></a>
+                                    <a class="nav-link" href="#tabThumbnails" data-bs-toggle="tab"><g:message code="details.thumbnails" /></a>
                                 </li>
                             </g:if>
                             <auth:ifAnyGranted roles="${CASRoles.ROLE_ADMIN}">
                                 <li>
-                                    <a href="#tabAuditMessages" data-toggle="tab"><g:message code="details.audit" /></a>
+                                    <a class="nav-link" href="#tabAuditMessages" data-bs-toggle="tab"><g:message code="details.audit" /></a>
                                 </li>
                             </auth:ifAnyGranted>
                         </ul>
@@ -75,7 +77,7 @@
                                 <div class="metadataSource-container"></div>
                             </div>
                             <div class="tab-pane" id="tabSystem" metadataSource="${au.org.ala.images.MetaDataSourceType.SystemDefined}" >
-                                <table class="table table-bordered table-condensed table-striped">
+                                <table class="table table-bordered table-striped">
                                     <tr>
                                         <td class="property-name"><g:message code="details.data.resource.uid" /></td>
                                         <td class="property-value">${imageInstance.dataResourceUid}</td>
@@ -131,9 +133,9 @@
                             <div class="tab-pane" id="tabThumbnails">
                                 <ul class="list-unstyled list-inline">
                                     <g:each in="${squareThumbs}" var="thumbUrl">
-                                        <li>
+                                        <li class="list-inline-item">
                                             <a href="${thumbUrl}" target="thumbnail">
-                                                <img class="thumbnail" src="${thumbUrl}" style="width:100px;" title="${thumbUrl}" style="margin: 5px"/>
+                                                <img class="card" src="${thumbUrl}" style="width:100px;" title="${thumbUrl}" style="margin: 5px"/>
                                             </a>
                                         </li>
                                     </g:each>
@@ -184,7 +186,7 @@
 
             var options = {
                 auxDataUrl : "${auxDataUrl ? auxDataUrl : ''}",
-                imageServiceBaseUrl : "${createLink(absolute: true, uri: '/')}",
+                imageServiceBaseUrl : "${createLink(absolute: true, uri: '/').replaceFirst('/$', '')}",
                 imageClientBaseUrl : "${createLink(absolute: true, uri: '/')}",
                 zoomFudgeFactor: 0.65
             };
@@ -210,7 +212,7 @@
             $('#viewerContainerId .document-icon').css('background-position', 'center');
             </g:else>
 
-            $('a[data-toggle="tab"]').on('click', function (e) {
+            $('a[data-bs-toggle="tab"]').on('click', function (e) {
 
                 var dest = $($(this).attr("href"));
                 if (dest.attr("metadataSource")) {
@@ -266,23 +268,7 @@
                 imgvwr.areYouSure(options);
             });
 
-            $(".image-info-button").each(function() {
-                var imageId = $(this).closest("[imageId]").attr("imageId");
-                if (imageId) {
-                    $(this).qtip({
-                        content: {
-                            text: function(event, api) {
-                                $.ajax("${createLink(absolute: true, controller:'image', action:"imageTooltipFragment")}/" + imageId).then(function(content) {
-                                    api.set("content.text", content);
-                                },
-                                function(xhr, status, error) {
-                                    api.set("content.text", status + ": " + error);
-                                });
-                            }
-                        }
-                    });
-                }
-            });
+            imgvwr.bindImageTagTooltips();
 
             loadTags();
         });

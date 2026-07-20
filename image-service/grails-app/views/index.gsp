@@ -16,17 +16,15 @@
                 <p>
                 Some more words...
                 </p>
-                <div class="row-fluid">
-                    <div class="span8 offset2">
-                        <div class="form-horizontal">
-                            <div class="control-group">
-                                <label class="control-label" for="search">
-                                    Find images
-                                </label>
-                                <div class="controls">
-                                    <g:textField name="search" id="search"/>
-                                    <button class="btn" id="btnSearch">Search</button>
-                                </div>
+                <div class="row">
+                    <div class="col-8 offset-2">
+                        <div class="row mb-3">
+                            <label class="col-form-label col-sm-3" for="search">
+                                Find images
+                            </label>
+                            <div class="col-sm-9">
+                                <g:textField name="search" id="search" class="form-control"/>
+                                <button class="btn btn-primary mt-2" id="btnSearch">Search</button>
                             </div>
                         </div>
                     </div>

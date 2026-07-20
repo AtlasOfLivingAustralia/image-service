@@ -1,16 +1,16 @@
-<div class="form-horizontal">
+<div>
 
     <form>
         <label for="description">
             <g:message code="create.subimage.fragment.description" />
         </label>
-        <input id="description" type="text" class="form-control input-xlarge" name="description" value=""/>
+        <input id="description" type="text" class="form-control form-control-lg" name="description" value=""/>
     </form>
 
-    <div class="control-group">
+    <div class="mb-3">
         <div class="controls">
-            <btn class="btn btn-default" id="btnCancelSubimage"><g:message code="create.subimage.fragment.cancel" /></btn>
-            <btn class="btn btn-primary" id="btnCreateSubimage2"><g:message code="create.subimage.fragment.create.sub.image" /></btn>
+            <button class="btn btn-outline-dark" id="btnCancelSubimage"><g:message code="create.subimage.fragment.cancel" /></button>
+            <button class="btn btn-primary" id="btnCreateSubimage2"><g:message code="create.subimage.fragment.create.sub.image" /></button>
         </div>
     </div>
 </div>

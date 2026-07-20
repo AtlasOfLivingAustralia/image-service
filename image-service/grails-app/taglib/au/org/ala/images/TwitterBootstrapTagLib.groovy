@@ -97,14 +97,14 @@ class TwitterBootstrapTagLib {
         // display previous link when not on firststep
         if (currentstep > firststep) {
             linkParams.offset = offset - max
-            writer << '<li class="prev">'
-            writer << link(linkTagAttrs.clone()) {
+            writer << '<li class="page-item">'
+            writer << link(linkTagAttrs.clone() + [class: 'page-link'] ) {
                 (attrs.prev ?: messageSource.getMessage('paginate.prev', null, '&laquo;', locale))
             }
             writer << '</li>'
         } else {
-            writer << '<li class="prev disabled">'
-            writer << '<span>'
+            writer << '<li class="page-item disabled">'
+            writer << '<span class="page-link">'
             writer << (attrs.prev ?: messageSource.getMessage('paginate.prev', null, '&laquo;', locale))
             writer << '</span>'
             writer << '</li>'
@@ -112,7 +112,6 @@ class TwitterBootstrapTagLib {
 
         // display steps when steps are enabled and laststep is not firststep
         if (steps && laststep > firststep) {
-            linkTagAttrs.class = 'step'
 
             // determine begin and endstep paging variables
             int beginstep = currentstep - Math.round(maxsteps / 2) + (maxsteps % 2)
@@ -133,32 +132,32 @@ class TwitterBootstrapTagLib {
             // display firststep link when beginstep is not firststep
             if (beginstep > firststep) {
                 linkParams.offset = 0
-                writer << '<li>'
-                writer << link(linkTagAttrs.clone()) { firststep.toString() }
+                writer << '<li class="page-item">'
+                writer << link(linkTagAttrs.clone() + [class: 'page-link']) { firststep.toString() }
                 writer << '</li>'
-                writer << '<li class="disabled"><span>...</span></li>'
+                writer << '<li class="page-item disabled"><span class="page-link">...</span></li>'
             }
 
             // display paginate steps
             (beginstep..endstep).each { i ->
                 if (currentstep == i) {
-                    writer << "<li class=\"active\">"
-                    writer << "<span>${i}</span>"
+                    writer << "<li class=\"page-item active\" aria-current=\"page\">"
+                    writer << "<span class=\"page-link\">${i}</span>"
                     writer << "</li>";
                 } else {
                     linkParams.offset = (i - 1) * max
                     writer << "<li>";
-                    writer << link(linkTagAttrs.clone()) { i.toString() }
+                    writer << link(linkTagAttrs.clone() + [class: 'page-link']) { i.toString() }
                     writer << "</li>";
                 }
             }
 
             // display laststep link when endstep is not laststep
             if (endstep < laststep) {
-                writer << '<li class="disabled"><span>...</span></li>'
+                writer << '<li class="page-item disabled"><span class="page-link">...</span></li>'
                 linkParams.offset = (laststep - 1) * max
-                writer << '<li>'
-                writer << link(linkTagAttrs.clone()) { laststep.toString() }
+                writer << '<li class="page-item">'
+                writer << link(linkTagAttrs.clone() + [class: 'page-link']) { laststep.toString() }
                 writer << '</li>'
             }
         }
@@ -166,15 +165,15 @@ class TwitterBootstrapTagLib {
         // display next link when not on laststep
         if (currentstep < laststep) {
             linkParams.offset = offset + max
-            writer << '<li class="next">'
-            writer << link(linkTagAttrs.clone()) {
+            writer << '<li class="page-item">'
+            writer << link(linkTagAttrs.clone() + [class: 'page-link']) {
                 (attrs.next ? attrs.next : messageSource.getMessage('paginate.next', null, '&raquo;', locale))
             }
             writer << '</li>'
         } else {
             linkParams.offset = offset + max
-            writer << '<li class="disabled">'
-            writer << '<span>'
+            writer << '<li class="page-item disabled">'
+            writer << '<span class="page-link">'
             writer << (attrs.next ? attrs.next : messageSource.getMessage('paginate.next', null, '&raquo;', locale))
             writer << '</span>'
             writer << '</li>'
@@ -204,9 +203,9 @@ class TwitterBootstrapTagLib {
         def active = attrs.boolean('active')
         def link = attrs.link ?: '#'
         if (active) {
-            out << "<li class=\"active\">${value}</li>"
+            out << "<li class=\"breadcrumb-item active\" aria-current=\"page\">${value}</li>"
         } else {
-            out << "<li><a href=\"${link}\">${value}</a></li>"
+            out << "<li class=\"breadcrumb-item\"><a href=\"${link}\">${value}</a></li>"
         }
     }
 }

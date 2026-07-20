@@ -1,6 +1,6 @@
-<g:form controller="image" action="uploadStagingDataFile" method="post" enctype="multipart/form-data" class="form-horizontal">
+<g:form controller="image" action="uploadStagingDataFile" method="post" enctype="multipart/form-data">
 
-    <div class="control-group">
+    <div class="mb-3">
         <label for="dataFile"><g:message code="upload.staged.images.select.a.data.file" /></label>
         <div class="controls">
             <input type="file" name="dataFile" id="dataFile"/>
@@ -20,9 +20,9 @@
         </ul>
     </div>
 
-    <div class="control-group">
+    <div class="mb-3">
         <div class="controls">
-            <button class="btn" id="btnCancelDataFileUpload"><g:message code="upload.staged.images.cancel" /></button>
+            <button class="btn btn-outline-dark" id="btnCancelDataFileUpload"><g:message code="upload.staged.images.cancel" /></button>
             <g:submitButton class="btn btn-primary" name="Upload Data File"/>
         </div>
     </div>

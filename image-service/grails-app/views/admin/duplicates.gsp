@@ -1,4 +1,3 @@
-<%@ page import="au.org.ala.cas.util.AuthenticationUtils" %>
 <!doctype html>
 <html>
 <head>
@@ -37,9 +36,9 @@
             </g:each>
         </table>
 
-        <div class="pagination">
+        <nav>
             <tb:paginate total="${totalCount}" prev="" next="" />
-        </div>
+        </nav>
     </div>
 </body>
 </html>

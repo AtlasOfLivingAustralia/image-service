@@ -62,7 +62,7 @@ biocache:
 # header block
 headerAndFooter:
   version: 2
-  baseURL: "https://wp2019.ala.org.au/commonui-bs3-2019"
+  baseURL: "https://www.test.ala.org.au/commonui-bs5-2019"
 ala:
   baseURL: "http://l-a.site"
 bie:

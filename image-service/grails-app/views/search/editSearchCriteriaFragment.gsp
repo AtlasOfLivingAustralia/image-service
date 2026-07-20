@@ -15,7 +15,7 @@
 <%@ page defaultCodec="none" %>
 <div>
     <h4>${criteria?.criteriaDefinition?.name}</h4>
-    <div class="alert alert-error" id="errorMessageDiv" style="display: none">
+    <div class="alert alert-danger" id="errorMessageDiv" style="display: none">
     </div>
     <form id="criteriaForm">
         <g:hiddenField name="criteriaId" value="${criteria?.id}" />
@@ -25,8 +25,8 @@
 </div>
 
 <div id="buttonDiv">
-    <button id="btnSaveCriteria" type="button" class="btn btn-small btn-primary pull-right"><g:message code="edit.search.save.changes" /></button>
-    <button id="btnCancelEdit" style="margin-right: 10px" type="button" class="btn btn-small pull-right"><g:message code="edit.search.cancel" /></button>
+    <button id="btnSaveCriteria" type="button" class="btn btn-sm btn-primary" style="order: 2;"><g:message code="edit.search.save.changes" /></button>
+    <button id="btnCancelEdit" style="margin-right: 10px" type="button" class="btn btn-sm" style="order: 1;"><g:message code="edit.search.cancel" /></button>
 </div>
 
 

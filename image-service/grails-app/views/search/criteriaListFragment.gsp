@@ -22,8 +22,8 @@
             <li searchCriteriaId="${criteria.id}">
                 <div class="alert alert-info">
                     <img:searchCriteriaDescription criteria="${criteria}" />
-                    <button type="button" class="btn-danger btn-sm pull-right btnDeleteCriteria" title="Remove this search criteria">
-                        <i class="glyphicon glyphicon-icon-remove"> </i> <g:message code="criteria.list.delete" />
+                    <button type="button" class="btn btn-danger btn-sm float-end btnDeleteCriteria" title="Remove this search criteria">
+                        <i class="fa fa-remove"> </i> <g:message code="criteria.list.delete" />
                     </button>&nbsp;
                 </div>
             </li>
