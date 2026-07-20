@@ -22,7 +22,7 @@
 
     <div class="mb-3">
         <div class="controls">
-            <button class="btn" id="btnCancelDataFileUpload"><g:message code="upload.staged.images.cancel" /></button>
+            <button class="btn btn-outline-dark" id="btnCancelDataFileUpload"><g:message code="upload.staged.images.cancel" /></button>
             <g:submitButton class="btn btn-primary" name="Upload Data File"/>
         </div>
     </div>

@@ -52,7 +52,7 @@
                     <div class="controls">
                         <button type="button" id="btnDelete" class="btn btn-danger">Clear Failed Uploads</button>
                         <button type="submit" class="btn btn-primary">Preview</button>
-                        <g:link action="tools" class="btn">Cancel</g:link>
+                        <g:link action="tools" class="btn btn-outline-dark">Cancel</g:link>
                     </div>
                 </div>
             </g:form>

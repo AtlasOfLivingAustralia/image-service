@@ -4,7 +4,7 @@
         <label class="col-form-label" for="search">Apply an existing tag</label>
         <div class="controls">
             <input type="text" id="search" class="form-control" placeholder="Find tags">
-            <button id="btnSearchTags" class="btn"><i class="fa fa-search"></i>&nbsp;Search</button>&nbsp;OR&nbsp;<button id="btnAddAndSelectTag" class="btn"><i class="fa fa-plus"></i>&nbsp;Create a new tag</button>
+            <button id="btnSearchTags" class="btn btn-outline-dark"><i class="fa fa-search"></i>&nbsp;Search</button>&nbsp;OR&nbsp;<button id="btnAddAndSelectTag" class="btn btn-outline-dark"><i class="fa fa-plus"></i>&nbsp;Create a new tag</button>
         </div>
     </div>
 
@@ -16,7 +16,7 @@
     <div class="mb-3">
         <div class="controls">
             <button class="btn btn-primary" id="btnSelectTag">Select tag</button>
-            <button class="btn" id="btnCancelAttachTag">Cancel</button>
+            <button class="btn btn-outline-dark" id="btnCancelAttachTag">Cancel</button>
         </div>
     </div>
 </div>

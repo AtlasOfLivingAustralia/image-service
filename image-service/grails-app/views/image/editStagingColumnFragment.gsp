@@ -38,7 +38,7 @@
     <div class="mb-3">
 
         <div class="controls">
-            <button class="btn" id="btnCancelEditFieldDefinition"><g:message code="edit.staging.column.cancel" /></button>
+            <button class="btn btn-outline-dark" id="btnCancelEditFieldDefinition"><g:message code="edit.staging.column.cancel" /></button>
             <button class="btn btn-primary" id="btnSaveFieldDefinition"><g:message code="edit.staging.column.save" /></button>
         </div>
     </div>
