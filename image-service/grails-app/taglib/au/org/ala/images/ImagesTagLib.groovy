@@ -44,29 +44,25 @@ class ImagesTagLib {
             }
 
             if (!attrs.hideCrumbs) {
-                mb.nav(id:'breadcrumb') {
-                    ol {
-                        li {
+                mb.nav('aria-label':'breadcrumb') {
+                    ol(class: 'breadcrumb') {
+                        li(class: 'breadcrumb-item') {
                             a(href:createLink(uri:'/')) {
                                 mkp.yield("Home")
                             }
-                            span(class:"icon icon-arrow-right")
                         }
                         if (crumbList) {
                             for (int i = 0; i < crumbList?.size(); i++) {
                                 def item = crumbList[i]
-                                li {
+                                li(class: 'breadcrumb-item') {
                                     a(href: item.link) {
                                         mkp.yield(item.label)
                                     }
-                                    span(class:"icon icon-arrow-right")
                                 }
                             }
                         }
-                        li(class:'last') {
-                            span {
-                                mkp.yield(crumbLabel)
-                            }
+                        li(class: 'breadcrumb-item active', 'aria-current': 'page') {
+                            mkp.yield(crumbLabel)
                         }
                     }
                 }
@@ -205,8 +201,8 @@ class ImagesTagLib {
         def current = pageProperty(name:'page.pageTitle')?.toString()
 
         def mb = new MarkupBuilder(out)
-        mb.li(class: active == current ? 'active' : '') {
-            a(href:attrs.href) {
+        mb.li(class: 'nav-item') {
+            a(href:attrs.href , class: active == current ? 'nav-link active' : 'nav-link') {
 //                i(class:'icon-chevron-right') { mkp.yieldUnescaped('&nbsp;')}
                 mkp.yield(attrs.title)
             }
@@ -333,30 +329,18 @@ class ImagesTagLib {
 
     /**
      * @attr markdown defaults to true, will invoke the markdown service
-     * @attr tooltipPosition (one of 'topLeft, 'topMiddle', 'topRight', 'bottomLeft', 'bottomMiddle', 'bottomRight')
-     * @attr tipPosition (one of 'topLeft, 'topMiddle', 'topRight', 'bottomLeft', 'bottomMiddle', 'bottomRight')
-     * @attr targetPosition (one of 'topLeft, 'topMiddle', 'topRight', 'bottomLeft', 'bottomMiddle', 'bottomRight')
+     * @attr placement (one of 'top', 'bottom', 'Left', 'Right')
      */
     def helpText = { attrs, body ->
         def mb = new MarkupBuilder(out)
         def helpText = (body() as String)?.trim()?.replaceAll("[\r\n]", "");
         if (helpText) {
             // helpText = markdownService.markdown(helpText)
-            def attributes = [href:'#', class:'fieldHelp', title:helpText, tabindex: "-1"]
-            if (attrs.tooltipPosition) {
-                attributes.tooltipPosition = attrs.tooltipPosition
+            def attributes = [href:'#', class:'fieldHelp', tabindex: "-1", "data-bs-toggle": "popover", "data-bs-trigger": "click",
+                              "data-bs-html": "true", "data-bs-content": helpText]
+            if (attrs.placement) {
+                attributes.placement = attrs.placement
             }
-            if (attrs.tipPosition) {
-                attributes.tipPosition = attrs.tipPosition
-            }
-            if (attrs.targetPosition) {
-                attributes.targetPosition = attrs.targetPosition
-            }
-
-            if (attrs.width) {
-                attributes.width = attrs.width
-            }
-
             mb.a(attributes) {
                 span(class:'help-container') {
                     mkp.yieldUnescaped('&nbsp;')
@@ -404,20 +388,20 @@ class ImagesTagLib {
                 break
             case BatchService.LOADING:
             case BatchService.WAITING__PROCESSING:
-                out << "info"
+                out << "table-info"
                 break
             case BatchService.COMPLETE:
-                out << "success"
+                out << "table-success"
                 break
             case BatchService.PARTIALLY__COMPLETE:
-                out << "primary"
+                out << "table-primary"
                 break
             case BatchService.QUEUED:
-                out << "warning"
+                out << "table-warning"
                 break
             case BatchService.STOPPED:
             case BatchService.CORRUPT__AVRO__FILES:
-                out << "danger"
+                out << "table-danger"
                 break
         }
     }

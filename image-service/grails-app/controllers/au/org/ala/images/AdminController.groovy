@@ -416,7 +416,10 @@ class AdminController {
         redirect(action: 'clearFailedUploads')
     }
 
-    def localIngest() {}
+    def localIngest() {
+        def userId = authService.userId
+        [userId: userId]
+    }
 
     def reinitialiseImageIndex() {
         imageService.deleteIndex()

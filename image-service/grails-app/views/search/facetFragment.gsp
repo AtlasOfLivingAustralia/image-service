@@ -3,10 +3,12 @@
 <p>Note: Only the first ${grailsApplication.config.getProperty('elasticsearch.maxFacetSize')} are displayed</p>
 </g:if>
 
-<table class="table table-bordered table-condensed table-striped scrollTable" id="fullFacets">
+<table class="table table-bordered table-striped scrollTable" id="fullFacets">
 <thead>
-<th><g:message code="facet.${facet}" default="${facet}"/></th>
-<th><g:message code="facet.count" /></th>
+    <tr>
+        <th><g:message code="facet.${facet}" default="${facet}"/></th>
+        <th><g:message code="facet.count" /></th>
+    </tr>
 </thead>
 
 <tbody class="scrollContent">
@@ -23,7 +25,7 @@
             </g:else>
         </a>
     </td>
-    <td class="multiple-facet-count" style="border-right: none;">${facetField.value}</td>
+    <td class="multiple-facet-count">${facetField.value}</td>
 </tr>
 </g:each>
 </tbody>

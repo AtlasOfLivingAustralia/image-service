@@ -1,4 +1,4 @@
-<table class="table table-bordered table-condensed table-striped">
+<table class="table table-bordered table-striped">
     <g:if test="${imageInstance.dateDeleted}">
         <h5 class="alert alert-danger"><g:message code="core.image.metadata.this.image.is.deleted" /></h5>
     </g:if>
@@ -68,8 +68,8 @@
             <td class="property-value">
                 <g:if test="${imageInstance.mmPerPixel}">
                     <g:message code="core.image.metadata.mm.per.pixel" args="[imageInstance.mmPerPixel]" />
-                    <button id="btnResetLinearScale" type="button" class="btn btn-sm btn-default pull-right" title="Reset calibration">
-                        <i class="glyphicon glyphicon-remove"></i>
+                    <button id="btnResetLinearScale" type="button" class="btn btn-sm btn-outline-dark float-end" title="Reset calibration">
+                        <i class="fa fa-remove"></i>
                     </button>
                 </g:if>
                 <g:else>
@@ -121,14 +121,14 @@
     </g:if>
     <g:if test="${parentImage}">
         <tr>
-            <td colspan="2">
+            <td colspan="2" data-image-id="${parentImage.imageIdentifier}">
                 <h5>Parent image</h5>
                 <g:link controller="image" action="details" id="${parentImage.imageIdentifier}">
-                <img class="subimages_thumbs thumbnail" src="${g.createLink(controller: 'image', action: 'proxyImageThumbnail', params: ['id':parentImage.imageIdentifier])}"
+                <img class="subimages_thumbs card" src="${g.createLink(controller: 'image', action: 'proxyImageThumbnail', params: ['id':parentImage.imageIdentifier])}"
                      alt="${ parentImage.imageIdentifier}"
                 />
                 </g:link>
-                <i class="icon-info-sign image-info-button"></i>
+                <i class="fa fa-info-circle image-tags-button"></i>
             </td>
         </tr>
     </g:if>
@@ -138,12 +138,12 @@
                 <h5><g:message code="core.image.metadata.sub.images" /></h5>
                 <ul class="list-unstyled list-inline">
                     <g:each in="${subimages}" var="subimage">
-                        <li imageId="${subimage.id}">
+                        <li class="list-inline-item" data-image-id="${subimage.id}">
                             <g:link controller="image" action="details" id="${subimage.imageIdentifier}">
-                            <img class="subimages_thumbs thumbnail" src="${g.createLink(controller: 'image', action: 'proxyImageThumbnail', params: ['id':subimage.imageIdentifier])}"
+                            <img class="subimages_thumbs card" src="${g.createLink(controller: 'image', action: 'proxyImageThumbnail', params: ['id':subimage.imageIdentifier])}"
                                 alt="${ subimage.imageIdentifier}"
                             />
-                            <i class="icon-info-sign image-info-button"></i>
+                            <i class="fa fa-info-circle image-tags-button"></i>
                             </g:link>
                         </li>
                     </g:each>
@@ -153,26 +153,26 @@
     </g:if>
     <tr>
         <td colspan="2">
-            <g:link mapping="image_ws_url" params="[imageId:imageInstance.imageIdentifier + '.json',includeMetadata:true,includeTags:true]" title="View JSON metadata" class="btn btn-default">
-                <i class="glyphicon glyphicon-wrench"> </i>
+            <g:link mapping="image_ws_url" params="[imageId:imageInstance.imageIdentifier + '.json',includeMetadata:true,includeTags:true]" title="View JSON metadata" class="btn btn-outline-dark">
+                <i class="fa fa-wrench"> </i>
             </g:link>
             <g:if test="${isImage}">
-                <button class="btn btn-default" id="btnViewImage" title="View zoomable image"><span class="glyphicon glyphicon-eye-open"> </span></button>
+                <button class="btn btn-outline-dark" id="btnViewImage" title="View zoomable image"><span class="fa fa-eye"> </span></button>
             </g:if>
-            <a class="btn btn-default" href="${createLink(controller:'image', action:'getOriginalFile', id:imageInstance.id, params:[contentDisposition: 'true'])}" title="${g.message(code:'core.image.metadata.download', default: 'Download full image')}" target="imageWindow"><i class="glyphicon glyphicon-download-alt"></i></a>
+            <a class="btn btn-outline-dark" href="${createLink(controller:'image', action:'getOriginalFile', id:imageInstance.id, params:[contentDisposition: 'true'])}" title="${g.message(code:'core.image.metadata.download', default: 'Download full image')}" target="imageWindow"><i class="fa fa-download"></i></a>
             <g:if test="${isAdminView}">
                 <button class="btn btn-danger" id="btnDeleteImage" title="Delete image (admin)">
-                    <i class="glyphicon glyphicon-remove  glyphicon-white"></i>
+                    <i class="fa fa-remove"></i>
                 </button>
                 <g:if test="${isImage}">
                     <button class="btn btn-warning" id="btnResetTiles" title="Reset image tiles and zoom factor">
-                        <i class="glyphicon glyphicon-refresh glyphicon-white"></i>
+                        <i class="fa fa-refresh"></i>
                     </button>
                 </g:if>
             </g:if>
             <g:if test="${!isAdminView && (userId && userId.toString() == imageInstance.uploader) }">
                 <button class="btn btn-danger" id="btnDeleteImage" title="${g.message(code:'core.image.metadata.delete', default: 'Delete your image')}">
-                    <i class="glyphicon glyphicon-remove  glyphicon-white"></i>
+                    <i class="fa fa-remove"></i>
                 </button>
             </g:if>
             <g:if test="${isAdmin && !isAdminView}">

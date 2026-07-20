@@ -1,18 +1,18 @@
 <div>
 
-    <div class="form-group">
-        <label class="control-label" for="tag">Current name</label>
-        <input type="text" class="form-control input-lg" readonly="true" id="existing" value="${tagInstance.label}">
+    <div class="mb-3">
+        <label class="col-form-label" for="tag">Current name</label>
+        <input type="text" class="form-control form-control-lg" readonly="true" id="existing" value="${tagInstance.label}">
     </div>
 
-    <div class="form-group">
-        <label class="control-label" for="tag">New name</label>
-        <input type="text" class="form-control input-lg" id="tag" placeholder="${tagInstance.label}" value="${tagInstance.label}">
+    <div class="mb-3">
+        <label class="col-form-label" for="tag">New name</label>
+        <input type="text" class="form-control form-control-lg" id="tag" placeholder="${tagInstance.label}" value="${tagInstance.label}">
     </div>
 
-    <div class="form-group">
+    <div class="mb-3">
         <button class="btn btn-primary" id="btnRenameTag">Rename Tag</button>
-        <button class="btn btn-default" id="btnCancelRenameTag">Cancel</button>
+        <button class="btn btn-outline-dark" id="btnCancelRenameTag">Cancel</button>
     </div>
 </div>
 <script>
@@ -23,7 +23,7 @@
 
     $("#btnCancelRenameTag").on('click', function(e) {
         e.preventDefault();
-        $('#tagModal').modal('hide');
+        bootstrap.Modal.getInstance(document.getElementById('tagModal')).hide();
     });
 
     $("#btnRenameTag").on('click', function(e) {

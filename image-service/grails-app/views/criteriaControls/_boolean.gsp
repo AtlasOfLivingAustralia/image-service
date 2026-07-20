@@ -14,15 +14,15 @@
 --}%
 
 <div>
-    <div class="well well-small">
+    <div class="card p-3">
         ${criteriaDefinition.description}
         <div>
-            <label class="radio inline" style="white-space: nowrap">
-                <g:radio class="radioButton" name="value" value="true" checked="${value == null || value=='true' ? 'checked': '' }"/>
+            <label class="form-check form-check-inline" style="white-space: nowrap">
+                <g:radio class="form-check-input radioButton" name="value" value="true" checked="${value == null || value=='true' ? 'checked': '' }"/>
                 <g:message code="boolean.yes" />
             </label>
-            <label class="radio inline" style="white-space: nowrap">
-                <g:radio class="radioButton" name="value" value="lt" checked="${value == false ? 'checked' : ''}" />
+            <label class="form-check form-check-inline" style="white-space: nowrap">
+                <g:radio class="form-check-input radioButton" name="value" value="lt" checked="${value == false ? 'checked' : ''}" />
                 <g:message code="boolean.no" />
             </label>
         </div>

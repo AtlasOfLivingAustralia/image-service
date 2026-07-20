@@ -19,54 +19,53 @@
 <h2>
     Batch processing
 </h2>
-<div class="btn-toolbar">
-    <div class="btn-group mr-2 pull-right" role="group" aria-label="First group">
-        <button type="button" class="btn btn-default" data-toggle="modal" data-target="#helpModal">
-            <span class="glyphicon glyphicon-info-sign" aria-hidden="true"></span>
+<div class="btn-toolbar d-flex justify-content-end">
+    <div class="btn-group me-2" role="group" aria-label="First group">
+        <button type="button" class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#helpModal">
+            <span class="fa fa-info-circle" aria-hidden="true"></span>
             Help
         </button>
         <g:if test="${params.boolean('hideEmpty', true)}">
-            <g:link controller="admin" action="batchUploads" params="${[hideEmpty: false]}" class="btn-default btn">
-                <span class="glyphicon glyphicon-refresh" aria-hidden="true"></span>
+            <g:link controller="admin" action="batchUploads" params="${[hideEmpty: false]}" class="btn-outline-dark btn">
+                <span class="fa fa-refresh" aria-hidden="true"></span>
                 Show empty uploads
             </g:link>
         </g:if>
         <g:else>
-            <g:link controller="admin" action="batchUploads" class="btn-default btn">
-                <span class="glyphicon glyphicon-refresh" aria-hidden="true"></span>
+            <g:link controller="admin" action="batchUploads" class="btn-outline-dark btn">
+                <span class="fa fa-refresh" aria-hidden="true"></span>
                 Hide empty uploads
             </g:link>
         </g:else>
-        <g:link controller="admin" action="clearUploads" class="btn-default btn">
-            <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+        <g:link controller="admin" action="clearUploads" class="btn-outline-dark btn">
+            <span class="fa fa-remove" aria-hidden="true"></span>
             Purge all non-active uploads
         </g:link>
-        <g:link controller="admin" action="clearFileQueue" class="btn-default btn">
-            <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+        <g:link controller="admin" action="clearFileQueue" class="btn-outline-dark btn">
+            <span class="fa fa-remove" aria-hidden="true"></span>
             Purge all non-active from file queue
         </g:link>
     <g:if test="${batchServiceProcessingEnabled}">
         <g:link controller="admin" action="disableBatchProcessing" class="btn-primary btn">
-            <span class="glyphicon glyphicon-stop" aria-hidden="true"></span>
+            <span class="fa fa-stop" aria-hidden="true"></span>
             Disable batch processing
         </g:link>
     </g:if>
     <g:else>
         <g:link controller="admin" action="enableBatchProcessing" class="btn-info btn">
-            <span class="glyphicon glyphicon-play" aria-hidden="true"></span>
+            <span class="fa fa-play" aria-hidden="true"></span>
             Enable batch processing
         </g:link>
     </g:else>
     </div>
 </div>
 
-<div id="helpModal" class="modal fade" role="dialog">
-    <div class="modal-dialog" role="document">
+<div id="helpModal" class="modal fade">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title">Processing status Information</h3>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close">
                 </button>
             </div>
             <div class="modal-body">
@@ -102,7 +101,7 @@
                 </p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -110,8 +109,8 @@
 
 <h3>Loading (${active ? active.size() : 0})</h3>
 <g:if test="${active}">
-    <table class="table table-condensed table-bordered ">
-        <thead class="thead-dark">
+    <table class="table table-bordered ">
+        <thead class="table-dark">
         <th>batchID</th>
         <th>fileID</th>
         <th>dataResourceUid</th>
@@ -128,7 +127,7 @@
         </thead>
         <tbody>
         <g:each in="${active}" var="batchFile">
-            <tr class="${batchFile.status == 'LOADING' ? 'active' : ''} ${batchFile.status == 'COMPLETE' ? 'success' : ''} ${batchFile.status == 'QUEUED' ? 'warning' : ''} ${batchFile.status == 'STOPPED' ? 'danger' : ''}">
+            <tr class="${batchFile.status == 'LOADING' ? 'table-active' : ''} ${batchFile.status == 'COMPLETE' ? 'table-success' : ''} ${batchFile.status == 'QUEUED' ? 'table-warning' : ''} ${batchFile.status == 'STOPPED' ? 'table-danger' : ''}">
                 <td><g:link controller="admin" action="batchUpload" id="${batchFile.batchFileUpload.id}">
                     ${batchFile.batchFileUpload.id}
                 </g:link></td>
@@ -163,11 +162,11 @@
                 <td>${batchFile.status}</td>
                 <td>
                     <div class="btn-group" role="group">
-                        <g:link action="batchReloadFile" params="${[fileId: batchFile.id]}" class="btn btn-default btn-sm ">
-                            <span class="glyphicon glyphicon-refresh" aria-hidden="true"></span>
+                        <g:link action="batchReloadFile" params="${[fileId: batchFile.id]}" class="btn btn-outline-dark btn-sm ">
+                            <span class="fa fa-refresh" aria-hidden="true"></span>
                             Reload</g:link>
                         <g:link action="batchFileDeleteFromQueue" params="${[fileId: batchFile.id]}" class="btn btn-danger btn-sm ">
-                            <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+                            <span class="fa fa-remove" aria-hidden="true"></span>
                             Delete
                         </g:link>
                     </div>
@@ -184,8 +183,8 @@
 <h3>Queued files (${queued ? queued.size() : 0})</h3>
 <p>Showing first 10 in queue. Click file upload details to view complete list.</p>
 <g:if test="${queued}">
-    <table class="table table-condensed table-bordered ">
-    <thead class="thead-dark">
+    <table class="table table-bordered ">
+    <thead class="table-dark">
     <th>batchID</th>
     <th>fileID</th>
     <th>dataResourceUid</th>
@@ -213,11 +212,11 @@
             <td>${batchFile.status}</td>
             <td>
                 <div class="btn-group" role="group">
-                    <g:link action="batchReloadFile" params="${[fileId: batchFile.id]}" class="btn btn-default btn-sm ">
-                        <span class="glyphicon glyphicon-refresh" aria-hidden="true"></span>
+                    <g:link action="batchReloadFile" params="${[fileId: batchFile.id]}" class="btn btn-outline-dark btn-sm ">
+                        <span class="fa fa-refresh" aria-hidden="true"></span>
                         Reload</g:link>
                     <g:link action="batchFileDeleteFromQueue" params="${[fileId: batchFile.id]}" class="btn btn-danger btn-sm ">
-                        <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+                        <span class="fa fa-remove" aria-hidden="true"></span>
                         Delete
                     </g:link>
                 </div>
@@ -237,8 +236,8 @@
 days.
 </p>
 <g:if test="${results}">
-    <table class="table table-condensed table-bordered ">
-    <thead class="thead-dark">
+    <table class="table table-bordered ">
+    <thead class="table-dark">
         <th>batchID</th>
         <th>AVRO files</th>
         <th>dataResourceUid</th>
@@ -281,7 +280,7 @@ days.
             <td>${batchFileUpload.status}</td>
             <td>${batchFileUpload.message}</td>
             <td>
-                <g:link class="btn btn-default btn-sm" controller="admin" action="batchUpload" id="${batchFileUpload.id}">
+                <g:link class="btn btn-outline-dark btn-sm" controller="admin" action="batchUpload" id="${batchFileUpload.id}">
                 View details
                 </g:link>
             </td>

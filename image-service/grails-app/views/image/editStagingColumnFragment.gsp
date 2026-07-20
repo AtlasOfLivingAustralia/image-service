@@ -1,11 +1,11 @@
 <%@ page import="au.org.ala.images.StagingColumnType; au.org.ala.images.StagingColumnDefinition; au.org.ala.images.DarwinCoreField" %>
-<div class="form-horizontal">
+<div>
 
-    <div class="control-group">
-        <label class="control-label" for="fieldType"><g:message code="edit.staging.column.field.type" /></label>
+    <div class="mb-3">
+        <label class="col-form-label" for="fieldType"><g:message code="edit.staging.column.field.type" /></label>
         <div class="controls">
-            <g:select class="fieldType" name="fieldType" from="${StagingColumnType.values()}" value="${fieldDefinition?.fieldDefinitionType}"/>
-            <img:helpText tooltipPosition="topMiddle" targetPosition="bottomMiddle" tipPosition="topMiddle" width="600">
+            <g:select class="form-select fieldType" name="fieldType" from="${StagingColumnType.values()}" value="${fieldDefinition?.fieldDefinitionType}"/>
+            <img:helpText placement="top">
                 <ul>
                     <li><g:message code="edit.staging.column.li1" /></li>
                     <li><g:message code="edit.staging.column.li2" /></li>
@@ -16,29 +16,29 @@
     </div>
 
     <div id="formatBlock">
-        <div class="control-group">
-            <label class="control-label" for="definition" id="formatLabel"><g:message code="edit.staging.column.definition.value" /></label>
+        <div class="mb-3">
+            <label class="col-form-label" for="definition" id="formatLabel"><g:message code="edit.staging.column.definition.value" /></label>
             <div class="controls">
-                <g:textField name="definition" value="${fieldDefinition?.format}" />
+                <g:textField class="form-control" name="definition" value="${fieldDefinition?.format}" />
 
                 <g:if test="${hasDataFile && dataFileColumns}">
-                    <g:select name="dataFileColumn" from="${dataFileColumns}" value="${fieldDefinition?.format}" />
+                    <g:select  class="form-select" name="dataFileColumn" from="${dataFileColumns}" value="${fieldDefinition?.format}" />
                 </g:if>
             </div>
         </div>
     </div>
 
-    <div class="control-group">
-        <label class="control-label" for="fieldName">Field name</label>
+    <div class="mb-3">
+        <label class="col-form-label" for="fieldName">Field name</label>
         <div class="controls">
-            <g:textField name="fieldName" value="${fieldDefinition?.fieldName}" />
+            <g:textField class="form-control" name="fieldName" value="${fieldDefinition?.fieldName}" />
         </div>
     </div>
 
-    <div class="control-group">
+    <div class="mb-3">
 
         <div class="controls">
-            <button class="btn" id="btnCancelEditFieldDefinition"><g:message code="edit.staging.column.cancel" /></button>
+            <button class="btn btn-outline-dark" id="btnCancelEditFieldDefinition"><g:message code="edit.staging.column.cancel" /></button>
             <button class="btn btn-primary" id="btnSaveFieldDefinition"><g:message code="edit.staging.column.save" /></button>
         </div>
     </div>

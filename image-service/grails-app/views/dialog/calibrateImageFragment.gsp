@@ -1,18 +1,18 @@
-<div class="form-horizontal">
-    <div class="control-group">
+<div>
+    <div class="mb-3">
         <g:message code="calibrate.image.how.long" />
     </div>
-    <div class="control-group">
+    <div class="mb-3">
         <div class="controls">
             <g:textField class="form-control" name="pixelLength" value="${pixelLength}"/> pixels =
             <g:textField class="form-control" name="mmLength" value="" />
-            <g:select name="units" class="input-small" from="${['mm','inches', 'metres','feet']}" value="mm"/>
+            <g:select name="units" class="form-select form-select-sm" from="${['mm','inches', 'metres','feet']}" value="mm"/>
         </div>
     </div>
-    <div class="control-group">
+    <div class="mb-3">
         <div class="controls">
             <button class="btn btn-primary" id="btnCalibrateImageScale">Update</button>
-            <button class="btn btn-default" id="btnCancelCalibrateImageScale">Cancel</button>
+            <button class="btn btn-outline-dark" id="btnCancelCalibrateImageScale">Cancel</button>
         </div>
     </div>
 </div>

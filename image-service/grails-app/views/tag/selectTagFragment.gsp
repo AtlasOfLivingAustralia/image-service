@@ -1,22 +1,22 @@
-<div class="form-horizontal">
+<div>
 
-    <div class="control-group">
-        <label class="control-label" for="search">Apply an existing tag</label>
+    <div class="mb-3">
+        <label class="col-form-label" for="search">Apply an existing tag</label>
         <div class="controls">
-            <input type="text" id="search" placeholder="Find tags">
-            <button id="btnSearchTags" class="btn"><i class="icon-search"></i>&nbsp;Search</button>&nbsp;OR&nbsp;<button id="btnAddAndSelectTag" class="btn"><i class="icon-plus"></i>&nbsp;Create a new tag</button>
+            <input type="text" id="search" class="form-control" placeholder="Find tags">
+            <button id="btnSearchTags" class="btn btn-outline-dark"><i class="fa fa-search"></i>&nbsp;Search</button>&nbsp;OR&nbsp;<button id="btnAddAndSelectTag" class="btn btn-outline-dark"><i class="fa fa-plus"></i>&nbsp;Create a new tag</button>
         </div>
     </div>
 
-    <div class="well well-small">
+    <div class="card p-3">
         <div id="tagContainer"></div>
     </div>
 
 
-    <div class="control-group">
+    <div class="mb-3">
         <div class="controls">
             <button class="btn btn-primary" id="btnSelectTag">Select tag</button>
-            <button class="btn" id="btnCancelAttachTag">Cancel</button>
+            <button class="btn btn-outline-dark" id="btnCancelAttachTag">Cancel</button>
         </div>
     </div>
 </div>

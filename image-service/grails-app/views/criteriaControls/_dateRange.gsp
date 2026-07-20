@@ -25,23 +25,23 @@
             <g:set var="evaluator" value="${new SearchCriteriaUtils.DateRangeCriteriaTranslator(value as String)}" />
         </g:if>
 
-<div class="radio">
+<div>
 
-    <div class="radio">
-        <label>
-            <g:radio class="radioButton" name="operator" value="lt" checked="${evaluator == null || evaluator?.operator == 'lt' ? 'checked' : ''}"/>
+    <div class="form-check">
+        <label class="form-check-label">
+            <g:radio class="form-check-input radioButton" name="operator" value="lt" checked="${evaluator == null || evaluator?.operator == 'lt' ? 'checked' : ''}"/>
             <g:message code="date.range.before" />
         </label>
     </div>
-    <div class="radio">
-        <label>
-            <g:radio class="radioButton" name="operator" value="gt" checked="${evaluator?.operator == 'gt' ? 'checked' : ''}" />
+    <div class="form-check">
+        <label class="form-check-label">
+            <g:radio class="form-check-input radioButton" name="operator" value="gt" checked="${evaluator?.operator == 'gt' ? 'checked' : ''}" />
             <g:message code="date.range.after" />
         </label>
     </div>
-    <div class="radio">
-        <label>
-            <g:radio class="radioButton" name="operator" value="bt" checked="${evaluator?.operator == 'bt' ? 'checked' : ''}" />
+    <div class="form-check">
+        <label class="form-check-label">
+            <g:radio class="form-check-input radioButton" name="operator" value="bt" checked="${evaluator?.operator == 'bt' ? 'checked' : ''}" />
             <g:message code="date.range.between" />
         </label>
     </div>

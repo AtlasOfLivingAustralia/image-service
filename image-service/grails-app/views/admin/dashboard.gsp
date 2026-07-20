@@ -21,55 +21,57 @@
             <div class="alert alert-warning" style="display: block">WARNING: CAS authentication disabled - this means admin functions are exposed!</div>
         </g:if>
 
-        <div class="well well-small">
-            <h4>Database statistics <i id="update-repo-stats" style="cursor: pointer" class="fa fa-refresh" title="${g.message(code: 'admin.stats.refresh', default: 'Click here to refresh database stats')}"></i></h4>
-            <table id="statTable" class="table table-striped">
-                <tr>
-                    <td class="col-md-6">Image count </td>
-                    <td class="col-md-6"><span id="statImageCount"><asset:image src="spinner.gif" /></span></td>
-                </tr>
-                <tr>
-                    <td class="col-md-6">Deleted image count</td>
-                    <td class="col-md-6"><span id="statDeletedImageCount"><asset:image src="spinner.gif" /></span></td>
-                </tr>
-                <tr>
-                    <td class="col-md-6">Licences count</td>
-                    <td class="col-md-6"><span id="statLicenceCount"><asset:image src="spinner.gif" /></span></td>
-                </tr>
-                <tr>
-                    <td class="col-md-6">Licence mapping count</td>
-                    <td class="col-md-6"><span id="statLicenceMappingCount"><asset:image src="spinner.gif" /></span></td>
-                </tr>
-            </table>
-            <p>Note: these counts are taken from the database, not the search index.</p>
-            <h4 style="margin-top:40px;">Background processing</h4>
-            <table class="table">
-                <tr>
-                    <td class="col-md-6">
-                        Batch (AVRO) uploads
-                    </td>
-                    <td class="col-md-6">
-                        <span id="batchUploads"><asset:image src="spinner.gif" /></span>
-                    </td>
-                </tr>
-                <tr>
-                    <td class="col-md-6">
-                        Import/Thumbnail/Delete queue size
-                    </td>
-                    <td class="col-md-6">
-                        <span id="statQueueSize"><asset:image src="spinner.gif" /></span>
-                    </td>
-                </tr>
-                <tr>
-                    <td class="col-md-6">
-                        Tiling queue size
-                    </td>
-                    <td class="col-md-6">
-                        <span id="tilingQueueSize"><asset:image src="spinner.gif" /></span>
-                    </td>
-                </tr>
+        <div class="card p-3 bg-light">
+            <div class="card-body">
+                <h4>Database statistics <i id="update-repo-stats" style="cursor: pointer" class="fa fa-refresh" title="${g.message(code: 'admin.stats.refresh', default: 'Click here to refresh database stats')}"></i></h4>
+                <table id="statTable" class="table table-striped">
+                    <tr>
+                        <td class="col-md-6">Image count </td>
+                        <td class="col-md-6"><span id="statImageCount"><asset:image src="spinner.gif" /></span></td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-6">Deleted image count</td>
+                        <td class="col-md-6"><span id="statDeletedImageCount"><asset:image src="spinner.gif" /></span></td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-6">Licences count</td>
+                        <td class="col-md-6"><span id="statLicenceCount"><asset:image src="spinner.gif" /></span></td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-6">Licence mapping count</td>
+                        <td class="col-md-6"><span id="statLicenceMappingCount"><asset:image src="spinner.gif" /></span></td>
+                    </tr>
+                </table>
+                <p class="mt-4">Note: these counts are taken from the database, not the search index.</p>
+                <h4 style="margin-top:40px;">Background processing</h4>
+                <table class="table">
+                    <tr>
+                        <td class="col-md-6">
+                            Batch (AVRO) uploads
+                        </td>
+                        <td class="col-md-6">
+                            <span id="batchUploads"><asset:image src="spinner.gif" /></span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-6">
+                            Import/Thumbnail/Delete queue size
+                        </td>
+                        <td class="col-md-6">
+                            <span id="statQueueSize"><asset:image src="spinner.gif" /></span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-6">
+                            Tiling queue size
+                        </td>
+                        <td class="col-md-6">
+                            <span id="tilingQueueSize"><asset:image src="spinner.gif" /></span>
+                        </td>
+                    </tr>
 
-            </table>
+                </table>
+            </div>
         </div>
         <script>
 

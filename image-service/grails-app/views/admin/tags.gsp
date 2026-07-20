@@ -18,35 +18,40 @@
         <content tag="pageTitle">Tags</content>
         <content tag="adminButtonBar" />
 
-        <div class="row">
-            <div class="col-md-12">
-                <form class="form-inline">
-                    <button class="btn btn-success" id="btnCreateNewTag"><i class="glyphicon glyphicon-plus "> </i>&nbsp;Add</button>
-                    <button class="btn btn-default" id="btnRenameSelectedTag">Rename</button>
+        <div class="row mb-3">
+            <div class="col-12">
+                <form class="d-flex flex-wrap gap-2 align-items-center">
+                    <button class="btn btn-success" id="btnCreateNewTag"><i class="fa fa-plus "> </i>&nbsp;Add</button>
+                    <button class="btn btn-outline-dark" id="btnRenameSelectedTag">Rename</button>
                     <button class="btn btn-danger" id="btnDeleteSelectedTag">
-                        <i class="glyphicon glyphicon-remove glyphicon-white"></i>&nbsp;Delete
+                        <i class="fa fa-remove"></i>&nbsp;Delete
                     </button>
-                    <button class="btn btn-default pull-right" id="btnUploadTags"><i class="glyphicon glyphicon-upload"> </i>&nbsp;Upload tags from CSV file</button>
-                    <input type="text" id="searchTags" class="form-control input" placeholder="Find tags">
-                    <button id="btnSearchTags" class="btn btn-default"><i class="glyphicon glyphicon-search"> </i>&nbsp;Search</button>
+                    <div class="d-flex align-items-center gap-2">
+                        <input type="text"
+                               id="searchTags"
+                               class="px-3 py-2 border rounded"
+                               placeholder="Find tags">
+                    </div>
+                    <button id="btnSearchTags" class="btn btn-outline-dark"><i class="fa fa-search"> </i>&nbsp;Search</button>
+                    <button class="btn btn-outline-dark ms-auto" id="btnUploadTags"><i class="fa fa-arrow-circle-up"> </i>&nbsp;Upload tags from CSV file</button>
                 </form>
             </div>
         </div>
 
-        <div class="row" style="margin-top:10px;">
-            <div class="col-md-12">
-                <div id="tagContainer" class="well well-small">
+        <div class="row">
+            <div class="col-12">
+                <div id="tagContainer" class="card p-3">
                     <img:spinner />
                 </div>
             </div>
         </div>
 
-        <div id="tagModal" class="modal fade" role="dialog">
+        <div id="tagModal" class="modal fade" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <button type="button" class="close" data-dismiss="modal">&times;</button>
                         <h4 class="modal-title">Tags</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
 
