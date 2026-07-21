@@ -3,7 +3,8 @@
 ####
 # Send the deploy notification to Datadog
 #
-# variables must be set as environment variables in the pipeline
+# variables must be set as environment variables in the pipeline.  This is called by the
+# deploy notification buildspec in each components pipeline deploy_notification_buildspec.yaml
 
 # if this is a PR inject a link
 COMMIT_MSG=$(echo $COMMIT_MSG | sed "s~\(Merge pull request #\([0-9]*\)\)~[\1](https://github.com/$REPO/pull/\2)~g")

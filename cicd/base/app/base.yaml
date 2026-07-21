@@ -1,82 +1,102 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 
 Description: Base resources for the Images service
 
 Parameters:
   pBuild:
-    Type: String
     Description: The build number
+    Type: String
+
   pBackupBucket:
-    Type: String
     Description: The backup bucket
+    Type: String
+
   pImagesBucket:
-    Type: String
     Description: The images bucket
+    Type: String
+
   pCleanBranch:
-    Type: String
     Description: The clean branch, can be used in resource names
+    Type: String
+
   pEnvironment:
-    Type: String
     Description: The AWS environment this belongs to
+    Type: String
+
   pProductComponent:
-    Type: String
     Description: The product component
+    Type: String
+
   pProductName:
-    Type: String
     Description: The name of the product
+    Type: String
+
   pOidcConnectProvider:
-    Type: String
     Description: The OIDC connect provider
+    Type: String
+
   pClusterOidcIssuerUrl:
-    Type: String
     Description: The OIDC issuer URL for the cluster
+    Type: String
+
   pCognitoStackName:
-    Type: String
     Description: The name of the Cognito stack
+    Type: String
+
   pAppClientDomain:
-    Type: String
     Description: The domain for the app client
+    Type: String
+
   pSecretName:
-    Type: String
     Description: The name of the secret
-  pEksNamespace:
     Type: String
+
+  pEksNamespace:
     Description: The EKS namespace
+    Type: String
 
 Conditions:
-
   IsDev: !Equals
     - !Ref pEnvironment
     - development
+
   NotProd: !Not
     - !Equals
       - !Ref pEnvironment
       - production
-  IsFirstBuild: !Equals [!Ref pBuild, "1"]
+
+  IsFirstBuild: !Equals
+    - !Ref pBuild
+    - "1"
 
 Resources:
-
   ImagesRepository:
     Type: AWS::ECR::Repository
     Properties:
-      EmptyOnDelete: !If [ NotProd, true, false ]
+      EmptyOnDelete: !If
+        - NotProd
+        - true
+        - false
       EncryptionConfiguration:
         EncryptionType: AES256
       ImageScanningConfiguration:
         ScanOnPush: true
       RepositoryName: !Sub
-                         - ${pProductName}-${ResourceName}
-                         - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+        - ${pProductName}-${ResourceName}
+        - ResourceName: !If
+            - IsDev
+            - !Ref pCleanBranch
+            - !Ref pEnvironment
       RepositoryPolicyText:
-        Version: 2012-10-17
+        Version: "2012-10-17"
         Statement:
           - Sid: AllowPublicPull
             Effect: Allow
             Principal: '*'
             Action:
-              - 'ecr:GetDownloadUrlForLayer'
-              - 'ecr:BatchGetImage'
-              - 'ecr:BatchCheckLayerAvailability'
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
       Tags:
         - Key: Environment
           Value: !Ref pEnvironment
@@ -95,7 +115,7 @@ Resources:
              "db-password" : "",
              "cas-client-secret": ""
           }
-        - !Ref "AWS::NoValue"
+        - !Ref AWS::NoValue
 
   ImagesRole:
     Type: AWS::IAM::Role
@@ -121,39 +141,39 @@ Resources:
                 "Effect": "Allow",
                 "Principal": {
                   "Service":  "ec2.amazonaws.com"
-                
+
                 },
                 "Action": "sts:AssumeRole"
               }
           ]
         }
-      Description: !Sub 'Ec2 instance profile role for ${AWS::StackName} ${pEnvironment} build ${pBuild}'
+      Description: !Sub Ec2 instance profile role for ${AWS::StackName} ${pEnvironment} build ${pBuild}
       ManagedPolicyArns:
         - !Sub arn:aws:iam::${AWS::AccountId}:policy/cpt/cptSSMInstanceCoreCloudWatchPatch
       Policies:
         - PolicyDocument:
             Version: "2012-10-17"
             Statement:
-            - Effect: Allow
-              Action:
-                - 'secretsmanager:getsecretvalue'
-              Resource:
-                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${pSecretName}*
+              - Effect: Allow
+                Action:
+                  - secretsmanager:getsecretvalue
+                Resource:
+                  - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${pSecretName}*
           PolicyName: secrets
         - PolicyDocument:
             Version: "2012-10-17"
             Statement:
-            - Effect: Allow
-              Action:
-                - s3:DeleteObject
-                - s3:DeleteObjectVersion
-                - s3:GetBucketLocation
-                - s3:GetObject
-                - s3:ListBucket
-                - s3:PutObject
-              Resource:
-                - !Sub arn:aws:s3:::${pBackupBucket}
-                - !Sub arn:aws:s3:::${pBackupBucket}/*
+              - Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:aws:s3:::${pBackupBucket}
+                  - !Sub arn:aws:s3:::${pBackupBucket}/*
           PolicyName: backups
         - PolicyDocument:
             Version: "2012-10-17"
@@ -173,12 +193,15 @@ Resources:
                   - !Sub arn:aws:s3:::${pImagesBucket}
                   - !Sub arn:aws:s3:::${pImagesBucket}/*
           PolicyName: imagesBucket
-      RoleName: !Sub '${AWS::StackName}--${pEnvironment}--${pBuild}'
+      RoleName: !Sub ${AWS::StackName}--${pEnvironment}--${pBuild}
       Tags:
         - Key: Name
-          Value: !Sub 
-              - ${pProductName}-${ResourceName}
-              - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+          Value: !Sub
+            - ${pProductName}-${ResourceName}
+            - ResourceName: !If
+                - IsDev
+                - !Ref pCleanBranch
+                - !Ref pEnvironment
 
   AppClient:
     Type: AWS::Cognito::UserPoolClient
@@ -195,11 +218,14 @@ Resources:
         - ala/attrs
       AuthSessionValidity: 3
       CallbackURLs:
-        - !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+        - !Sub https://${pAppClientDomain}/callback?client_name=OidcClient
       ClientName: !Sub
         - ${pProductName}-${ResourceName}
-        - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
-      DefaultRedirectURI: !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+        - ResourceName: !If
+            - IsDev
+            - !Ref pCleanBranch
+            - !Ref pEnvironment
+      DefaultRedirectURI: !Sub https://${pAppClientDomain}/callback?client_name=OidcClient
       EnablePropagateAdditionalUserContextData: True
       EnableTokenRevocation: True
       ExplicitAuthFlows:
@@ -210,8 +236,8 @@ Resources:
       GenerateSecret: True
       IdTokenValidity: 60
       LogoutURLs:
-        - !Sub "https://${pAppClientDomain}"
-        - !Sub "https://${pAppClientDomain}/"
+        - !Sub https://${pAppClientDomain}
+        - !Sub https://${pAppClientDomain}/
       PreventUserExistenceErrors: ENABLED
       RefreshTokenValidity: 30
       SupportedIdentityProviders:
@@ -240,11 +266,14 @@ Resources:
         - users/read
       AuthSessionValidity: 3
       CallbackURLs:
-        - !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+        - !Sub https://${pAppClientDomain}/callback?client_name=OidcClient
       ClientName: !Sub
         - ${pProductName}-${ResourceName}-server-to-server
-        - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
-      DefaultRedirectURI: !Sub "https://${pAppClientDomain}/callback?client_name=OidcClient"
+        - ResourceName: !If
+            - IsDev
+            - !Ref pCleanBranch
+            - !Ref pEnvironment
+      DefaultRedirectURI: !Sub https://${pAppClientDomain}/callback?client_name=OidcClient
       EnablePropagateAdditionalUserContextData: True
       EnableTokenRevocation: True
       ExplicitAuthFlows:
@@ -255,7 +284,7 @@ Resources:
       GenerateSecret: True
       IdTokenValidity: 60
       LogoutURLs:
-        - !Sub "https://${pAppClientDomain}"
+        - !Sub https://${pAppClientDomain}
       PreventUserExistenceErrors: ENABLED
       RefreshTokenValidity: 30
       SupportedIdentityProviders:
@@ -276,7 +305,10 @@ Resources:
     Properties:
       BucketName: !Sub
         - ala-${pProductName}-${ResourceName}-alb-access-logs
-        - ResourceName: !If [ IsDev, !Ref pCleanBranch, !Ref pEnvironment ]
+        - ResourceName: !If
+            - IsDev
+            - !Ref pCleanBranch
+            - !Ref pEnvironment
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -284,10 +316,10 @@ Resources:
         RestrictPublicBuckets: true
       LifecycleConfiguration:
         Rules:
-          - Id: "ExpireOldLogs"
+          - Id: ExpireOldLogs
             Status: Enabled
             ExpirationInDays: 90
-            Prefix: "logs/"
+            Prefix: logs/
       OwnershipControls:
         Rules:
           - ObjectOwnership: ObjectWriter
@@ -305,18 +337,28 @@ Resources:
           - Sid: AllowELBAccess
             Effect: Allow
             Principal:
-              Service: "logdelivery.elasticloadbalancing.amazonaws.com"
-            Action: "s3:PutObject"
-            Resource: !Sub "arn:aws:s3:::${LoadBalancerAccessLogsBucket}/logs/AWSLogs/${AWS::AccountId}/*"
+              Service: logdelivery.elasticloadbalancing.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub arn:aws:s3:::${LoadBalancerAccessLogsBucket}/logs/AWSLogs/${AWS::AccountId}/*
+          - Sid: TLSAccessOnly
+            Action:
+              - s3:*
+            Effect: Deny
+            Resource:
+              - !Sub arn:aws:s3:::${LoadBalancerAccessLogsBucket}
+              - !Sub arn:aws:s3:::${LoadBalancerAccessLogsBucket}/*
+            Principal: '*'
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
 
 Outputs:
-
   ImagesRepositoryArn:
     Description: The ECR repository ARN for the Images service
     Value: !GetAtt ImagesRepository.Arn
 
   ImagesRepositoryName:
-    Description: The ECR repository ARN for the Images service
+    Description: The ECR repository name for the Images service
     Value: !Ref ImagesRepository
 
   ImagesRepositoryUri:

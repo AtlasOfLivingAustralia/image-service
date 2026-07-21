@@ -2,12 +2,12 @@ version: 0.2
 
 env:
   shell: bash
-  variables:
-    JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
 
 phases:
   install:
     commands:
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
       - echo Installing dependencies...
       - cat /etc/lsb-release
       - apt update -y
@@ -27,12 +27,11 @@ phases:
         else
           echo "Release $HELM_RELEASE_NAME does not exist."
         fi
+      - echo "Deleting Elasticsearch resources kept by helm.sh/resource-policy=keep..."
+      - kubectl delete deployment elasticsearch-images-$CLEAN_BRANCH -n $EKS_NAMESPACE --ignore-not-found
+      - kubectl delete service elasticsearch-images-$CLEAN_BRANCH -n $EKS_NAMESPACE --ignore-not-found
+      - kubectl delete pvc elasticsearch-images-$CLEAN_BRANCH-pvc elasticsearch-images-$CLEAN_BRANCH-backups-pvc -n $EKS_NAMESPACE --ignore-not-found
   post_build:
     commands:
       - echo Post-build phase...
       - echo Build completed on $(date)
-
-artifacts:
-  base-directory: $CODEBUILD_SRC_DIR
-  files:
-    - '**/*'

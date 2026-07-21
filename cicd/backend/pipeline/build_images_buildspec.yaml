@@ -4,40 +4,33 @@ env:
   shell: bash
   variables:
     JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+    DOCKER_BUILDKIT: 1
   secrets-manager:
     DOCKER_USERNAME: ala-secrets-production:dockerhub-username
     DOCKER_PASSWORD: ala-secrets-production:dockerhub-password
-  exported-variables:
-    - BUILD_TAG
 
 phases:
   install:
     runtime-versions:
       java: corretto21
     commands:
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
       - echo Installing dependencies...
+      - cat /etc/lsb-release
       - apt update -y
-        && cat /etc/lsb-release
-        && curl -s "https://get.sdkman.io" | bash
-        && chmod a+x /root/.sdkman/bin/sdkman-init.sh
-        && GRAILS_VERSION=$(grep '^grailsVersion=' gradle.properties | cut -d'=' -f2)
+        && apt-get install -y apt-transport-https ca-certificates software-properties-common build-essential pkg-config libvips-dev libglib2.0-dev
+      - curl -s "https://get.sdkman.io" | bash
+      - chmod a+x /root/.sdkman/bin/sdkman-init.sh
+      - GRAILS_VERSION=$(grep '^grailsVersion=' image-service/gradle.properties | cut -d'=' -f2)
         && echo "GRAILS_VERSION=$GRAILS_VERSION"
         && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails "$GRAILS_VERSION" /root/.sdkman/candidates/grails/$GRAILS_VERSION
-        && apt-get install -y apt-transport-https ca-certificates software-properties-common
-        && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-        && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-        && apt-get update
-        && apt-get install -y docker-ce
-      - apt-get install -y postgresql postgresql-contrib
-      - apt-get install -y build-essential pkg-config libvips-dev libglib2.0-dev
       - java -version
       - echo Logging in to Docker Hub...
-      - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+      - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
       - export GRADLE_OPTS="-Dgrails.env=travis"
-      - ./gradlew clean
-      - ./gradlew assemble
 
   build:
     commands:
@@ -45,27 +38,33 @@ phases:
       - echo Building the project...
       - chmod 666 /var/run/docker.sock
       - useradd -ms /bin/bash postgresuser
+      - chown -RL postgresuser:postgresuser /home/postgresuser # makes sure restored gradle cache is owned by postgresuser
       - echo "Non-root user 'postgresuser' created"
       - chown -R postgresuser:postgresuser /tmp
       - chown -R postgresuser .
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
-      - ./gradlew bootJar
+      - su - postgresuser -c "cd $(pwd) && exec ./gradlew bootJar"
 
   post_build:
     commands:
       - echo Post-build phase...
       - echo Build completed on $(date)
       - echo Building the Docker image...
-      - docker build -t ala-images .
+      - docker pull $ECR_REPO:latest || echo "No existing :latest image found in $ECR_REPO, building without cache"
+      - docker build --cache-from $ECR_REPO:latest --build-arg BUILDKIT_INLINE_CACHE=1 -t ala-images .
       - echo Tagging the Docker image...
-      - BUILD_TAG=$CLEAN_BRANCH-$CODEBUILD_BUILD_NUMBER
       - echo build tag is $BUILD_TAG
-      - echo "$BUILD_TAG" > /tmp/build_tag.txt
       - echo tagging
       - docker tag ala-images:latest $ECR_REPO:$BUILD_TAG
       - docker tag ala-images:latest $ECR_REPO:latest
       - echo Pushing the Docker image to Amazon ECR...
       - docker push $ECR_REPO:$BUILD_TAG
       - docker push $ECR_REPO:latest
-      - echo Cleaning up LocalStack...
-      - docker rm -f localstack || true
+
+
+cache:
+  paths:
+    - '/home/postgresuser/.gradle/caches/**/*'
+    - '/home/postgresuser/.gradle/wrapper/**/*'
+    - '/root/.sdkman/candidates/grails/**/*'
+    - '/root/.cargo/registry/**/*'

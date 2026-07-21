@@ -18,6 +18,8 @@ phases:
     commands:
       - echo Running on $(lsb_release -d | cut -f2)
       - echo aws-cli version $(aws --version)
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
     finally:
       - #echo This always runs even if the update or install command fails
 

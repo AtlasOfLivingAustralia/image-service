@@ -10,6 +10,8 @@ phases:
     commands:
       - echo Installing dependencies...
       - cat /etc/lsb-release
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
       - apt update -y
         && apt-get -q -y install openjdk-21-jdk
         && pip3 install jinja2
@@ -47,15 +49,10 @@ phases:
           --set serviceAccount.name=images-service-account-$CLEAN_BRANCH \
           --set rds.name=images-pg-rds-$CLEAN_BRANCH \
           --set fullnameOverride=$HELM_RELEASE_NAME \
-          -f $CODEBUILD_SRC_DIR_ExportConfigArtifact/helm_values.yaml
+          -f $CODEBUILD_SRC_DIR/helm_values.yaml
       - kubectl rollout restart deployment $HELM_RELEASE_NAME
 
   post_build:
     commands:
       - echo Post-build phase...
       - echo Build completed on $(date)
-
-artifacts:
-  base-directory: $CODEBUILD_SRC_DIR
-  files:
-    - '**/*'
