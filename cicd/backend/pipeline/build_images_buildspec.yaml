@@ -22,7 +22,7 @@ phases:
         && apt-get install -y apt-transport-https ca-certificates software-properties-common build-essential pkg-config libvips-dev libglib2.0-dev
       - curl -s "https://get.sdkman.io" | bash
       - chmod a+x /root/.sdkman/bin/sdkman-init.sh
-      - GRAILS_VERSION=$(grep '^grailsVersion=' gradle.properties | cut -d'=' -f2)
+      - GRAILS_VERSION=$(grep '^grailsVersion=' image-service/gradle.properties | cut -d'=' -f2)
         && echo "GRAILS_VERSION=$GRAILS_VERSION"
         && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails "$GRAILS_VERSION" /root/.sdkman/candidates/grails/$GRAILS_VERSION
       - java -version
