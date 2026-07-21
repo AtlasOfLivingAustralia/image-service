@@ -8,12 +8,12 @@ Parameters:
     Type: String
     Default: dbmaster
 
-  pBackupRetention:
-    Description: Backup retention period in days
-    Type: Number
-
   pBacktrackWindow:
     Description: Backtrack window in seconds, only applicable for MySQL
+    Type: Number
+
+  pBackupRetention:
+    Description: Backup retention period in days
     Type: Number
 
   pBuild:
@@ -103,16 +103,16 @@ Parameters:
     Description: The RDS instance class
     Type: String
 
-  pProductName:
-    Description: The product name
-    Type: String
-
   pPerformanceInsights:
     Description: Enable performance insights
     Type: String
     AllowedValues:
       - "true"
       - "false"
+
+  pProductName:
+    Description: The product name
+    Type: String
 
   pRdsSnapshotRestore:
     Description: The snapshot to restore from
