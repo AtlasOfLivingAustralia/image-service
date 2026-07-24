@@ -73,7 +73,7 @@ class Application extends GrailsAutoConfiguration {
     @Value('${images.padTiles:true}')
     boolean padTiles
 
-    @Value('${tiling.tiler.version:V4}')
+    @Value('${tiling.tiler.version:V5}')
     TilerVersion tilerVersion
 
     @Value('${tiling.tiler.class:}')
