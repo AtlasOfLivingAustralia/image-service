@@ -37,7 +37,7 @@ class BatchController {
                     description = "The gzipped upload file",
                     required = true,
                     content = [
-                            @Content(mediaType = 'application/gzip', schema = @Schema(name='archive', title='The file to upload', type='string', format='binary'))
+                            @Content(mediaType = 'multipart/form-data', schema = @Schema(implementation = BatchUploadRequest.class))
                     ]
             ),
             responses = [
@@ -210,4 +210,10 @@ class BatchController {
         }
         response
     }
+}
+
+class BatchUploadRequest {
+
+    @Schema(type = "string", format = "binary", required = true)
+    public File archive;
 }
