@@ -197,16 +197,29 @@ Resources:
       Description: !Sub ${pProductName} DB instance parameter grp
       Family: !Ref pDbParamGrpFamily
 
-  ClusterParamGrp:
+  MysqlClusterParamGrp:
     Type: AWS::RDS::DBClusterParameterGroup
     Properties:
-      Description: !Sub ${pProductName} cluster param group
+      Description: !Sub ${pProductName} mysql cluster param group
+      Family: !Ref pDbParamGrpFamily
+      Parameters:
+        time_zone: Australia/Sydney
+      Tags:
+        - Key: Name
+          Value: !Sub ${pDbParamGrpFamily}-cluster-paramgrp
+    Condition: IsMysql
+
+  PostgresClusterParamGrp:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: !Sub ${pProductName} postgres cluster param group
       Family: !Ref pDbParamGrpFamily
       Parameters:
         timezone: Australia/Sydney
       Tags:
         - Key: Name
-          Value: aurora-postgresql-cluster-paramgrp
+          Value: !Sub ${pDbParamGrpFamily}-cluster-paramgrp
+    Condition: IsPostgres
 
   DbSubnetGrp:
     Type: AWS::RDS::DBSubnetGroup
@@ -285,7 +298,10 @@ Resources:
       DatabaseInsightsMode: !Ref pDatabaseInsightsMode
       DatabaseName: !Sub ${pProductName}${pEnvironment}
       DBClusterIdentifier: !Sub ${pDbInstanceName}-cluster
-      DBClusterParameterGroupName: !Ref ClusterParamGrp
+      DBClusterParameterGroupName: !If
+        - IsMysql
+        - !Ref MysqlClusterParamGrp
+        - !Ref PostgresClusterParamGrp
       DBSubnetGroupName: !Ref DbSubnetGrp
       DeletionProtection: !Ref pDeletionProtection
       EnableCloudwatchLogsExports: !If
@@ -350,7 +366,7 @@ Resources:
       cfn_nag:
         rules_to_suppress:
           - id: F80
-            reason: Deletion  protection is enabled on the DB cluster level
+            reason: Deletion protection is enabled on the DB cluster level
     Properties:
       AllowMajorVersionUpgrade: false
       AutoMinorVersionUpgrade: true
