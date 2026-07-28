@@ -11,6 +11,7 @@ import org.javaswift.joss.client.factory.AuthenticationMethod
 import org.springframework.beans.factory.annotation.Autowired
 
 import javax.annotation.PostConstruct
+import javax.annotation.PreDestroy
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -218,5 +219,23 @@ class StorageOperationsRegistry {
     boolean isInitialized() {
         return initialized
     }
-}
 
+    /**
+     * Releases instance-owned resources for configured storage operations at application shutdown.
+     * Role-specific S3 clients and transfer managers remain managed by their shared caches.
+     */
+    @PreDestroy
+    void destroy() {
+        operationsByName.values().each { StorageOperations operations ->
+            if (!(operations instanceof AutoCloseable)) {
+                return
+            }
+            try {
+                (operations as AutoCloseable).close()
+            } catch (Exception e) {
+                log.warn('Failed to close storage operations {}', operations, e)
+            }
+        }
+        S3StorageOperations.shutdownSharedResources()
+    }
+}

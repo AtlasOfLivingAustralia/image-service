@@ -324,6 +324,18 @@ imageservice:
     thumbnail:
         size: 300
 
+aws:
+    s3:
+        crt:
+            max-concurrency: 32 # transfer connections, not CRT event-loop threads
+            event-loop-threads: 0 # zero retains CRT defaults; must be set before CRT clients are created
+            future-completion-threads: 2
+            future-completion-queue-capacity: 256
+        application:
+            stream:
+                idle:
+                    timeout: 0 # seconds; zero disables the opt-in S3 application-stream idle watchdog
+
 serverName: 'http://devt.ala.org.au:8080'
 
 skin:
