@@ -173,7 +173,7 @@ bie:
   baseURL: "https://bie.ala.org.au"
 
 headerAndFooter:
-  baseURL: "https://www.ala.org.au/commonui-bs3-2019"
+  baseURL: "https://www.ala.org.au/commonui-bs5-2019"
   version: "2"
   challengeJsUrl: ""
 podEnvironment: "production"
