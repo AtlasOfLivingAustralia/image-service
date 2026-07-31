@@ -54,6 +54,7 @@ phases:
       - echo SRC_BRANCH=$SRC_BRANCH >> env.txt
       - echo COMMIT_ID=$COMMIT_ID >> env.txt
       - echo REPO=$REPO >> env.txt
+      - set -a ; source env.txt ; set +a
       - echo "REGOLITH_STACK_NAME=[$REGOLITH_STACK_NAME]"
       - EKS_CLUSTER_NAME=$(aws cloudformation list-exports --query "Exports[?Name=='$REGOLITH_STACK_NAME-ClusterName'].Value" --output text)
       - echo EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME >> env.txt
