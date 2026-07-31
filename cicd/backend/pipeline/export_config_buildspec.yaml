@@ -236,6 +236,9 @@ phases:
         iiif:
           enabled: ${IMAGE_SERVICE_IIIF_ENABLED}
         imageServiceUrls: ${IMAGE_SERVICE_URLS}
+        thumbnail:
+          concurrency:
+            timeout: ${THUMBNAIL_CONCURRENCY_TIMEOUT}
         management:
           metrics:
             export:

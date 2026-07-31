@@ -264,3 +264,6 @@ tiling:
   ioThreads: 32
 flyway:
   enabled: true
+thumbnail:
+  concurrency:
+    timeout: 30

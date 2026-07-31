@@ -205,3 +205,6 @@ management:
         enabled: {{ .Values.management.metrics.export.statsd.enabled }}
   tags:
     environment: {{ .Values.tags.environment }}
+thumbnail:
+  concurrency:
+    timeout: {{ .Values.thumbnail.concurrency.timeout }}
