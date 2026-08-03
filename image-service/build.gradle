@@ -98,6 +98,7 @@ dependencies {
     // AWS SDK v2
     implementation platform("software.amazon.awssdk:bom:$awsSdk2Version")
     implementation "software.amazon.awssdk:apache-client"
+    implementation "software.amazon.awssdk:apache5-client"
     implementation "software.amazon.awssdk:cloudwatch-metric-publisher"
     implementation "software.amazon.awssdk:netty-nio-client"
     implementation "software.amazon.awssdk:aws-crt-client"
@@ -105,7 +106,14 @@ dependencies {
     implementation "software.amazon.awssdk:s3-transfer-manager"
     implementation "software.amazon.awssdk:sts"
     implementation "software.amazon.awssdk:auth"
-    implementation("software.amazon.awssdk.crt:aws-crt:0.45.1")
+    implementation("software.amazon.awssdk.crt:aws-crt:0.47.3")
+
+    // AWS SDK requires Apache HTTP Client v5.6+ but Grails/Spring Boot pin it to 5.1, so force it here:
+    // TODO Review on Grails/Spring Boot/AWS SDK upgrades
+    implementation "org.apache.httpcomponents.client5:httpclient5:5.6.2"
+    implementation "org.apache.httpcomponents.core5:httpcore5:5.4.3"
+    implementation "org.apache.httpcomponents.core5:httpcore5-h2:5.4.3"
+
     // TEMP: Keep AWS SDK v1 during migration; remove once all code/tests are v2
 //    implementation "com.amazonaws:aws-java-sdk-s3:1.12.418"
     implementation 'org.javaswift:joss:0.10.4'

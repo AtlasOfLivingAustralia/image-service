@@ -56,6 +56,7 @@ import software.amazon.awssdk.core.async.BlockingOutputStreamAsyncRequestBody
 import software.amazon.awssdk.transfer.s3.model.UploadRequest
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.async.AsyncResponseTransformer
+import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.services.s3.model.*
 
 import java.time.Duration
@@ -63,8 +64,16 @@ import java.util.concurrent.CompletionException
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ThreadFactory
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.function.Function
 import java.util.function.Consumer
+import java.util.function.IntConsumer
+import java.util.function.IntSupplier
 import java.util.concurrent.CountDownLatch
 
 import com.google.common.annotations.VisibleForTesting
@@ -77,7 +86,7 @@ import org.apache.commons.io.FilenameUtils
 @CompileStatic
 @Slf4j
 @EqualsAndHashCode(includes = ['region', 'bucket', 'prefix'])
-class S3StorageOperations implements StorageOperations {
+class S3StorageOperations implements StorageOperations, AutoCloseable {
 
     String region
     String bucket
@@ -107,6 +116,15 @@ class S3StorageOperations implements StorageOperations {
     private Counter s3OperationErrorCounter
     private Counter s3OperationSuccessCounter
 
+    /**
+     * Test seam for observing the client used to construct a transfer manager.
+     * Production instances leave this unset and use the shared cache below.
+     */
+    @VisibleForTesting
+    private Function<S3AsyncClient, S3TransferManager> transferManagerFactoryForTesting
+
+    private volatile S3TransferManager legacyS3TransferManager
+
     private static final int maxConnections = Holders.getConfig().getProperty('aws.s3.max.connections', Integer, Integer.getInteger('au.org.ala.images.s3.max.connections', 500))
     private static final int maxErrorRetry = Holders.getConfig().getProperty('aws.s3.max.retry', Integer, Integer.getInteger('au.org.ala.images.s3.max.retry', 3))
     private static final int apiCallAttemptTimeout = Holders.getConfig().getProperty('aws.s3.timeouts.attempt', Integer, Integer.getInteger('au.org.ala.images.s3.timeouts.attempt', 5))
@@ -125,6 +143,11 @@ class S3StorageOperations implements StorageOperations {
     // to quickly detect a connection that has stalled after TCP establishment.
     private static final long crtThroughputBps = Holders.getConfig().getProperty('aws.s3.crt.throughput.bps', Long, Long.getLong('au.org.ala.images.s3.crt.throughput.bps', 32 * 1024))
     private static final int crtConnectionTimeout = Holders.getConfig().getProperty('aws.s3.crt.connection.timeout', Integer, Integer.getInteger('au.org.ala.images.s3.crt.connection.timeout', 2))
+    // This limits S3 transfer connections; it does not configure CRT event-loop threads.
+    private static final int crtMaxConcurrency = positiveConfig('aws.s3.crt.max-concurrency', 'au.org.ala.images.s3.crt.max-concurrency', 32)
+    private static final int crtCompletionThreads = positiveConfig('aws.s3.crt.future-completion-threads', 'au.org.ala.images.s3.crt.future-completion-threads', 2)
+    private static final int crtCompletionQueueCapacity = positiveConfig('aws.s3.crt.future-completion-queue-capacity', 'au.org.ala.images.s3.crt.future-completion-queue-capacity', 256)
+    private static final Duration applicationStreamIdleTimeout = optionalPositiveDuration('aws.s3.application.stream.idle.timeout', 'au.org.ala.images.s3.application.stream.idle.timeout')
     private static final boolean publishCloudwatchMetrics = Holders.getConfig().getProperty('aws.s3.cloudwatch.metrics.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.enabled', 'false')))
     private static final String cloudWatchNamespace = Holders.getConfig().getProperty('aws.s3.cloudwatch.metrics.namespace', String, System.getProperty('au.org.ala.images.s3.cloudwatch.metrics.namespace', 'au.org.ala.image-service/S3'))
     private static final boolean forceAsyncCalls = Holders.getConfig().getProperty('aws.s3.force.async', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.force.async', 'false')))
@@ -137,6 +160,23 @@ class S3StorageOperations implements StorageOperations {
             daemon = true
         }
     } as ThreadFactory)
+
+    private static final ThreadPoolExecutor crtFutureCompletionExecutor = new ThreadPoolExecutor(
+            crtCompletionThreads, crtCompletionThreads, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<Runnable>(crtCompletionQueueCapacity), { Runnable runnable ->
+                new Thread(runnable, 's3-crt-future-completion').tap { daemon = true }
+            } as ThreadFactory,
+            { Runnable task, ThreadPoolExecutor executor ->
+                long rejected = crtCompletionRejections.incrementAndGet()
+                log.warn('Rejected CRT future-completion callback because the bounded executor is saturated (count={})', rejected)
+                throw new RejectedExecutionException('S3 CRT future-completion executor is saturated')
+            } as java.util.concurrent.RejectedExecutionHandler)
+    private static final Object crtBootstrapLock = new Object()
+    private static boolean crtClientCreated = false
+    private static final AtomicBoolean lateCrtBootstrapWarningLogged = new AtomicBoolean()
+    private static final AtomicBoolean legacyOverrideWarningLogged = new AtomicBoolean()
+    private static final AtomicBoolean sharedResourcesClosed = new AtomicBoolean()
+    private static final AtomicLong crtCompletionRejections = new AtomicLong()
 
     private static final MetricPublisher sharedMetricPublisher
     static {
@@ -187,15 +227,29 @@ class S3StorageOperations implements StorageOperations {
         return s3AsyncClientCacheLoader(key, true)
     }
 
-    private static final LoadingCache<CacheKey, S3AsyncClient> s3AsyncClientCache = Caffeine<String, S3AsyncClient>.from(asyncCacheSpec).removalListener {
+    private static final LoadingCache<CacheKey, S3AsyncClient> s3DownloadAsyncClientCache = Caffeine<String, S3AsyncClient>.from(asyncCacheSpec).removalListener {
         CacheKey key, S3AsyncClient client, RemovalCause cause ->
-            log.info("S3AsyncClient evicted from cache: ${key.bucket}")
-            s3TransferManagerCache.invalidate(key) // also remove any associated transfer manager
+            log.info("S3 download client evicted from cache: ${key.bucket}")
             evictionScheduler.schedule( {
                 try {
                     client?.close()
                 } catch (Exception e) {
-                    log.warn("Failed to close evicted S3AsyncClient", e)
+                    log.warn("Failed to close evicted S3 download client", e)
+                }
+            }, inflightTimeout, TimeUnit.SECONDS)
+    }.build { CacheKey key ->
+        return s3AsyncClientCacheLoader(key)
+    }
+
+    private static final LoadingCache<CacheKey, S3AsyncClient> s3UploadAsyncClientCache = Caffeine<String, S3AsyncClient>.from(asyncCacheSpec).removalListener {
+        CacheKey key, S3AsyncClient client, RemovalCause cause ->
+            log.info("S3 upload client evicted from cache: ${key.bucket}")
+            s3TransferManagerCache.invalidate(key)
+            evictionScheduler.schedule( {
+                try {
+                    client?.close()
+                } catch (Exception e) {
+                    log.warn("Failed to close evicted S3 upload client", e)
                 }
             }, inflightTimeout, TimeUnit.SECONDS)
     }.build { CacheKey key ->
@@ -218,9 +272,113 @@ class S3StorageOperations implements StorageOperations {
 
     static final void clearS3ClientCache() {
         s3TransferManagerCache.invalidateAll()
-        s3AsyncClientCache.invalidateAll()
+        s3DownloadAsyncClientCache.invalidateAll()
+        s3UploadAsyncClientCache.invalidateAll()
         smallS3AsyncClientCache.invalidateAll()
         s3ClientCache.invalidateAll()
+    }
+
+    /**
+     * Closes application-owned shared S3 resources during application shutdown.
+     * Cache eviction deliberately does not call this method because cached CRT
+     * clients share the completion executor.
+     */
+    static void shutdownSharedResources() {
+        if (!sharedResourcesClosed.compareAndSet(false, true)) {
+            return
+        }
+        closeAll(s3TransferManagerCache.asMap().values())
+        closeAll(s3DownloadAsyncClientCache.asMap().values())
+        closeAll(s3UploadAsyncClientCache.asMap().values())
+        closeAll(smallS3AsyncClientCache.asMap().values())
+        closeAll(s3ClientCache.asMap().values())
+        clearS3ClientCache()
+        crtFutureCompletionExecutor.shutdown()
+    }
+
+    private static void closeAll(Collection<? extends AutoCloseable> resources) {
+        resources.each { AutoCloseable resource ->
+            try {
+                resource?.close()
+            } catch (Exception exception) {
+                log.warn('Failed to close shared S3 resource during application shutdown', exception)
+            }
+        }
+    }
+
+    @VisibleForTesting
+    static long getCrtCompletionRejectionCount() {
+        return crtCompletionRejections.get()
+    }
+
+    private static int positiveConfig(String property, String systemProperty, int defaultValue) {
+        int value = Holders.getConfig().getProperty(property, Integer, Integer.getInteger(systemProperty, defaultValue))
+        return S3CrtSafeguards.requirePositive(property, value)
+    }
+
+    @VisibleForTesting
+    static int requirePositiveConfig(String property, int value) {
+        if (value <= 0) {
+            throw new IllegalArgumentException("${property} must be a positive integer")
+        }
+        return value
+    }
+
+    private static int nonNegativeConfig(String property, String systemProperty, int defaultValue) {
+        int value = Holders.getConfig().getProperty(property, Integer, Integer.getInteger(systemProperty, defaultValue))
+        return S3CrtSafeguards.requireNonNegative(property, value)
+    }
+
+    @VisibleForTesting
+    static int requireNonNegativeConfig(String property, int value) {
+        if (value < 0) {
+            throw new IllegalArgumentException("${property} must be zero or a positive integer")
+        }
+        return value
+    }
+
+    private static Duration optionalPositiveDuration(String property, String systemProperty) {
+        int seconds = nonNegativeConfig(property, systemProperty, 0)
+        return seconds == 0 ? null : Duration.ofSeconds(seconds)
+    }
+
+    /**
+     * Reads configuration only at the CRT client-construction boundary, after Grails has started.
+     * CRT owns this setting globally, so the first CRT client fixes the value for this JVM.
+     */
+    private static int resolveConfiguredCrtEventLoopThreads() {
+        return S3CrtSafeguards.resolveConfiguredEventLoopThreads(
+                { String property -> Holders.getConfig().getProperty(property, Integer, null) } as Function<String, Integer>,
+                { -> Integer.getInteger('au.org.ala.images.s3.crt.event-loop-threads', 0) } as IntSupplier)
+    }
+
+    @VisibleForTesting
+    static ThreadPoolExecutor newCrtFutureCompletionExecutor(int threads, int queueCapacity) {
+        int validatedThreads = requirePositiveConfig('aws.s3.crt.future-completion-threads', threads)
+        int validatedQueueCapacity = requirePositiveConfig('aws.s3.crt.future-completion-queue-capacity', queueCapacity)
+        return new ThreadPoolExecutor(
+                validatedThreads, validatedThreads, 0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<Runnable>(validatedQueueCapacity),
+                { Runnable runnable -> new Thread(runnable, 's3-crt-future-completion-test') } as ThreadFactory,
+                { Runnable task, ThreadPoolExecutor executor ->
+                    throw new RejectedExecutionException('S3 CRT future-completion executor is saturated')
+                } as java.util.concurrent.RejectedExecutionHandler)
+    }
+
+    @VisibleForTesting
+    static void scheduleEvictedResourceClose(AutoCloseable resource, ScheduledExecutorService scheduler, long delay, TimeUnit unit) {
+        scheduler.schedule({
+            try {
+                resource?.close()
+            } catch (Exception exception) {
+                log.warn('Failed to close evicted S3 resource', exception)
+            }
+        }, delay, unit)
+    }
+
+    @VisibleForTesting
+    static void configureCrtMaxConcurrency(int maxConcurrency, Consumer<Integer> configure) {
+        configure.accept(requirePositiveConfig('aws.s3.crt.max-concurrency', maxConcurrency))
     }
 
     @TupleConstructor
@@ -321,14 +479,70 @@ class S3StorageOperations implements StorageOperations {
 
     @VisibleForTesting
     protected S3AsyncClient getSmallS3AsyncClient() {
+        if (hasLegacyAsyncClientOverride()) {
+            return getS3AsyncClient()
+        }
+        return getDefaultSmallS3AsyncClient()
+    }
+
+    @VisibleForTesting
+    protected S3AsyncClient getS3DownloadAsyncClient() {
+        if (hasLegacyAsyncClientOverride()) {
+            return getS3AsyncClient()
+        }
+        return getDefaultS3DownloadAsyncClient()
+    }
+
+    @VisibleForTesting
+    protected S3AsyncClient getS3UploadAsyncClient() {
+        if (hasLegacyAsyncClientOverride()) {
+            return getS3AsyncClient()
+        }
+        return getDefaultS3UploadAsyncClient()
+    }
+
+    /**
+     * Legacy extension point retained for subclasses that supply one async client for all S3 work.
+     *
+     * New code must override one of the role-specific methods instead. Production instances use
+     * separate download and upload clients; an override of this method is intentionally treated as
+     * an opt-in to the legacy single-client behaviour for that subclass.
+     */
+    @Deprecated
+    @VisibleForTesting
+    protected S3AsyncClient getS3AsyncClient() {
+        return getDefaultS3DownloadAsyncClient()
+    }
+
+    private S3AsyncClient getDefaultSmallS3AsyncClient() {
         final cacheKey = getCacheKeyObject()
         return smallS3AsyncClientCache.get(cacheKey)
     }
 
-    @VisibleForTesting
-    protected S3AsyncClient getS3AsyncClient() {
+    private S3AsyncClient getDefaultS3DownloadAsyncClient() {
         final cacheKey = getCacheKeyObject()
-        return s3AsyncClientCache.get(cacheKey)
+        return s3DownloadAsyncClientCache.get(cacheKey)
+    }
+
+    private S3AsyncClient getDefaultS3UploadAsyncClient() {
+        final cacheKey = getCacheKeyObject()
+        return s3UploadAsyncClientCache.get(cacheKey)
+    }
+
+    private boolean hasLegacyAsyncClientOverride() {
+        Class<?> candidate = getClass()
+        while (candidate != null && candidate != S3StorageOperations) {
+            try {
+                candidate.getDeclaredMethod('getS3AsyncClient')
+                if (legacyOverrideWarningLogged.compareAndSet(false, true)) {
+                    log.warn('Using legacy getS3AsyncClient override; download, upload, and small S3 operations share one subclass-owned client')
+                }
+                return true
+            } catch (NoSuchMethodException ignored) {
+                candidate = candidate.getSuperclass()
+            }
+        }
+        return false
     }
 
     private static S3AsyncClient s3AsyncClientCacheLoader(CacheKey key, boolean smallOps = false) {
@@ -383,7 +597,6 @@ class S3StorageOperations implements StorageOperations {
             client = builder.build()
         } else {
             log.info("Using CRT S3AsyncClient builder for S3 access")
-
             def builder = S3AsyncClient.crtBuilder()
                     .httpConfiguration(
                             S3CrtHttpConfiguration.builder()
@@ -397,7 +610,9 @@ class S3StorageOperations implements StorageOperations {
                     )
                     .credentialsProvider(credProvider)
                     .retryConfiguration(S3CrtRetryConfiguration.builder().numRetries(maxErrorRetry).build())
-//                        .maxConcurrency(maxConnections)
+                    .futureCompletionExecutor(crtFutureCompletionExecutor)
+
+            S3CrtSafeguards.configureMaxConcurrency(crtMaxConcurrency, { int concurrency -> builder.maxConcurrency(concurrency) } as Consumer<Integer>)
 
             if (region) {
                 builder = builder.region(Region.of(region))
@@ -408,23 +623,88 @@ class S3StorageOperations implements StorageOperations {
             if (pathStyleAccess) {
                 builder = builder.forcePathStyle(pathStyleAccess)
             }
-            client = builder.build()
+            synchronized (crtBootstrapLock) {
+                int configuredEventLoopThreads = resolveConfiguredCrtEventLoopThreads()
+                boolean initialized = S3CrtSafeguards.applyConfiguredBootstrap(
+                        { -> configuredEventLoopThreads } as IntSupplier,
+                        crtClientCreated,
+                        { int configuredThreads ->
+                            software.amazon.awssdk.crt.io.EventLoopGroup.setStaticDefaultNumThreads(configuredThreads)
+                        } as IntConsumer)
+                if (initialized) {
+                    log.info('Configured CRT static default event-loop group with {} thread(s)', configuredEventLoopThreads)
+                } else if (crtClientCreated && lateCrtBootstrapWarningLogged.compareAndSet(false, true)) {
+                    log.warn('A CRT client already exists; retaining its process-wide event-loop thread setting')
+                }
+                client = builder.build()
+                crtClientCreated = true
+            }
         }
         return client
     }
 
     @VisibleForTesting
     protected S3TransferManager getS3TransferManager() {
+        final Function<S3AsyncClient, S3TransferManager> factory = transferManagerFactoryForTesting
+        if (hasLegacyAsyncClientOverride()) {
+            return getLegacyS3TransferManager(factory)
+        }
+        if (factory != null) {
+            return factory.apply(getS3UploadAsyncClient())
+        }
         final cacheKey = getCacheKeyObject()
         // Ensure the underlying AsyncClient is kept alive in the cache whenever the TransferManager is requested
 //        getS3AsyncClient(cacheKey)
         return s3TransferManagerCache.get(cacheKey)
     }
 
+    private S3TransferManager getLegacyS3TransferManager(Function<S3AsyncClient, S3TransferManager> factory) {
+        S3TransferManager manager = legacyS3TransferManager
+        if (manager != null) {
+            return manager
+        }
+
+        synchronized (this) {
+            if (legacyS3TransferManager == null) {
+                final S3AsyncClient asyncClient = getS3UploadAsyncClient()
+                legacyS3TransferManager = factory != null
+                        ? factory.apply(asyncClient)
+                        : S3TransferManager.builder().s3Client(asyncClient).build()
+            }
+            return legacyS3TransferManager
+        }
+    }
+
+    /**
+     * Releases the transfer manager owned by the legacy single-async-client compatibility path.
+     * The async client belongs to the overriding subclass and is deliberately not closed here.
+     */
+    @Override
+    void close() {
+        final S3TransferManager manager
+        synchronized (this) {
+            manager = legacyS3TransferManager
+            legacyS3TransferManager = null
+        }
+        if (manager == null) {
+            return
+        }
+        try {
+            manager.close()
+        } catch (Exception e) {
+            log.warn('Failed to close legacy S3TransferManager', e)
+        }
+    }
+
+    @VisibleForTesting
+    void setTransferManagerFactoryForTesting(Function<S3AsyncClient, S3TransferManager> factory) {
+        transferManagerFactoryForTesting = factory
+    }
+
     private static S3TransferManager s3TransferManagerCacheLoader(CacheKey key) {
         log.info("Creating S3TransferManager for bucket: ${key.bucket} in region: ${key.region ?: 'default'}")
 
-        def s3AsyncClient = s3AsyncClientCache.get(key)
+        def s3AsyncClient = s3UploadAsyncClientCache.get(key)
         return S3TransferManager.builder()
                 .s3Client(s3AsyncClient)
                 .build()
@@ -640,7 +920,7 @@ class S3StorageOperations implements StorageOperations {
                 }
             } as Consumer<V2GetObjectRequest.Builder>
             if (isUseAsyncS3Client()) {
-                def resp = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBytes()).join()
+                def resp = s3DownloadAsyncClient.getObject(consumer, AsyncResponseTransformer.toBytes()).join()
                 return resp.asByteArray()
             } else {
                 def s3Object = s3Client.getObject(consumer)
@@ -835,9 +1115,11 @@ class S3StorageOperations implements StorageOperations {
 
             InputStream rawStream
             if (isUseAsyncS3Client()) {
-                rawStream = s3AsyncClient
+                ResponseInputStream<GetObjectResponse> responseStream = s3DownloadAsyncClient
                         .getObject(consumer, AsyncResponseTransformer.toBlockingInputStream())
                         .join()
+                rawStream = applicationStreamIdleTimeout == null ? responseStream :
+                        new S3ApplicationWatchdogInputStream<GetObjectResponse>(responseStream, applicationStreamIdleTimeout, path)
             } else {
                 rawStream = s3Client.getObject(consumer)
             }
@@ -1006,7 +1288,7 @@ class S3StorageOperations implements StorageOperations {
     }
 
     ByteSinkFactory byteSinkFactory(String uuid, Map<String, String> tags, String... prefixes) {
-        return new S3ByteSinkFactory(s3AsyncClient, s3TransferManager, apiCallTimeout, storagePathStrategy(), bucket, uuid, tags, meterRegistry, region, prefixes)
+        return new S3ByteSinkFactory(s3UploadAsyncClient, s3TransferManager, apiCallTimeout, storagePathStrategy(), bucket, uuid, tags, meterRegistry, region, prefixes)
     }
 
     @Override
@@ -1079,11 +1361,15 @@ class S3StorageOperations implements StorageOperations {
             InputStream objectStream
             if (isUseAsyncS3Client()) {
                 def consumer = { V2GetObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<V2GetObjectRequest.Builder>
-                objectStream = s3AsyncClient.getObject(consumer, AsyncResponseTransformer.toBlockingInputStream()).join()
+                ResponseInputStream<GetObjectResponse> responseStream = s3DownloadAsyncClient.getObject(consumer, AsyncResponseTransformer.toBlockingInputStream()).join()
+                objectStream = applicationStreamIdleTimeout == null ? responseStream :
+                        new S3ApplicationWatchdogInputStream<GetObjectResponse>(responseStream, applicationStreamIdleTimeout, k)
             } else {
                 objectStream = s3Client.getObject({ V2GetObjectRequest.Builder b -> b.bucket(bkt).key(k) } as Consumer<V2GetObjectRequest.Builder>)
             }
-            destination.storeAnywhere(uuid, objectStream, k - basePath, head.contentType(), head.contentDisposition(), (obj['size'] as long))
+            objectStream.withCloseable {
+                destination.storeAnywhere(uuid, it, k - basePath, head.contentType(), head.contentDisposition(), (obj['size'] as long))
+            }
         }
     }
 

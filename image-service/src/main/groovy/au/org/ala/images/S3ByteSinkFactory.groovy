@@ -1,6 +1,8 @@
 package au.org.ala.images
 
 import au.org.ala.images.metrics.MetricsTrackingOutputStream
+import au.org.ala.images.storage.S3ApplicationStreamIdleTimeoutException
+import au.org.ala.images.storage.S3ApplicationWatchdogOutputStream
 import au.org.ala.images.util.ByteSinkFactory
 import com.google.common.io.ByteSink
 import groovy.util.logging.Slf4j
@@ -15,11 +17,13 @@ import software.amazon.awssdk.services.s3.model.Tagging
 
 import java.nio.file.Files
 import java.time.Duration
+import grails.util.Holders
 
 @Slf4j
 class S3ByteSinkFactory implements ByteSinkFactory {
 
     static boolean streaming = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.upload.streaming', 'true'))
+    private static final Duration applicationStreamIdleTimeout = applicationStreamIdleTimeout()
 
     private final S3AsyncClient s3Client
     private final S3TransferManager s3TransferManager
@@ -87,14 +91,22 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                             .build()
                     def uploadFuture = s3TransferManager.upload(uploadReq).completionFuture()
 
-                    baseStream = new FilterOutputStream(blockingBody.outputStream()) {
+                    def outputStream = blockingBody.outputStream()
+                    S3ApplicationWatchdogOutputStream watchdogStream = applicationStreamIdleTimeout == null ? null :
+                            new S3ApplicationWatchdogOutputStream(outputStream, applicationStreamIdleTimeout, 'upload')
+                    baseStream = new FilterOutputStream(watchdogStream ?: outputStream) {
                         @Override
                         void close() throws IOException {
-                            super.close()
-                            // wait for the upload thread to finish
                             try {
+                                super.close()
+                                // Producer EOF is not terminal: retain the watchdog while the upload completes.
                                 uploadFuture.join()
+                                watchdogStream?.completed()
                             } catch (Exception e) {
+                                if (watchdogStream?.timedOut) {
+                                    throw watchdogStream.timeoutException(e)
+                                }
+                                watchdogStream?.failed()
                                 throw new IOException("S3 upload failed", e)
                             }
                         }
@@ -170,5 +182,14 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                 return contentType
             }
         }
+    }
+    private static Duration applicationStreamIdleTimeout() {
+        int timeoutSeconds = Holders.getConfig().getProperty(
+                'aws.s3.application.stream.idle.timeout', Integer,
+                Integer.getInteger('au.org.ala.images.s3.application.stream.idle.timeout', 0))
+        if (timeoutSeconds < 0) {
+            throw new IllegalArgumentException('aws.s3.application.stream.idle.timeout must be zero or a positive number of seconds')
+        }
+        return timeoutSeconds == 0 ? null : Duration.ofSeconds(timeoutSeconds)
     }
 }
