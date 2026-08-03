@@ -13,6 +13,7 @@ import org.grails.web.util.GrailsApplicationAttributes
 import org.grails.web.util.WebUtils
 import org.jasig.cas.client.authentication.AttributePrincipalImpl
 import org.springframework.core.io.ClassPathResource
+import org.springframework.core.io.Resource
 import spock.lang.Shared
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -237,6 +238,81 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         0  | 0  | 0  | 'image/jpeg'  | 'bytes=1-2,3-4' | 206         | "multipart/byteranges; boundary=00000000000000000001" | 202 | null | null | fileContent
         0  | 0  | 0  | 'audio/mpeg'  | ''              | 404         | 'text/plain;charset=utf-8' | 0       | null  | null          | new byte[0]
         0  | 0  | 0  | 'application/pdf'  | ''         | 404         | 'text/plain;charset=utf-8' | 0       | null  | null          | new byte[0]
+    }
+
+    @Unroll
+    def "derivative loader #failure renders the #requestType placeholder with #status status"(RuntimeException failure, int status, String requestType, boolean headRequest) {
+        given:
+        String identifier = UUID.randomUUID().toString()
+        ClassPathResource placeholderResource = requestType == 'tile'
+                ? new ClassPathResource('images/images-placeholder-300x300.png')
+                : new ClassPathResource('images/no-image-thumbnail.png')
+        byte[] placeholder = placeholderResource.inputStream.bytes
+        params.id = identifier
+        controller.imageStoreService = Mock(ImageStoreService)
+        controller.analyticsService = Mock(AnalyticsService)
+        if (requestType == 'tile') {
+            params.x = 1
+            params.y = 2
+            params.z = 3
+            controller.missingTile = placeholderResource
+        } else {
+            controller.missingImageThumbnail = placeholderResource
+        }
+        if (headRequest) {
+            request.method = 'HEAD'
+        }
+
+        when:
+        if (requestType == 'tile') {
+            controller.proxyImageTile()
+        } else {
+            controller.proxyImageThumbnail()
+        }
+
+        then:
+        if (requestType == 'tile') {
+            1 * controller.imageStoreService.tileImageInfo(identifier, 1, 2, 3, _) >> { throw failure }
+        } else {
+            1 * controller.imageStoreService.thumbnailImageInfo(identifier, '', _) >> { throw failure }
+        }
+        response.status == status
+        response.contentType == 'image/png'
+        response.contentAsByteArray == (headRequest ? new byte[0] : placeholder)
+        response.getHeader('Cache-Control') == 'no-store, no-cache, must-revalidate'
+        response.getHeader('Pragma') == 'no-cache'
+        response.getDateHeader('Expires') == 0
+        0 * controller.analyticsService._
+
+        where:
+        failure                                                               | status | requestType  | headRequest
+        new ImageStoreService.DerivativeLoadTimeout('timed out')              | 504    | 'thumbnail' | false
+        new ImageStoreService.DerivativeLoadRejected('overloaded')            | 503    | 'tile'      | false
+        new ImageStoreService.GenerateDerivativeTimeout('generator saturated') | 503    | 'thumbnail' | true
+    }
+
+    def "derivative timeout keeps gateway timeout when placeholder metadata fails"() {
+        given:
+        String identifier = UUID.randomUUID().toString()
+        params.id = identifier
+        controller.imageStoreService = Mock(ImageStoreService)
+        controller.missingImageThumbnail = Stub(Resource) {
+            contentLength() >> { throw new IOException('placeholder metadata unavailable') }
+        }
+
+        when:
+        controller.proxyImageThumbnail()
+
+        then:
+        1 * controller.imageStoreService.thumbnailImageInfo(identifier, '', _) >> {
+            throw new ImageStoreService.DerivativeLoadTimeout('timed out')
+        }
+        response.status == 504
+        response.contentType == 'text/plain;charset=utf-8'
+        response.text == 'Image not found'
+        response.getHeader('Cache-Control') == 'no-store, no-cache, must-revalidate'
+        response.getHeader('Pragma') == 'no-cache'
+        response.getDateHeader('Expires') == 0
     }
 
     def "test text/html details"() {

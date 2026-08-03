@@ -28,11 +28,13 @@ import static io.swagger.v3.oas.annotations.enums.ParameterIn.PATH
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST
 import static javax.servlet.http.HttpServletResponse.SC_FOUND
+import static javax.servlet.http.HttpServletResponse.SC_GATEWAY_TIMEOUT
 import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND
 import static javax.servlet.http.HttpServletResponse.SC_NOT_MODIFIED
 import static javax.servlet.http.HttpServletResponse.SC_OK
 import static javax.servlet.http.HttpServletResponse.SC_PARTIAL_CONTENT
 import static javax.servlet.http.HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE
+import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE
 
 @Slf4j
 class ImageController implements MetricsSupport {
@@ -180,12 +182,9 @@ class ImageController implements MetricsSupport {
     def proxyImageThumbnail() {
         boolean invalidate = params.containsKey('i')
         boolean noRedirect = params.containsKey('nr')
-        serveImage(
-                imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), '', invalidate),
-                trackThumbnails,
-                'thumbnail',
-                noRedirect
-        )
+        serveDerivativeImage('thumbnail', trackThumbnails, noRedirect) {
+            imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), '', invalidate)
+        }
     }
 
     @Operation(
@@ -221,12 +220,9 @@ class ImageController implements MetricsSupport {
             render(text: "Invalid thumbnail type", status: SC_NOT_FOUND, contentType: 'text/plain')
             return
         }
-        serveImage(
-                imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), type, invalidate),
-                trackThumbnails,
-                'thumbnail-'+type,
-                noRedirect
-        )
+        serveDerivativeImage('thumbnail-'+type, trackThumbnails, noRedirect) {
+            imageStoreService.thumbnailImageInfo(imageService.getImageGUIDFromParams(params), type, invalidate)
+        }
     }
 
     @Operation(
@@ -262,19 +258,34 @@ class ImageController implements MetricsSupport {
         int z = params.int('z')
         boolean invalidate = params.containsKey('i')
         boolean noRedirect = params.containsKey('nr')
-        serveImage(
-                imageStoreService.tileImageInfo(imageService.getImageGUIDFromParams(params), x, y, z, invalidate),
-                false,
-                'tile',
-                noRedirect
-        )
+        serveDerivativeImage('tile', false, noRedirect) {
+            imageStoreService.tileImageInfo(imageService.getImageGUIDFromParams(params), x, y, z, invalidate)
+        }
+    }
+
+    private void serveDerivativeImage(String requestType, boolean sendAnalytics, boolean noRedirect, Closure<ImageInfo> loadImageInfo) {
+        try {
+            serveImage(loadImageInfo.call(), sendAnalytics, requestType, noRedirect)
+        } catch (ImageStoreService.DerivativeLoadTimeout e) {
+            serveDerivativeUnavailableImage(requestType, SC_GATEWAY_TIMEOUT)
+        } catch (ImageStoreService.DerivativeLoadRejected e) {
+            serveDerivativeUnavailableImage(requestType, SC_SERVICE_UNAVAILABLE)
+        } catch (ImageStoreService.GenerateDerivativeTimeout e) {
+            serveDerivativeUnavailableImage(requestType, SC_SERVICE_UNAVAILABLE)
+        }
+    }
+
+    private void serveDerivativeUnavailableImage(String requestType, int status) {
+        sendMissingImage(requestType, status, true)
     }
 
     private void serveImage(
             ImageInfo imageInfo,
             boolean sendAnalytics,
             String requestType,
-            boolean noRedirect = false) {
+            boolean noRedirect = false,
+            boolean noCache = false,
+            Integer responseStatus = null) {
         recordTime('image.serve', 'Time to serve image request', [type: requestType]) {
             def imageIdentifier = imageInfo.imageIdentifier
             if (!imageIdentifier || !imageInfo.exists) {
@@ -321,7 +332,7 @@ class ImageController implements MetricsSupport {
             // the generate closure
             def etag = imageInfo.etag
             def lastMod = imageInfo.lastModified
-            if (!disableCache) {
+            if (!disableCache && !noCache) {
                 def changed = checkForNotModified(etag, lastMod)
                 if (changed) {
                     if (etag) {
@@ -339,13 +350,13 @@ class ImageController implements MetricsSupport {
             }
 
             length = imageInfo.length
-            def ranges = decodeRangeHeader(length)
+            def ranges = noCache ? [Range.emptyRange(length)] : decodeRangeHeader(length)
             def contentType = imageInfo.contentType
             def extension = imageInfo.extension
 
             if (ranges.size() > 1) {
                 def boundary = startMultipartResponse(ranges, contentType)
-                applyCacheHeaders(disableCache, cacheHeaders, etag, lastMod)
+                applyCacheHeaders(disableCache || noCache, cacheHeaders, etag, lastMod)
 
                 // Grails will provide a dummy output stream for HEAD requests but
                 // explicitly bail on HEAD methods so we don't transfer bytes out of storage
@@ -372,9 +383,12 @@ class ImageController implements MetricsSupport {
                 } else {
                     response.setHeader("Accept-Ranges", "bytes")
                 }
-                applyCacheHeaders(disableCache, cacheHeaders, etag, lastMod)
+                applyCacheHeaders(disableCache || noCache, cacheHeaders, etag, lastMod)
                 response.contentLengthLong = rangeLength
                 response.contentType = contentType
+                if (responseStatus != null) {
+                    response.status = responseStatus
+                }
                 if (contentDisposition) {
                     response.setHeader("Content-disposition", "attachment;filename=${imageIdentifier}.${extension ?: "jpg"}")
                 }
@@ -442,7 +456,7 @@ class ImageController implements MetricsSupport {
      * Serve a placeholder image with a 404 status code.
      * @param requestType The type of request, one of 'tile', 'original', 'thumbnail-large', 'thumbnail-square', 'thumbnail'
      */
-    private void sendMissingImage(String requestType) {
+    private void sendMissingImage(String requestType, int status = SC_NOT_FOUND, boolean noCache = false) {
         Resource ph
         switch (requestType) {
             case 'tile':
@@ -470,9 +484,14 @@ class ImageController implements MetricsSupport {
                 ph = missingImageThumbnail
                 break
         }
+        response.status = status
         try {
+            if (noCache) {
+                response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+                response.setHeader('Pragma', 'no-cache')
+                response.setDateHeader('Expires', 0)
+            }
             def len = ph.contentLength()
-            response.status = SC_NOT_FOUND
             response.contentType = 'image/png'
             response.contentLengthLong = len
             if (request.method != 'HEAD') {
@@ -482,7 +501,7 @@ class ImageController implements MetricsSupport {
             }
         } catch (Exception e) {
             log.warn("Failed to stream placeholder image for requestType=${requestType}", e)
-            render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
+            render(text: "Image not found", status: status, contentType: 'text/plain')
         }
     }
 
@@ -902,4 +921,3 @@ class ImageController implements MetricsSupport {
         }
     }
 }
-

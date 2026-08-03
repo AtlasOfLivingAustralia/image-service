@@ -97,6 +97,12 @@ class Application extends GrailsAutoConfiguration {
     @Value('${imageservice.tiling.io.virtualTaskConcurrencyLimitLocal:${tiling.ioVirtualTaskConcurrencyLimitLocal:32}}')
     int tilingIoVirtualTaskConcurrencyLimitLocal
 
+    @Value('${derivative.loader.threads:4}')
+    int derivativeLoaderThreads
+
+    @Value('${derivative.loader.queueCapacity:100}')
+    int derivativeLoaderQueueCapacity
+
     @Bean
     TaskExecutor analyticsExecutor() {
         return createThreadPoolTaskExecutor("analytics-", 1)
@@ -105,6 +111,11 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     TaskExecutor storageLocationExecutor() {
         return createThreadPoolTaskExecutor("storage-", 1)
+    }
+
+    @Bean
+    TaskExecutor derivativeLoaderExecutor() {
+        return createThreadPoolTaskExecutor("derivative-loader-", derivativeLoaderThreads, derivativeLoaderThreads, Math.max(0, derivativeLoaderQueueCapacity))
     }
 
     @Bean

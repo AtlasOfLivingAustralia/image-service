@@ -393,6 +393,12 @@ placeholder:
     missing:
         thumbnail: "classpath:images/200px-Document_icon.svg.png"
 
+derivative:
+    loader:
+        threads: 4
+        queueCapacity: 100
+        timeoutSeconds: 30
+
 openapi:
     title: Image Service API
     description: API Documentation for Image Services
