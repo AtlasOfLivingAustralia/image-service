@@ -123,6 +123,7 @@ class S3StorageOperationsSpec extends Specification implements DataTest {
             assert request.contentType() == 'image/jpeg'
             assert request.acl() == ObjectCannedACL.PUBLIC_READ
             assert request.cacheControl() == 'public,s-maxage=31536000,max-age=31536000'
+            assert req.requestBody().contentLength().orElseThrow() == 'x'.bytes.length
             consumeBody(req)
             return upload
         }

@@ -4,6 +4,7 @@ import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.tiling.IImageTiler
 import au.org.ala.images.tiling.IOnDemandImageTiler
+import com.google.common.io.ByteSource
 import com.google.common.io.Resources
 import org.apache.commons.lang3.tuple.Pair
 import grails.testing.gorm.DataTest
@@ -22,6 +23,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BiFunction
+import javax.imageio.ImageIO
+import java.awt.Color
+import java.awt.image.BufferedImage
 
 class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<ImageStoreService>, DataTest {
 
@@ -72,6 +76,54 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
         then:
         thrown(IllegalArgumentException)
+    }
+
+    def "storeImage supplies the optimised stream and length to storage"() {
+        given:
+        def originalBytes = pngBytes(1, 1)
+        def transformedBytes = pngBytes(2, 2)
+        assert transformedBytes.length != originalBytes.length
+        def optimiserOutputDirectory = java.nio.file.Files.createTempDirectory('image-store-optimiser-test').toFile()
+        def optimiserOutput = new File(optimiserOutputDirectory, 'optimised.png')
+        optimiserOutput.bytes = transformedBytes
+        def optimisationService = Mock(ImageOptimisationService)
+        def operations = Mock(StorageOperations)
+        byte[] storedBytes
+        Long storedLength
+        service.grailsApplication.config.images.optimisation.enabled = true
+        service.imageOptimisationService = optimisationService
+
+        when:
+        service.storeImage(ByteSource.wrap(originalBytes), operations, 'image/png', 'original.png')
+
+        then:
+        1 * optimisationService.optimise(_ as File, 'image/png') >> new ImageOptimisationService.OptimisationResult(
+                optimisedFile: optimiserOutput,
+                outputContentType: 'image/png'
+        )
+        1 * operations.store(_, _, 'image/png', null, _) >> { String uuid, InputStream stream, String contentType, String contentDisposition, Long length ->
+            storedBytes = stream.bytes
+            storedLength = length
+        }
+        storedBytes == transformedBytes
+        storedLength == transformedBytes.length
+
+        cleanup:
+        optimiserOutputDirectory.deleteDir()
+    }
+
+    private static byte[] pngBytes(int width, int height) {
+        def image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
+        def graphics = image.graphics
+        try {
+            graphics.color = Color.BLUE
+            graphics.fillRect(0, 0, width, height)
+        } finally {
+            graphics.dispose()
+        }
+        def output = new ByteArrayOutputStream()
+        ImageIO.write(image, 'png', output)
+        return output.toByteArray()
     }
 
     def "thumbnailImageInfo coalesces concurrent loads for same key when cache is enabled"() {

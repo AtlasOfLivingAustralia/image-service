@@ -217,7 +217,7 @@ class ImageStoreService implements MetricsSupport {
             }
 
             try {
-                operations.store(uuid, finalByteSource.openStream(), finalContentType, contentDisposition, imageBytes.sizeIfKnown().orNull())
+                operations.store(uuid, finalByteSource.openStream(), finalContentType, contentDisposition, finalByteSource.sizeIfKnown().orNull())
                 def filename = ImageUtils.getFilename(originalFilename)
                 if (finalContentType?.toLowerCase()?.startsWith('image')) {
                     if (log.isTraceEnabled()) {
