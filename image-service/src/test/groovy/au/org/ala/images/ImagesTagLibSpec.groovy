@@ -50,6 +50,36 @@ class ImagesTagLibSpec extends Specification implements TagLibUnitTest<ImagesTag
         tagLib.sanitise(value: '<a href="http://example.org" onclick=alert(1)>Some Text</a>', length: 7) == expected
     }
 
+    void 'criteria value control filters rendered definitions without mutating cached definitions'() {
+        given:
+        def fileSizeDefinition = new SearchCriteriaDefinition(
+            name: 'File Size',
+            type: CriteriaType.ImageProperty,
+            valueType: CriteriaValueType.NumberRangeLong,
+            fieldName: 'fileSize'
+        )
+        def incompatibleDefinition = new SearchCriteriaDefinition(
+            name: 'Title',
+            type: CriteriaType.ImageProperty,
+            valueType: CriteriaValueType.StringDirectEntry,
+            fieldName: 'title'
+        )
+        def cachedDefinitions = [fileSizeDefinition, incompatibleDefinition]
+        def renderedModel
+        tagLib.searchCriteriaService = [criteriaDefinitionList: cachedDefinitions]
+        tagLib.metaClass.render = { Map arguments ->
+            renderedModel = arguments.model
+            ''
+        }
+
+        when:
+        tagLib.criteriaValueControl(criteriaDefinition: fileSizeDefinition)
+
+        then:
+        cachedDefinitions == [fileSizeDefinition, incompatibleDefinition]
+        renderedModel.criteriaDefinitions*.valueType == [CriteriaValueType.NumberRangeLong]
+    }
+
     def "masks credentials for non-admin users with username and password"() {
         given:
         def url = 'https://user:secret@example.com/path?x=1'
