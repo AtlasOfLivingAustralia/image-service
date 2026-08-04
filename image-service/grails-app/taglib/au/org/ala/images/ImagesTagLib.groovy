@@ -218,7 +218,7 @@ class ImagesTagLib {
      * @attr units
      */
     def criteriaValueControl = { attrs, body ->
-        def allDefinitions = searchCriteriaService.criteriaDefinitionList
+        def allDefinitions = new ArrayList(searchCriteriaService.criteriaDefinitionList)
 
         def criteriaDefinition = attrs.criteriaDefinition as SearchCriteriaDefinition
         if (criteriaDefinition) {

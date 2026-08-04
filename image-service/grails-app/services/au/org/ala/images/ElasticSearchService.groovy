@@ -796,7 +796,10 @@ class ElasticSearchService implements MetricsSupport {
                     def term = matcher.group(2)?.replaceAll('\\*', '%')
                     term = term.replaceAll(":", "\\:")
 
-                    boolQueryBuilder.must(QueryBuilders.bool().filter(QueryBuilders.queryString().query("${matcher.group(1)}:${term}").build()).build())
+                    boolQueryBuilder.must(QueryBuilders.bool()
+                            .filter(QueryBuilders.queryString().query("${matcher.group(1)}:${term}").build()._toQuery())
+                            .build()
+                            ._toQuery())
                 }
             }
         }
