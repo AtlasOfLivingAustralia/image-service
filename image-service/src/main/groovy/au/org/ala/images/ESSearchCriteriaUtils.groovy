@@ -99,7 +99,7 @@ class ESSearchCriteriaUtils {
             } else {
                 def fb = QueryBuilders.bool().filter(
                         values.collect {
-                            QueryBuilders.queryString().query("${field}:${escape(it)}").build()
+                            QueryBuilders.queryString().query("${field}:${escape(it)}").build()._toQuery()
                         }
                 )
                 return fb.build()
@@ -142,20 +142,20 @@ class ESSearchCriteriaUtils {
             def field = criteria.criteriaDefinition.fieldName
             switch (operator) {
                 case "eq":
-                    return QueryBuilders.bool().filter(QueryBuilders.queryString().query("${field}:${value1}").build()).build()
+                    return QueryBuilders.bool().filter(QueryBuilders.queryString().query("${field}:${value1}").build()._toQuery()).build()
 //                    return QueryBuilders.queryFilter(QueryBuilders.queryString("${field}:value1"))
                 case "lt":
-                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).lte(JsonData.of(value1)).build()).build()
+                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).lte(JsonData.of(value1)).build()._toQuery()).build()
                     // TODO ES 8.0+ uses a different range query builder
 //                    return QueryBuilders.range().number(new NumberRangeQuery.Builder().field(field).lte(value1).build()).build()
 //                    return QueryBuilders.rangeFilter(field).lte(value1)
                 case "gt":
-                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).gte(JsonData.of(value1)).build()).build()
+                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).gte(JsonData.of(value1)).build()._toQuery()).build()
                     // TODO ES 8.0+ uses a different range query builder
 //                    return QueryBuilders.range().number(new NumberRangeQuery.Builder().field(field).gte(value1).build()).build()
 //                    return QueryBuilders.rangeFilter(field).gte(value1)
                 case "bt":
-                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).gte(JsonData.of(value1)).lte(JsonData.of(value2)).build()).build()
+                    return QueryBuilders.bool().filter(QueryBuilders.range().field(field).gte(JsonData.of(value1)).lte(JsonData.of(value2)).build()._toQuery()).build()
                     // TODO ES 8.0+ uses a different range query builder
 //                    return QueryBuilders.range().number(new NumberRangeQuery.Builder().field(field).gte(value1).lte(value2).build()).build()
 //                    return QueryBuilders.rangeFilter(field).gte(value1).lte(value2)
