@@ -10,6 +10,7 @@ class Tool {
     boolean inPlace = false
     boolean stdout = false  // true if tool writes output to stdout instead of a file
     List<String> fallback = []
+    List<String> args = []
     // For Java tools
     String className // using 'className' to avoid conflict with Class
 
