@@ -53,6 +53,11 @@ class ImageOptimisationConfigLoaderSpec extends Specification implements Autowir
                             type: 'java',
                             className: 'com.example.MyTool'
                     ]
+            config.images.optimisation.tools.vipsJpeg = [
+                            cmd: 'vips',
+                            fallback: ['convertJpeg'],
+                            args: ['copy', '%IN%', '%OUT%[Q=75,interlace,strip,optimize_coding]']
+                    ]
         }
     }
 
@@ -89,6 +94,8 @@ class ImageOptimisationConfigLoaderSpec extends Specification implements Autowir
         imageOptimisationConfig.tools['javaTool'] != null
         imageOptimisationConfig.tools['javaTool'].type == 'java'
         imageOptimisationConfig.tools['javaTool'].className == 'com.example.MyTool'
+        imageOptimisationConfig.tools['vipsJpeg'].fallback == ['convertJpeg']
+        imageOptimisationConfig.tools['vipsJpeg'].args == ['copy', '%IN%', '%OUT%[Q=75,interlace,strip,optimize_coding]']
     }
 
     void "test config loader preserves defaults when no config present"() {
@@ -125,4 +132,3 @@ class ImageOptimisationConfigLoaderSpec extends Specification implements Autowir
         imageOptimisationConfig.tools == originalTools
     }
 }
-

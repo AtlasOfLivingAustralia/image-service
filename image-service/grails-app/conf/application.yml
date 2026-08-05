@@ -647,14 +647,8 @@ images:
               - "%OUT%"
       optimAggressive:
         jpeg:
-          - tool: "mozjpeg"
+          - tool: "vipsJpeg"
             lossy: true
-            args:
-              - "-quality"
-              - "75"
-              - "-optimize"
-              - "-progressive"
-              - "%IN%"
         png:
           - tool: "pngquant"
             lossy: true
@@ -693,9 +687,25 @@ images:
       jpegoptim:
         cmd: "jpegoptim"
         inPlace: true
-      mozjpeg:
-        cmd: "cjpeg"
-        stdout: true
+      vipsJpeg:
+        cmd: "vips"
+        inPlace: false
+        fallback: ["convertJpeg"]
+        args:
+          - "copy"
+          - "%IN%"
+          - "%OUT%[Q=75,interlace,strip,optimize_coding]"
+      convertJpeg:
+        cmd: "convert"
+        inPlace: false
+        args:
+          - "%IN%"
+          - "-strip"
+          - "-interlace"
+          - "Plane"
+          - "-quality"
+          - "75"
+          - "%OUT%"
       oxipng:
         cmd: "oxipng"
         inPlace: true

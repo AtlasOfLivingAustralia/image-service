@@ -16,8 +16,7 @@ class ToolConfigurationSpec extends Specification {
 
         @Override
         boolean isInstalled(String cmd) {
-            System.out.println("[DEBUG_LOG] Checking if installed: ${cmd}")
-            return true
+            return installedTools.isEmpty() || installedTools.contains(cmd)
         }
 
         @Override
@@ -76,8 +75,7 @@ class ToolConfigurationSpec extends Specification {
                 def stage = new Stage(name: 'test', toolsRef: toolsetName, allowLossy: true)
                 config.stages['testPipe'] = [stage]
 
-                def result = service.optimise(f, testFormat, 'testPipe')
-                println "Ran ${toolsetName} for ${format} (type: ${testFormat}), file: ${f.absolutePath}, calls: ${capturer.calls.size()}, warnings: ${result.warnings}"
+                service.optimise(f, testFormat, 'testPipe')
             }
         }
 
@@ -85,7 +83,7 @@ class ToolConfigurationSpec extends Specification {
         noExceptionThrown()
     }
 
-    def "specific check for mozjpeg / cjpeg stdout configuration"() {
+    def "aggressive JPEG optimisation prefers vips and falls back to convert with JPEG input and output"() {
         given:
         def service = new ImageOptimisationService()
         def capturer = new CapturingExec()
@@ -93,10 +91,10 @@ class ToolConfigurationSpec extends Specification {
 
         def config = new ImageOptimisationConfig()
         config.skipThresholdBytes = -1
-        // Ensure mozjpeg is using cjpeg and stdout
-        Tool mozjpeg = config.tools['mozjpeg']
-        assert mozjpeg.cmd == 'cjpeg'
-        assert mozjpeg.stdout == true
+        Tool vipsJpeg = config.tools['vipsJpeg']
+        assert vipsJpeg.cmd == 'vips'
+        assert vipsJpeg.fallback == ['convertJpeg']
+        assert !config.tools.containsKey('mozjpeg')
 
         // Force the pipeline to include our stage
         config.stages['testAggressive'] = [new Stage(name: 'opt', toolsRef: 'optimAggressive', allowLossy: true)]
@@ -106,18 +104,26 @@ class ToolConfigurationSpec extends Specification {
         File f = new File(tempDir, "test.jpg")
         f.text = "test content " * 100
 
-        when:
-        def result = service.optimise(f, 'image/jpeg', 'testAggressive')
+        when: 'libvips is available'
+        capturer.installedTools = ['vips'] as Set
+        service.optimise(f, 'image/jpeg', 'testAggressive')
 
         then:
-        println "Result warnings: ${result.warnings}"
-        println "Calls for mozjpeg: ${capturer.calls}"
-        def call = capturer.calls.find { it.cmd == 'cjpeg' }
-        call != null
-        call.stdout == true
-        // Should NOT have an output file in arguments because it's a stdout tool
-        !call.args.any { it.contains("step") }
-        call.args.any { it.contains("current.jpg") }
+        def vipsCall = capturer.calls.find { it.cmd == 'vips' }
+        vipsCall.args[0] == 'copy'
+        vipsCall.args[1].endsWith('current.jpg')
+        vipsCall.args[2].endsWith('opt_step0.jpg[Q=75,interlace,strip,optimize_coding]')
+
+        when: 'libvips is unavailable'
+        capturer.calls.clear()
+        capturer.installedTools = ['convert'] as Set
+        service.optimise(f, 'image/jpeg', 'testAggressive')
+
+        then:
+        def convertCall = capturer.calls.find { it.cmd == 'convert' }
+        convertCall.args[0].endsWith('current.jpg')
+        convertCall.args.containsAll(['-strip', '-interlace', 'Plane', '-quality', '75'])
+        convertCall.args.last().endsWith('opt_step0.jpg')
     }
 
     def "verify pngquant configuration handles output argument correctly"() {
@@ -142,11 +148,9 @@ class ToolConfigurationSpec extends Specification {
 
         when:
         // Use a pipeline that definitely contains pngquant
-        def result = service.optimise(f, 'image/png', 'testPng')
+        service.optimise(f, 'image/png', 'testPng')
 
         then:
-        println "Result warnings: ${result.warnings}"
-        println "Calls for pngquant: ${capturer.calls}"
         def call = capturer.calls.find { it.cmd == 'pngquant' }
         call != null
         call.stdout == false
