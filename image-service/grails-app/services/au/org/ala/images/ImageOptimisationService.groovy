@@ -148,7 +148,9 @@ class ImageOptimisationService implements MetricsSupport {
                     boolean acceptLarger = step.acceptLarger
                     boolean alwaysAccept = step.alwaysAccept
 
-                    List<String> confArgs = step.args
+                    List<String> confArgs = []
+                    confArgs.addAll(resolved.args ?: [])
+                    confArgs.addAll(step.args ?: [])
                     File outFile = inPlace ? current : new File(workDir, "${stageName}_step${i}" + (outExt ?: extensionFor(format, current)))
                     Map<String, String> tokens = buildTokens(current, workDir, format, [:], outExt)
                     tokens[TOKEN_OUT] = outFile.absolutePath

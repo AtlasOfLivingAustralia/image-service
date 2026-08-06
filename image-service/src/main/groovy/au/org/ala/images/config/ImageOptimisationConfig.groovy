@@ -67,7 +67,7 @@ class ImageOptimisationConfig {
             ],
             optimAggressive: [
                     jpeg: [
-                            StageStep.lossy('mozjpeg', ['-quality', '75', '-optimize', '-progressive', '%IN%'])
+                            StageStep.lossy('vipsJpeg')
                     ],
                     png: [
                             StageStep.lossy('pngquant', ['--quality=60-80', '--speed=1', '--force', '--output=%OUT%', '%IN%'])
@@ -100,7 +100,15 @@ class ImageOptimisationConfig {
             // JPEG
             jpegtran: Tool.stdout('jpegtran'),
             jpegoptim: Tool.process('jpegoptim', true),
-            mozjpeg: Tool.stdout('cjpeg'),
+            vipsJpeg: new Tool(
+                    cmd: 'vips',
+                    fallback: ['convertJpeg'],
+                    args: ['copy', '%IN%', '%OUT%[Q=75,interlace,strip,optimize_coding]']
+            ),
+            convertJpeg: new Tool(
+                    cmd: 'convert',
+                    args: ['%IN%', '-strip', '-interlace', 'Plane', '-quality', '75', '%OUT%']
+            ),
             // Java SPI example tool
             javaResize: Tool.java(ImageResizeTool),
             // PNG

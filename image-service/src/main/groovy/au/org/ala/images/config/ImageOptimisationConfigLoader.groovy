@@ -290,6 +290,13 @@ class ImageOptimisationConfigLoader {
             }
         }
 
+        if (map.containsKey('args')) {
+            def args = map.get('args')
+            if (args instanceof List) {
+                tool.args = args.collect { it.toString() }
+            }
+        }
+
         return tool
     }
 
@@ -340,4 +347,3 @@ class ImageOptimisationConfigLoader {
         return null
     }
 }
-
