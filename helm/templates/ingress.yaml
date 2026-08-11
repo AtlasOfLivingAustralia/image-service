@@ -15,11 +15,7 @@ metadata:
     alb.ingress.kubernetes.io/success-codes: '200'
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09
-    {{- $tags := list }}
-    {{- range $key, $value := .Values.tags }}
-    {{- $tags = append $tags (printf "%s=%s" $key $value) }}
-    {{- end }}
-    alb.ingress.kubernetes.io/tags: {{ join "," $tags }}
+    alb.ingress.kubernetes.io/tags:  {{ include "ala-images.resourceTags" . | quote }}
     alb.ingress.kubernetes.io/load-balancer-attributes: >
       idle_timeout.timeout_seconds=90,
       access_logs.s3.enabled=true,

@@ -191,11 +191,27 @@ Conditions:
     - "true"
 
 Resources:
-  DbParamGrp:
+  MysqlDbInstanceParamGrp:
     Type: AWS::RDS::DBParameterGroup
     Properties:
       Description: !Sub ${pProductName} DB instance parameter grp
       Family: !Ref pDbParamGrpFamily
+      Parameters:
+        long_query_time: 2
+        slow_query_log: 1
+        log_queries_not_using_indexes: 0
+        performance_schema: 1
+    Condition: IsMysql
+
+  PostgresDbInstanceParamGrp:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: !Sub ${pProductName} DB instance parameter grp
+      Family: !Ref pDbParamGrpFamily
+      Parameters:
+        log_min_duration_statement: 2000
+        log_statement: ddl
+    Condition: IsPostgres
 
   MysqlClusterParamGrp:
     Type: AWS::RDS::DBClusterParameterGroup
@@ -375,8 +391,10 @@ Resources:
         - !Ref pInstanceClass
         - db.serverless
       DBInstanceIdentifier: !Sub ${pDbInstanceName}-primary
-
-      #DBParameterGroupName: !Ref DbParamGrp # Uncomment to use a custom parameter group
+      DBParameterGroupName: !If
+        - IsMysql
+        - !Ref MysqlDbInstanceParamGrp
+        - !Ref PostgresDbInstanceParamGrp
       DBSubnetGroupName: !Ref DbSubnetGrp
       Engine: !Ref pDbEngine
       DBClusterIdentifier: !Ref DbCluster
@@ -410,8 +428,10 @@ Resources:
         - db.serverless
       DBInstanceIdentifier: !Sub ${pDbInstanceName}-replica
       DBClusterIdentifier: !Ref DbCluster
-
-      #DBParameterGroupName: !Ref DbParamGrp # Uncomment to use a custom parameter group
+      DBParameterGroupName: !If
+        - IsMysql
+        - !Ref MysqlDbInstanceParamGrp
+        - !Ref PostgresDbInstanceParamGrp
       DBSubnetGroupName: !Ref DbSubnetGrp
       PubliclyAccessible: false
       Engine: !Ref pDbEngine
