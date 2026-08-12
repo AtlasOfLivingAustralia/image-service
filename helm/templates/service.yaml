@@ -4,8 +4,10 @@ metadata:
   name: svc-{{ include "ala-images.fullname" . }}
   labels:
     {{- include "ala-images.labels" . | nindent 4 }}
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: {{ include "ala-images.resourceTags" . | quote }}
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   ports:
     - port: {{ .Values.service.port }}
       targetPort: {{ .Values.service.targetPort}}

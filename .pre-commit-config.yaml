@@ -23,6 +23,7 @@ repos:
         entry: check-yaml
         language: system
         types: [yaml]
+        exclude: (^helm/templates/)  # Helm templates use Go templating, not valid raw YAML
         args: ['--unsafe']  # Allow CloudFormation intrinsic functions
       - id: check-added-large-files
         name: Check for added large files
