@@ -176,17 +176,17 @@ elasticsearch:
 images:
   disableCache: {{ .Values.images.disableCache }}
   optimisation:
-    enabled: { { .Values.imageservice.optimisation.enabled } }
+    enabled: {{ .Values.imageservice.optimisation.enabled }}
   metadata:
     legacy:
       persist:
-        enabled: { { .Values.imageservice.metadata.legacy.persist.enabled } }
+        enabled: {{ .Values.imageservice.metadata.legacy.persist.enabled }}
     jsonb:
       migration:
-        enabled: { { .Values.imageservice.metadata.jsonb.migration.enabled } }
-        startTime: { { .Values.imageservice.metadata.jsonb.migration.startTime } }
-        endTime: { { .Values.imageservice.metadata.jsonb.migration.endTime } }
-        maxLoadAverage: { { .Values.imageservice.metadata.jsonb.migration.maxLoadAverage } }
+        enabled: {{ .Values.imageservice.metadata.jsonb.migration.enabled }}
+        startTime: {{ .Values.imageservice.metadata.jsonb.migration.startTime }}
+        endTime: {{ .Values.imageservice.metadata.jsonb.migration.endTime }}
+        maxLoadAverage: {{ .Values.imageservice.metadata.jsonb.migration.maxLoadAverage }}
 
 tiling:
   levelThreads: {{ .Values.tiling.levelThreads }}
