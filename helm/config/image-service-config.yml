@@ -104,8 +104,6 @@ imageservice:
         region: ap-southeast-2
         type: s3
         cloudfrontDomain: {{ .Values.images.store.cloudfront.domain }}
-  optimisation:
-    enabled: {{ .Values.imageservice.optimisation.enabled }}
 
 # skin
 skin:
@@ -177,6 +175,8 @@ elasticsearch:
 
 images:
   disableCache: {{ .Values.images.disableCache }}
+  optimisation:
+    enabled: {{ .Values.imageservice.optimisation.enabled }}
   metadata:
     legacy:
       persist:

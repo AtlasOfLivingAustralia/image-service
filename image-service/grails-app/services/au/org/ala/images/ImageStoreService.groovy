@@ -146,10 +146,8 @@ class ImageStoreService implements MetricsSupport {
     @PostConstruct
     @NotTransactional
     def init() {
-        // Keep Caffeine maintenance off the bounded derivative executor. Cleanup tasks
-        // must not compete with image generation or be rejected while that pool is busy.
-        thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).buildAsync()
-        tileCache = Caffeine.from(tileLookupCacheConfig).buildAsync()
+        thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).executor(derivativeLoaderExecutor).buildAsync()
+        tileCache = Caffeine.from(tileLookupCacheConfig).executor(derivativeLoaderExecutor).buildAsync()
         originalCache = Caffeine.from(originalLookupCacheConfig).build()
     }
 
@@ -752,7 +750,7 @@ class ImageStoreService implements MetricsSupport {
         def key = Pair.of(imageIdentifier, type)
         def loader = this.&ensureThumbnailExistsCacheLoader.curry(dataResourceUid).curry(operations)
         BiFunction<Pair<String, String>, Executor, CompletableFuture<ImageInfo>> mappingFunction =
-                { Pair<String, String> k, Executor ignored -> submitDerivativeLoad(loader, k, derivativeLoaderExecutor) } as BiFunction<Pair<String, String>, Executor, CompletableFuture<ImageInfo>>
+                { Pair<String, String> k, Executor exec -> submitDerivativeLoad(loader, k, exec) } as BiFunction<Pair<String, String>, Executor, CompletableFuture<ImageInfo>>
 
         // TODO undefined behaviour if already loading when invalidate is called.
         if (refresh) {
@@ -850,7 +848,7 @@ class ImageStoreService implements MetricsSupport {
 
         def loader = this.&ensureTileExistsCacheLoader.curry(zoomLevels).curry(operations)
         BiFunction<Pair<String, Point>, Executor, CompletableFuture<ImageInfo>> mappingFunction =
-                { Pair<String, Point> k, Executor ignored -> submitDerivativeLoad(loader, k, derivativeLoaderExecutor) } as BiFunction<Pair<String, Point>, Executor, CompletableFuture<ImageInfo>>
+                { Pair<String, Point> k, Executor exec -> submitDerivativeLoad(loader, k, exec) } as BiFunction<Pair<String, Point>, Executor, CompletableFuture<ImageInfo>>
         def originKey = Pair.of(identifier, new Point(0,0,z))
         def key = Pair.of(identifier, new Point(x, y, z))
 
