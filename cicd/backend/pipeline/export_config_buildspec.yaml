@@ -210,10 +210,10 @@ phases:
         imageservice:
           bucket:
             name: ${S3_BUCKET}
-          optimisation:
-            enabled: ${IMAGE_SERVICE_IMAGE_OPTIMISATION_ENABLED}
         images:
           disableCache: ${IMAGE_SERVICE_DISABLE_CACHE}
+          optimisation:
+            enabled: ${IMAGE_SERVICE_IMAGE_OPTIMISATION_ENABLED}
           metadata:
             legacy:
               persist:

@@ -211,8 +211,6 @@ elasticsearch-images:
 imageservice:
   bucket:
     name:
-  optimisation:
-    enabled: false
 aws:
   s3:
     force:
@@ -225,6 +223,8 @@ aws:
 
 images:
   disableCache: false
+  optimisation:
+    enabled: false
   metadata:
     legacy:
       persist:

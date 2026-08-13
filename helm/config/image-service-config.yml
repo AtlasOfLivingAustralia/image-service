@@ -176,7 +176,7 @@ elasticsearch:
 images:
   disableCache: {{ .Values.images.disableCache }}
   optimisation:
-    enabled: {{ .Values.imageservice.optimisation.enabled }}
+    enabled: {{ .Values.images.optimisation.enabled }}
   metadata:
     legacy:
       persist:
