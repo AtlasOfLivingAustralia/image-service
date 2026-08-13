@@ -211,18 +211,6 @@ elasticsearch-images:
 imageservice:
   bucket:
     name:
-  optimisation:
-    enabled: false
-  metadata:
-    legacy:
-      persist:
-        enabled: false
-    jsonb:
-      migration:
-        enabled: false
-        startTime:
-        endTime:
-        maxLoadAverage:
 aws:
   s3:
     force:
@@ -235,6 +223,18 @@ aws:
 
 images:
   disableCache: false
+  optimisation:
+    enabled: false
+  metadata:
+    legacy:
+      persist:
+        enabled: false
+    jsonb:
+      migration:
+        enabled: false
+        startTime:
+        endTime:
+        maxLoadAverage:
   store:
     container:
       credentials:
