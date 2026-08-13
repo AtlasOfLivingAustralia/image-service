@@ -128,6 +128,7 @@ phases:
         tiling:
           levelThreads: ${TILING_LEVEL_THREADS}
           ioThreads: ${TILING_IO_THREADS}
+          version: ${TILING_VERSION}
         app:
           url: https://$DOMAIN_NAME
         db:
@@ -211,6 +212,16 @@ phases:
           bucket:
             name: ${S3_BUCKET}
         images:
+          useStreamingTiler: ${IMAGE_SERVICE_USE_STREAMING_TILER}
+          useStreamingThumbnailer: ${IMAGE_SERVICE_USE_STREAMING_THUMBNAILER}
+          useStreamingIiifProcessor: ${IMAGE_SERVICE_USE_STREAMING_IIIF_PROCESSOR}
+          padTiles: ${IMAGE_SERVICE_PAD_TILES}
+          preferPureJavaOperations: ${IMAGE_SERVICE_PREFER_PURE_JAVA_OPERATIONS}
+          nativeDzTiler:
+            jna:
+              enabled: ${IMAGE_SERVICE_NATIVE_JNA_TILER_ENABLED}
+            ffm:
+              enabled: ${IMAGE_SERVICE_NATIVE_FFM_TILER_ENABLED}
           disableCache: ${IMAGE_SERVICE_DISABLE_CACHE}
           optimisation:
             enabled: ${IMAGE_SERVICE_IMAGE_OPTIMISATION_ENABLED}

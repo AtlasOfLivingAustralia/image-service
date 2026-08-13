@@ -222,6 +222,16 @@ aws:
         enabled:
 
 images:
+  useStreamingTiler: true
+  useStreamingThumbnailer: true
+  useStreamingIiifProcessor: true
+  padTiles: true
+  preferPureJavaOperations: false
+  nativeDzTiler:
+    jna:
+      enabled: true
+    ffm:
+      enabled: true
   disableCache: false
   optimisation:
     enabled: false
@@ -262,6 +272,7 @@ management:
 tiling:
   levelThreads: 2
   ioThreads: 32
+  version: V5
 flyway:
   enabled: true
 thumbnail:
