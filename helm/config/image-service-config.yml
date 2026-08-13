@@ -3,7 +3,7 @@ grails:
 
 server:
   port: 8080
-  contextPath: 
+  contextPath:
 
 security:
   core:
@@ -21,12 +21,12 @@ security:
     bypass: False
     disableCAS: False
     casServerName: {{ .Values.cas.serverName }}
-    casServerUrlPrefix: {{ .Values.cas.serverName }}/cas
-    casServerLoginUrl: {{ .Values.cas.serverName }}/cas/login
-    casServerLogoutUrl: {{ .Values.cas.serverName }}/cas/logout
-    loginUrl: {{ .Values.cas.serverName }}/cas/login
-    logoutUrl: {{ .Values.cas.serverName }}/cas/logout
-    authenticateOnlyIfLoggedInFilterPattern : 
+    casServerUrlPrefix: "{{ .Values.cas.serverName }}/cas"
+    casServerLoginUrl: "{{ .Values.cas.serverName }}/cas/login"
+    casServerLogoutUrl: "{{ .Values.cas.serverName }}/cas/logout"
+    loginUrl: "{{ .Values.cas.serverName }}/cas/login"
+    logoutUrl: "{{ .Values.cas.serverName }}/cas/logout"
+    authenticateOnlyIfLoggedInFilterPattern :
   oidc:
     enabled: {{ .Values.oidc.enabled }}
     clientId: {{ .Values.oidc.clientId }}
@@ -48,7 +48,7 @@ security:
     roleAttributes: cognito:groups
   apikey:
     ip:
-      whitelist: 
+      whitelist:
     check:
       serviceUrl: {{ .Values.apikey.check.serviceUrl }}
     enabled: {{ .Values.apikey.enabled }}
@@ -90,7 +90,7 @@ imageservice:
     staging: "/data/image-service/store/staging"
   apache:
     root: "{{ .Values.app.url }}/store/"
-    multiple_roots:  "{{ .Values.app.url }}/store/"
+    multiple_roots: "{{ .Values.app.url }}/store/"
     exportDir: "/data/image-service/exports"
   storage:
     locations:
@@ -106,23 +106,13 @@ imageservice:
         cloudfrontDomain: {{ .Values.images.store.cloudfront.domain }}
   optimisation:
     enabled: {{ .Values.imageservice.optimisation.enabled }}
-  metadata:
-    legacy:
-      persist:
-        enabled: {{ .Values.imageservice.metadata.legacy.persist.enabled }}
-    jsonb:
-      migration:
-        enabled: {{ .Values.imageservice.metadata.jsonb.migration.enabled }}
-        startTime: {{ .Values.imageservice.metadata.jsonb.migration.startTime }}
-        endTime: {{ .Values.imageservice.metadata.jsonb.migration.endTime }}
-        maxLoadAverage: {{ .Values.imageservice.metadata.jsonb.migration.maxLoadAverage }}
 
 # skin
 skin:
   layout: ala-main
   favicon: "https://www.ala.org.au/app/uploads/2019/01/cropped-favicon-32x32.png"
   orgNameLong: Atlas
-  homeUrl: https://www-test.ala.org.au
+  homeUrl: "https://www-test.ala.org.au"
 
 # external links
 collectory:
@@ -130,8 +120,8 @@ collectory:
 biocache:
   baseURL: {{ .Values.biocache.url }}
   service:
-    baseURL: {{ .Values.biocache.url }}/ws
-  
+    baseURL: "{{ .Values.biocache.url }}/ws"
+
 # header block
 headerAndFooter:
   version: {{ .Values.headerAndFooter.version }}
@@ -187,6 +177,16 @@ elasticsearch:
 
 images:
   disableCache: {{ .Values.images.disableCache }}
+  metadata:
+    legacy:
+      persist:
+        enabled: {{ .Values.images.metadata.legacy.persist.enabled }}
+    jsonb:
+      migration:
+        enabled: {{ .Values.images.metadata.jsonb.migration.enabled }}
+        startTime: {{ .Values.images.metadata.jsonb.migration.startTime }}
+        endTime: {{ .Values.images.metadata.jsonb.migration.endTime }}
+        maxLoadAverage: {{ .Values.images.metadata.jsonb.migration.maxLoadAverage }}
 
 tiling:
   levelThreads: {{ .Values.tiling.levelThreads }}

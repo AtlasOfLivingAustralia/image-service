@@ -212,6 +212,8 @@ phases:
             name: ${S3_BUCKET}
           optimisation:
             enabled: ${IMAGE_SERVICE_IMAGE_OPTIMISATION_ENABLED}
+        images:
+          disableCache: ${IMAGE_SERVICE_DISABLE_CACHE}
           metadata:
             legacy:
               persist:
@@ -222,8 +224,6 @@ phases:
                 startTime: ${IMAGE_SERVICE_METADATA_JSONB_MIGRATION_START_TIME}
                 endTime: ${IMAGE_SERVICE_METADATA_JSONB_MIGRATION_END_TIME}
                 maxLoadAverage: ${IMAGE_SERVICE_METADATA_JSONB_MAX_LOAD_AVERAGE}
-        images:
-          disableCache: ${IMAGE_SERVICE_DISABLE_CACHE}
           store:
             container:
               credentials: ${CONTAINER_CREDENTIALS}
