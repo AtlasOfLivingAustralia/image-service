@@ -1,0 +1,144 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'groovy'
+    id 'java-test-fixtures'
+    id 'com.google.osdetector' version '1.7.3'
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://nexus.ala.org.au/content/groups/public/" }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(11)
+    }
+}
+
+dependencies {
+    implementation platform('org.apache.tika:tika-bom:3.2.3')
+
+    implementation 'org.apache.commons:commons-lang3:3.18.0'
+    implementation 'commons-io:commons-io:2.16.1'
+    implementation 'org.apache.commons:commons-imaging:1.0.0-alpha5'
+
+    api 'org.slf4j:slf4j-api:1.7.36'
+    compileOnly 'org.slf4j:slf4j-simple:1.7.36'
+
+    implementation 'com.github.jai-imageio:jai-imageio-core:1.4.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-jpeg:3.12.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-tiff:3.12.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-psd:3.12.0'
+
+    implementation 'org.apache.tika:tika-core'
+    implementation 'org.apache.tika:tika-parsers-standard-package'
+
+    implementation 'com.drewnoakes:metadata-extractor:2.18.0'
+    implementation 'org.imgscalr:imgscalr-lib:4.2'
+    implementation 'com.google.guava:guava:32.1.1-jre'
+
+    // JNA for native library access (libvips, etc)
+    implementation 'net.java.dev.jna:jna:5.14.0'
+    implementation 'net.java.dev.jna:jna-platform:5.14.0'
+
+    testImplementation 'junit:junit:4.13.1'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.11.4'
+    testFixturesImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+    testFixturesImplementation 'org.apache.groovy:groovy:4.0.22'
+    testFixturesImplementation 'com.google.guava:guava:32.1.1-jre'
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+    testImplementation 'org.apache.groovy:groovy:4.0.22'
+    testRuntimeOnly 'net.bytebuddy:byte-buddy:1.14.9'
+    testRuntimeOnly 'org.objenesis:objenesis:3.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    // 2GB required for ImageTiler4LargeImageTest
+    maxHeapSize = "2048m"
+    minHeapSize = "512m"
+
+    def runBenchmarks = providers.gradleProperty('runBenchmarks')
+            .orElse(providers.systemProperty('runBenchmarks'))
+            .map { it.toBoolean() }
+            .orElse(false)
+
+    if (!runBenchmarks.get()) {
+        filter {
+            excludeTestsMatching '*Benchmark*'
+        }
+    }
+}
+
+def nativeOs = osdetector.os == 'osx' ? 'macos' : osdetector.os
+def nativeArch = osdetector.arch == 'aarch_64' ? 'aarch64' : osdetector.arch
+def nativeClassifier = "${nativeOs}-${nativeArch}"
+def nativeLibFileName = osdetector.os == 'osx' ? 'libala_vips_dztiler.dylib' : 'libala_vips_dztiler.so'
+def useSanitizedNativeDzBridge = providers.gradleProperty('useSanitizedNativeDzBridge')
+        .orElse(providers.systemProperty('useSanitizedNativeDzBridge'))
+        .map { it.toBoolean() }
+        .orElse(false)
+def nativeBridgeSanitizers = providers.gradleProperty('nativeBridgeSanitizers')
+        .orElse(useSanitizedNativeDzBridge.map { enabled -> enabled ? 'asan' : '' })
+        .map { value ->
+            value.split(',')
+                    .collect { it.trim().toLowerCase() }
+                    .findAll { !it.isEmpty() }
+                    .unique()
+        }
+def sanitizedBridgeRelativeDir = nativeBridgeSanitizers.map { sanitizers -> sanitizers.join('-') }
+def sanitizedBridgePath = project(':image-utils-native-bridge').layout.buildDirectory.file(
+        sanitizedBridgeRelativeDir.map { dirName -> "native-sanitized/${nativeClassifier}/${dirName}/${nativeLibFileName}" }
+)
+
+tasks.withType(Test).configureEach {
+    if (useSanitizedNativeDzBridge.get()) {
+        dependsOn(':image-utils-native-bridge:stageNativeBridgeSanitized')
+        systemProperty 'images.nativeDzTiler.bridgeLibraryPath', sanitizedBridgePath.get().asFile.absolutePath
+    }
+}
+
+processResources {
+    def skipNativeBuild = providers.gradleProperty('skipNativeDzBridgeBuild')
+
+    if (!skipNativeBuild.isPresent()) {
+        // Point 'from' directly to the output directory of the native task.
+        // Gradle automatically handles the task dependency (dependsOn).
+        dependsOn(':image-utils-native-bridge:stageNativeBridge')
+        from(project(':image-utils-native-bridge').layout.buildDirectory.dir("native/${nativeClassifier}")) {
+            into "native/${nativeClassifier}"
+        }
+    }
+
+    // Pre-built native libs (CI/Fat-JAR mode)
+    def prebuiltDir = providers.gradleProperty('nativeDzBridgePrebuiltDir')
+    if (prebuiltDir.isPresent()) {
+        from(prebuiltDir.map { file(it) }) {
+            into 'native'
+            include '**/*.so', '**/*.dylib', '**/*.dll'
+        }
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            name 'Nexus'
+            url "https://nexus.ala.org.au/content/repositories/${project.version.endsWith('-SNAPSHOT') ? 'snapshots' : 'releases' }"
+            credentials {
+                username = System.getenv('TRAVIS_DEPLOY_USERNAME')
+                password = System.getenv('TRAVIS_DEPLOY_PASSWORD')
+            }
+        }
+    }
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+}

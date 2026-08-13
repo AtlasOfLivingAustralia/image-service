@@ -1,0 +1,19 @@
+# Standard Gradle/IntelliJ
+.gradle/
+build/
+out/
+*.iml
+*.iws
+*.ipr
+
+# Project specific
+.slcache/
+/target/
+debian/ala-image
+debian/debhelper-build-stamp
+debian/files
+.secrets
+*.debhelper
+*.debhelper.log
+*.buildinfo
+*.substvars

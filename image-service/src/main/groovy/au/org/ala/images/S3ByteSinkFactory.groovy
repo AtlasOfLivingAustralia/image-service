@@ -1,0 +1,195 @@
+package au.org.ala.images
+
+import au.org.ala.images.metrics.MetricsTrackingOutputStream
+import au.org.ala.images.storage.S3ApplicationStreamIdleTimeoutException
+import au.org.ala.images.storage.S3ApplicationWatchdogOutputStream
+import au.org.ala.images.util.ByteSinkFactory
+import com.google.common.io.ByteSink
+import groovy.util.logging.Slf4j
+import io.micrometer.core.instrument.MeterRegistry
+import software.amazon.awssdk.core.async.BlockingOutputStreamAsyncRequestBody
+import software.amazon.awssdk.services.s3.S3AsyncClient
+import software.amazon.awssdk.transfer.s3.S3TransferManager
+import software.amazon.awssdk.transfer.s3.model.UploadRequest
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.Tag
+import software.amazon.awssdk.services.s3.model.Tagging
+
+import java.nio.file.Files
+import java.time.Duration
+import grails.util.Holders
+
+@Slf4j
+class S3ByteSinkFactory implements ByteSinkFactory {
+
+    static boolean streaming = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.upload.streaming', 'true'))
+    private static final Duration applicationStreamIdleTimeout = applicationStreamIdleTimeout()
+
+    private final S3AsyncClient s3Client
+    private final S3TransferManager s3TransferManager
+    private final int connectionTimeout
+    private final StoragePathStrategy storagePathStrategy
+    private final String uuid
+    private final String[] prefixes
+    private final String bucket
+    private final String region
+    private final MeterRegistry meterRegistry
+    private final Map<String, String> tags
+
+
+    S3ByteSinkFactory(S3AsyncClient s3Client, S3TransferManager s3TransferManager, int connectionTimeout, StoragePathStrategy storagePathStrategy,
+                      String bucket, String uuid, Map<String, String> tags, MeterRegistry meterRegistry, String region,
+                      String... prefixes) {
+        this.bucket = bucket
+        this.region = region
+        this.meterRegistry = meterRegistry
+        this.s3Client = s3Client
+        this.storagePathStrategy = storagePathStrategy
+        this.uuid = uuid
+        this.prefixes = prefixes
+        this.tags = tags
+        this.s3TransferManager = s3TransferManager
+        this.connectionTimeout = connectionTimeout
+    }
+
+    @Override
+    void prepare() throws IOException {
+
+    }
+
+    @Override
+    ByteSink getByteSinkForNames(String... names) {
+        def path = storagePathStrategy.createPathFromUUID(uuid, *(prefixes + names))
+        return new ByteSink() {
+            @Override
+            OutputStream openStream() throws IOException {
+
+                OutputStream baseStream
+                String metricsOperationType
+
+                String contentType = guessContentType(names.length > 0 ? names.last() : '')
+
+                if (streaming && s3TransferManager) {
+                    metricsOperationType = "streaming"
+                    def reqBuilder = PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(path)
+                            .contentType(contentType)
+                    if (tags) {
+                        def tagSet = tags.collect { Tag.builder().key(it.key).value(it.value).build() }
+                        reqBuilder = reqBuilder.tagging(Tagging.builder().tagSet(tagSet).build())
+                    }
+
+                    // Use S3TransferManager which supports streaming via BlockingOutputStreamAsyncRequestBody
+                    def blockingBody = BlockingOutputStreamAsyncRequestBody.builder()
+                            .subscribeTimeout(Duration.ofSeconds(connectionTimeout)) // this should wait for any other s3 calls to timeout
+                            .build()
+
+                    def uploadReq = UploadRequest.builder()
+                            .putObjectRequest(reqBuilder.build())
+                            .requestBody(blockingBody)
+                            .build()
+                    def uploadFuture = s3TransferManager.upload(uploadReq).completionFuture()
+
+                    def outputStream = blockingBody.outputStream()
+                    S3ApplicationWatchdogOutputStream watchdogStream = applicationStreamIdleTimeout == null ? null :
+                            new S3ApplicationWatchdogOutputStream(outputStream, applicationStreamIdleTimeout, 'upload')
+                    baseStream = new FilterOutputStream(watchdogStream ?: outputStream) {
+                        @Override
+                        void close() throws IOException {
+                            try {
+                                super.close()
+                                // Producer EOF is not terminal: retain the watchdog while the upload completes.
+                                uploadFuture.join()
+                                watchdogStream?.completed()
+                            } catch (Exception e) {
+                                if (watchdogStream?.timedOut) {
+                                    throw watchdogStream.timeoutException(e)
+                                }
+                                watchdogStream?.failed()
+                                throw new IOException("S3 upload failed", e)
+                            }
+                        }
+                    }
+                } else {
+                    // Buffer to a temp file and upload on close
+                    metricsOperationType = "buffered"
+                    def tempPath = Files.createTempFile("thumbnail-$uuid-${names.join('-')}", ".jpg")
+                    def file = tempPath.toFile()
+                    file.deleteOnExit()
+                    
+                    baseStream = new FilterOutputStream(new BufferedOutputStream(Files.newOutputStream(tempPath))) {
+                        @Override
+                        void close() throws IOException {
+                            super.close()
+                            // once the file output is closed we can send it to S3 and then delete the temp file
+                            def reqBuilder = PutObjectRequest.builder()
+                                    .bucket(bucket)
+                                    .key(path)
+                                    .contentType(contentType)
+                            if (tags) {
+                                def tagSet = tags.collect { Tag.builder().key(it.key).value(it.value).build() }
+                                reqBuilder = reqBuilder.tagging(Tagging.builder().tagSet(tagSet).build())
+                            }
+                            try {
+                                def response = s3Client.putObject(reqBuilder.build(), file.toPath()).join()
+                            } catch (Exception e) {
+                                throw new IOException("S3 upload failed", e)
+                            } finally {
+                                Files.deleteIfExists(tempPath)
+                            }
+                        }
+                    }
+                }
+                // Wrap with metrics tracking if available
+                if (meterRegistry != null) {
+                    return new MetricsTrackingOutputStream(baseStream, meterRegistry, bucket, region, metricsOperationType)
+                } else {
+                    return baseStream
+                }
+            }
+
+            private String guessContentType(String name) {
+                // guess content type from names - default to image/jpeg
+                String contentType
+                String lastName = name.toLowerCase()
+                if (lastName.endsWith('.png') || lastName.endsWith('_png')) {
+                    contentType = "image/png"
+                } else if (lastName.endsWith('.gif') || lastName.endsWith('_gif')) {
+                    contentType = "image/gif"
+                } else if (lastName.endsWith('.tiff') || lastName.endsWith('_tiff') || lastName.endsWith('.tif') || lastName.endsWith('_tif')) {
+                    contentType = "image/tiff"
+                } else if (lastName.endsWith('.webp') || lastName.endsWith('_webp')) {
+                    contentType = "image/webp"
+                } else if (lastName.endsWith('.jpeg') || lastName.endsWith('_jpeg') || lastName.endsWith('.jpg') || lastName.endsWith('_jpg')) {
+                    contentType = "image/jpeg"
+                } else if (lastName.endsWith('.bmp') || lastName.endsWith('_bmp')) {
+                    contentType = "image/bmp"
+                } else if (lastName.endsWith('.svg') || lastName.endsWith('_svg')) {
+                    contentType = "image/svg+xml"
+                } else if (lastName.endsWith('.pdf') || lastName.endsWith('_pdf')) {
+                    contentType = "application/pdf"
+                } else if (lastName.endsWith('.heic') || lastName.endsWith('_heic')) {
+                    contentType = "image/heic"
+                } else if (lastName.equals('thumbnail_square')) {
+                    contentType = "image/png"
+                } else if (lastName.equals('thumbnail') || lastName.startsWith('thumbnail_')) {
+                    contentType = "image/jpeg"
+                } else {
+                    contentType = "application/octet-stream"
+                }
+                log.debug("Guessed content type [$contentType] for name [$name]")
+                return contentType
+            }
+        }
+    }
+    private static Duration applicationStreamIdleTimeout() {
+        int timeoutSeconds = Holders.getConfig().getProperty(
+                'aws.s3.application.stream.idle.timeout', Integer,
+                Integer.getInteger('au.org.ala.images.s3.application.stream.idle.timeout', 0))
+        if (timeoutSeconds < 0) {
+            throw new IllegalArgumentException('aws.s3.application.stream.idle.timeout must be zero or a positive number of seconds')
+        }
+        return timeoutSeconds == 0 ? null : Duration.ofSeconds(timeoutSeconds)
+    }
+}

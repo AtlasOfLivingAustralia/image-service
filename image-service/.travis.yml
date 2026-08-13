@@ -1,0 +1,52 @@
+dist: noble
+arch: amd64
+language: groovy
+jdk:
+  - openjdk21
+sudo: false
+branches:
+  only:
+    - master
+    - develop
+    - /^feature\/.*$/
+    - /^hotfix\/.*$/
+services:
+  - docker
+  - postgresql
+before_cache:
+  - rm -f  $HOME/.gradle/caches/modules-2/modules-2.lock
+
+cache:
+  directories:
+    - $HOME/.m2
+    - $HOME/.gradle/caches/
+    - $HOME/.gradle/wrapper/
+
+before_install:
+  - sudo rm /usr/local/bin/docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - chmod +x docker-compose
+  - mkdir -p ~/.docker/cli-plugins/
+  - cp docker-compose ~/.docker/cli-plugins/docker-compose
+  - sudo cp docker-compose /usr/libexec/docker/cli-plugins
+  - docker compose -f elastic-dc2.yml up -d
+  - 'export GRADLE_OPTS="-Dgrails.env=travis"'
+
+install:
+  - 'travis_wait 30 ./gradlew clean'
+  - './gradlew assemble'
+
+after_success:
+  - '[ "${TRAVIS_PULL_REQUEST}" = "false" ] && GRADLE_OPTS="-Dgrails.env=production" travis_retry ./gradlew publish --stacktrace'
+
+after_script:
+  - docker compose -f elastic-dc2.yml down
+
+after_failure:
+  - cat /home/travis/build/AtlasOfLivingAustralia/image-service/build/test-results/integrationTest/*
+
+env:
+  global:
+    - JAVA_TOOL_OPTIONS=-Dhttps.protocols=TLSv1.2
+    - secure: rWlywM7xq6UpiQJKSmfXM/lEURpBBtczVabWTFsL2APFu/ZkqeN8WTlLvvyupi6B4MXBUCpXkVQyGSdsoxUNrAQ6+HI7vYuCI0C44j+SelkoMgLjxsfWvRmc4FnP924LX3c9KqAjkjuMZ/cfUjomEuWiUiMCvwJO5laCCE9+Do4=
+    - secure: L2tXyQ3jVEDAOnhTUWJR8mzXXRp9VLAmlybS9gNy9cnsSdegLFZk/P8Og+AjY+X54sHGc7KOipMs5cJmNE9XG5IDCKq0m7LFNog6goI8N4/xi95k6vNXyeoIlcASpCAMW0YqLyZNz+oGbmmdhIwz8xdSZTPnrZWHPyczYkbb++0=

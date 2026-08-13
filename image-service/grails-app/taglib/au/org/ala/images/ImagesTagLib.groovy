@@ -1,0 +1,435 @@
+package au.org.ala.images
+
+import groovy.xml.MarkupBuilder
+import org.apache.commons.lang3.StringUtils
+
+class ImagesTagLib {
+
+    static namespace = 'img'
+
+    static returnObjectForTags = ['sanitiseString', 'maskUrlCredentials']
+
+    def imageService
+    def groovyPageLocator
+    def authService
+    def searchCriteriaService
+    def collectoryService
+    def sanitiserService
+
+    /**
+     * @attr title
+     * @attr selectedNavItem
+     * @attr crumbLabel
+     * @attr hideTitle
+     * @attr hideCrumbs
+     */
+    def headerContent = { attrs, body ->
+
+        def mb = new MarkupBuilder(out)
+        def bodyContent = body.call()
+        def crumbLabel = attrs.crumbLabel ?: attrs.title
+
+        sitemesh.captureContent(tag:'page-header') {
+
+            def crumbList = []
+            def keyIndex = 1
+
+            if (pageScope.crumbs) {
+                crumbList = pageScope.crumbs
+            } else {
+                Map crumb
+                while (crumb = attrs.getAt("breadcrumb${keyIndex++}")) {
+                    crumbList << crumb
+                }
+            }
+
+            if (!attrs.hideCrumbs) {
+                mb.nav('aria-label':'breadcrumb') {
+                    ol(class: 'breadcrumb') {
+                        li(class: 'breadcrumb-item') {
+                            a(href:createLink(uri:'/')) {
+                                mkp.yield("Home")
+                            }
+                        }
+                        if (crumbList) {
+                            for (int i = 0; i < crumbList?.size(); i++) {
+                                def item = crumbList[i]
+                                li(class: 'breadcrumb-item') {
+                                    a(href: item.link) {
+                                        mkp.yield(item.label)
+                                    }
+                                }
+                            }
+                        }
+                        li(class: 'breadcrumb-item active', 'aria-current': 'page') {
+                            mkp.yield(crumbLabel)
+                        }
+                    }
+                }
+            }
+
+            if (!attrs.hideTitle) {
+                mb.h2 {
+                    mkp.yield(attrs.title)
+                }
+            }
+
+            if (bodyContent) {
+                mb.div {
+                    mb.mkp.yieldUnescaped(bodyContent)
+                }
+            }
+        }
+    }
+
+    def spinner = { attrs, body ->
+        if (attrs.dark) {
+            out << "<image src=\"${resource(dir:'images', file:'spinner-dark.gif')}\" />"
+        } else {
+            out << "<image src=\"${resource(dir:'images', file:'spinner-transparent.gif')}\" />"
+        }
+    }
+
+    /**
+     * @attr imageId
+     */
+    def imageUrl = { attrs, body ->
+        if (attrs.imageId) {
+            out << imageService.getImageUrl(attrs.imageId as String)
+        }
+    }
+
+    def imageThumbUrl = { attrs, body ->
+        if (attrs.imageId ) {
+            if (attrs.centreCrop) {
+                if (attrs.large) {
+                    out << imageService.getImageCentreCropLargeThumbUrl(attrs.imageId as String)
+                } else {
+                    out << imageService.getImageCentreCropThumbUrl(attrs.imageId as String)
+                }
+            } else if (attrs.large) {
+                out << imageService.getImageThumbLargeUrl(attrs.imageId as String)
+
+            } else if (attrs.square) {
+                out << imageService.getImageSquareThumbUrl(attrs.imageId as String, attrs.backgroundColour as String ?: 'darkGrey')
+            } else {
+                out << imageService.getImageThumbUrl(attrs.imageId as String)
+            }
+        }
+    }
+
+    def imageSearchResult = { attrs, body ->
+
+        def mb = new MarkupBuilder(out)
+
+        if (attrs.image) {
+            def creator = ''
+            if (attrs.image.creator && attrs.image.creator != ElasticSearchService.NOT_SUPPLIED){
+                creator = attrs.image.creator
+            }
+
+            if(attrs.image.dataResourceUid){
+                def metadata = collectoryService.getResourceLevelMetadata(attrs.image.dataResourceUid)
+                mb.div(class: ['thumb-caption', 'caption-detail', attrs.css ?: ''].findAll().join(' ')) {
+                    mb.span(class: 'resource-name') {
+                        mkp.yield(metadata.name ?: '')
+                    }
+                    if (metadata.name && (attrs.image.title || creator)) {
+                        mkp.yield(' - ')
+                    }
+
+                    def text = "${attrs.image.title? attrs.image.title: ''} ${creator}"
+                    mb.span {
+                        mkp.yieldUnescaped(sanitiserService.truncateAndSanitise(text, attrs.image.imageIdentifier, 'title+creator', 100))
+                    }
+                }
+            } else {
+                if (attrs.image.dataResourceUid || attrs.image.title || creator) {
+                    mb.div(class: ['thumb-caption', 'caption-detail', attrs.css ?: ''].findAll().join(' ')) {
+                        def output = "${attrs.image.dataResourceUid ? attrs.image.dataResourceUid: ''} ${attrs.image.title ? attrs.image.title :''} ${creator}"
+                        mkp.yieldUnescaped(sanitiserService.truncateAndSanitise(output, attrs.image.imageIdentifier, 'drUid+title+creator', 100))
+                    }
+                }
+            }
+        }
+    }
+
+    def facetDataResourceResult = { attrs, body ->
+        def metadata = collectoryService.getResourceLevelMetadata(attrs.dataResourceUid)
+        def valueToRender = ""
+        if (metadata &&  metadata.name){
+            valueToRender = metadata.name
+        } else {
+            valueToRender = message(code: attrs.dataResourceUid, default: attrs.dataResourceUid)
+        }
+        def mb = new MarkupBuilder(out)
+        mb.span(class: 'resource-name') {
+            mkp.yield(valueToRender)
+        }
+    }
+
+    def sizeInBytes = { attrs, body ->
+        if (attrs.size) {
+            out << ImageUtils.formatFileSize(attrs.size as Double)
+        }
+    }
+
+    def formatDate = { attrs, body ->
+        def date = attrs.date as Date
+        if (date) {
+            out << g.formatDate(date: date, format: "dd MMM, yyyy")
+        }
+    }
+
+    def formatDateTime = { attrs, body ->
+        def date = attrs.date as Date
+        if (date) {
+            out << g.formatDate(date: date, format: "dd MMM, yyyy HH:mm:ss")
+        }
+    }
+
+    /**
+     * @attr active
+     * @attr title
+     * @attr href
+     */
+    def menuNavItem = { attrs, body ->
+        def active = attrs.active
+        if (!active) {
+            active = attrs.title
+        }
+        def current = pageProperty(name:'page.pageTitle')?.toString()
+
+        def mb = new MarkupBuilder(out)
+        mb.li(class: 'nav-item') {
+            a(href:attrs.href , class: active == current ? 'nav-link active' : 'nav-link') {
+//                i(class:'icon-chevron-right') { mkp.yieldUnescaped('&nbsp;')}
+                mkp.yield(attrs.title)
+            }
+        }
+    }
+
+    def navSeparator = { attrs, body ->
+        out << "&nbsp;&#187;&nbsp;"
+    }
+
+    /**
+     * @attr criteriaDefinition
+     * @attr units
+     */
+    def criteriaValueControl = { attrs, body ->
+        def allDefinitions = new ArrayList(searchCriteriaService.criteriaDefinitionList)
+
+        def criteriaDefinition = attrs.criteriaDefinition as SearchCriteriaDefinition
+        if (criteriaDefinition) {
+
+            // Remove incompatible definitions for those criteria types that can compare against other fields
+            allDefinitions.removeAll {
+                it.valueType != criteriaDefinition.valueType
+            }
+
+            def templateName = criteriaDefinition.valueType.toString()
+            if (criteriaDefinition.valueType == CriteriaValueType.NumberRangeLong) {
+                templateName = CriteriaValueType.NumberRangeInteger.toString()
+            }
+
+            def templatePath = '/criteriaControls/' + templateName[0].toLowerCase() + templateName.substring(1)
+            if (groovyPageLocator) {
+                if (!groovyPageLocator.findTemplateByPath(templatePath)) {
+                    throw new Exception("Could not locate template for criteria value type: " + criteriaDefinition.valueType.toString())
+                }
+            }
+
+            def allowedValues = []
+            if (criteriaDefinition.valueType == CriteriaValueType.StringMultiSelect) {
+            }
+
+            out << render(template: templatePath, model: [criteriaDefinition: criteriaDefinition, units: criteriaDefinition.units, value: attrs.value, allowedValues: allowedValues, criteriaDefinitions: allDefinitions])
+        }
+    }
+
+    def searchCriteriaDescription = { attrs, body ->
+        def criteria = attrs.criteria as SearchCriteria
+        if (criteria) {
+            def mb = new MarkupBuilder(out)
+            if (criteria.criteriaDefinition.valueType == CriteriaValueType.Boolean) {
+                mb.strong(criteria.criteriaDefinition.description)
+            } else {
+                mb.strong(criteria.criteriaDefinition.name)
+            }
+            mb.mkp.yieldUnescaped("&nbsp;")
+            mb.mkp.yieldUnescaped(ESSearchCriteriaUtils.format(criteria, { str -> "<strong>${str}</strong>" as String} ))
+        }
+    }
+
+    static final List<String> SYSTEM_USERNAMES = [BatchService.BATCH_UPDATE_USERNAME]
+
+    /**
+     * @attr userId User id
+     */
+    def userDisplayName = { attrs, body ->
+        String userId = attrs.userId as String
+        def displayName = ""
+        if (userId && !SYSTEM_USERNAMES.contains(userId)) {
+            displayName = authService.getUserForUserId(userId)?.displayName
+        }
+
+        def currentUserId = authService.getUserId()
+        out << (sanitiserService.sanitise(displayName ?: userId ?: '&lt;Unknown&gt;'))
+
+        if(currentUserId && currentUserId == userId){
+            out << " (thats you!)"
+        }
+    }
+
+    def userIsUploader = { attrs, body ->
+        def currentUserId = authService.getUserId()
+        if(attrs.image && attrs.image.uploader && attrs.image.uploader == currentUserId){
+            out << body()
+        }
+    }
+
+    def sanitiseString = { attrs, body ->
+        return sanitiseInternal(attrs)
+    }
+
+    def sanitise = { attrs, body ->
+        out << sanitiseInternal(attrs)
+    }
+
+    private String sanitiseInternal(attrs) {
+        def value = attrs.value
+        def image = attrs.image
+        def key = attrs.key
+        def length = attrs.length
+        def result
+        if (image && key) {
+            if (length) {
+                result = sanitiserService.truncateAndSanitise(value, image, key, length)
+            } else {
+                result = sanitiserService.sanitise(value, image, key)
+            }
+        } else {
+            if (length) {
+                result = sanitiserService.truncateAndSanitise(value, length)
+            } else {
+                result = sanitiserService.sanitise(value)
+            }
+        }
+        return result
+    }
+
+    def imageMetadata = { attrs, body ->
+        if (attrs.image[attrs.field]) {
+            out << sanitiserService.sanitise(attrs.image[attrs.field])
+        } else if (attrs.resource && attrs.resource.imageMetadata && attrs.resource.imageMetadata[attrs.field]) {
+            out << sanitiserService.sanitise(attrs.resource.imageMetadata[attrs.field]) + "<small> (resource level metadata) </small>"
+        }
+    }
+
+    /**
+     * @attr markdown defaults to true, will invoke the markdown service
+     * @attr placement (one of 'top', 'bottom', 'Left', 'Right')
+     */
+    def helpText = { attrs, body ->
+        def mb = new MarkupBuilder(out)
+        def helpText = (body() as String)?.trim()?.replaceAll("[\r\n]", "");
+        if (helpText) {
+            // helpText = markdownService.markdown(helpText)
+            def attributes = [href:'#', class:'fieldHelp', tabindex: "-1", "data-bs-toggle": "popover", "data-bs-trigger": "click",
+                              "data-bs-html": "true", "data-bs-content": helpText]
+            if (attrs.placement) {
+                attributes.placement = attrs.placement
+            }
+            mb.a(attributes) {
+                span(class:'help-container') {
+                    mkp.yieldUnescaped('&nbsp;')
+                }
+            }
+        } else {
+            mb.mkp.yieldUnescaped("&nbsp;")
+        }
+    }
+
+    /**
+     * @attr metaDataItem The metadata item whose value is to be rendered (can be ImageMetaDataItem or Map)
+     */
+    def renderMetaDataValue = { attrs, body ->
+        def md = attrs.metaDataItem
+        if (md) {
+            // Handle both Map format (from JSONB) and ImageMetaDataItem objects (from EAV)
+            def metaDataItem
+            if (md instanceof Map) {
+                // Create a pseudo-ImageMetaDataItem from the map for formatting
+                metaDataItem = new ImageMetaDataItem(
+                    name: md.key,
+                    value: md.value,
+                    source: md.source
+                )
+            } else {
+                metaDataItem = md as ImageMetaDataItem
+            }
+            out << sanitiserService.sanitise(new MetaDataValueFormatRules(grailsApplication).formatValue(metaDataItem))
+        }
+    }
+
+    def batchFileUploadStatus = { attrs, body ->
+        def status = attrs.status
+        //${batchFileUpload.status == 'LOADING' ? 'active' : ''}
+        // ${batchFileUpload.status == 'COMPLETE' ? 'success' : ''}
+        // ${batchFileUpload.status == 'PARTIALLY_COMPLETE' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'WAITING_PROCESSING' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'QUEUED' ? 'warning' : ''}
+        // ${batchFileUpload.status == 'STOPPED' ? 'danger' : ''}
+        switch (status) {
+            case BatchService.UNPACKING:
+            case BatchService.UNZIPPED:
+                out << ""
+                break
+            case BatchService.LOADING:
+            case BatchService.WAITING__PROCESSING:
+                out << "table-info"
+                break
+            case BatchService.COMPLETE:
+                out << "table-success"
+                break
+            case BatchService.PARTIALLY__COMPLETE:
+                out << "table-primary"
+                break
+            case BatchService.QUEUED:
+                out << "table-warning"
+                break
+            case BatchService.STOPPED:
+            case BatchService.CORRUPT__AVRO__FILES:
+                out << "table-danger"
+                break
+        }
+    }
+
+    /**
+     * Masks username/password in a URL for non-admin users. If the current user is admin, returns the URL unchanged.
+     * - Supports full URLs with credentials (scheme://user:pass@host) or (scheme://user@host)
+     * - Leaves non-URL strings unchanged
+     * - Sanitises the output via sanitiserService
+     * @attr value The original filename or URL string
+     */
+    def maskUrlCredentials = { attrs, body ->
+        String value = attrs.value as String
+        if (!value) {
+            return ''
+        }
+        Boolean adminAttr = (attrs.isAdmin instanceof Boolean) ? (attrs.isAdmin as Boolean) : null
+        boolean isAdmin = false
+        if (adminAttr != null) {
+            isAdmin = adminAttr
+        } else {
+            try {
+                isAdmin = request?.isUserInRole(au.org.ala.web.CASRoles.ROLE_ADMIN)
+            } catch (Throwable ignore) {
+                // In case request is not available in some contexts
+            }
+        }
+        String masked = UrlUtils.maskCredentials(value, isAdmin)
+        return masked
+    }
+}

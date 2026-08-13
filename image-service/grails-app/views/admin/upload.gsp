@@ -1,0 +1,204 @@
+<%@ page import="au.org.ala.images.License" %>
+<!doctype html>
+<html>
+    <head>
+        <meta name="layout" content="adminLayout"/>
+        <meta name="section" content="home"/>
+        <title>Upload images</title>
+        <meta name="breadcrumbs" content="${g.createLink( controller: 'image', action: 'list')}, Images"/>
+        <asset:stylesheet src="images-client.css" />
+        <asset:javascript src="images-client.js" />
+    </head>
+    <body>
+        <content tag="pageTitle">Upload images</content>
+        <div>
+            <g:if test="${flash.message}">
+                <div class="alert alert-success" style="display: block">
+                    <g:if test="${params.newImageId}">
+                        New image created - click to view
+                        <g:link controller="image" action="details" params="[imageId:params.newImageId]">
+                        ${params.newImageId}
+                        </g:link>
+                    </g:if>
+                    <g:else>
+                        ${flash.message}
+                    </g:else>
+                </div>
+            </g:if>
+            <g:if test="${flash.errorMessage}">
+                <div class="alert alert-danger" style="display: block">${flash.errorMessage}</div>
+            </g:if>
+
+            <div class="row">
+                <div class="card mb-4 bg-light">
+                    <div class="card-body">
+                        <h1 class="card-title">Bulk Upload with CSV file</h1>
+                        <g:uploadForm name="csvFileUploadForm" >
+                            <p>
+                                The file must contain column headings, and must have at least one column called <code>imageUrl</code> which contains a url to an image. Data in other columns will be stored as metadata against the image.
+                            </p>
+                            <div class="mb-3 ms-0">
+                                <label for="imagefile" class="form-label" style="display:block;">CSV file upload</label>
+                                <input type="file" name="csvfile" id="imagefile"/>
+                            </div>
+
+                            <div id="resultsDiv" style="display: none"></div>
+
+                            <div class="mb-3 d-flex gap-2">
+                                <button type="button" class="btn btn-outline-dark" id="btnCancelCSVFileUpload">Cancel</button>
+                                <button type="button" class="btn btn-primary" id="btnUploadCSVImagesFile">Upload</button>
+                            </div>
+                            <script type="text/javascript">
+
+                                var progressIntervalId = 0;
+
+                                function updateProgress(batchId) {
+                                    try {
+                                        $.ajax("${createLink(action:'getBatchProgress')}?batchId=" + batchId).done(function (data) {
+                                            if (data.success) {
+                                                if (data.taskCount > 0 && data.taskCount == data.tasksCompleted) {
+                                                    clearInterval(progressIntervalId);
+                                                    $("#resultsDiv").html("Upload complete.");
+                                                } else {
+                                                    $("#resultsDiv").html("Uploaded " + data.tasksCompleted + " of " + data.taskCount);
+                                                }
+                                            } else {
+                                                clearInterval(progressIntervalId);
+                                            }
+                                        });
+                                    } catch (e) {
+                                        $("#resultsDiv").html("Error! " + e);
+                                        clearInterval(progressIntervalId);
+                                    }
+                                }
+
+                                function renderProgress(batchId) {
+                                    progressIntervalId = setInterval(function() {
+                                        updateProgress(batchId);
+                                    }, 1000);
+                                }
+
+                                $("#btnCancelCSVFileUpload").on('click', function(e) {
+                                    e.preventDefault();
+                                    imglib.hideModal();
+                                });
+
+                                $("#btnUploadCSVImagesFile").on('click', function(e) {
+                                    e.preventDefault();
+
+                                    var formData = new FormData($("#csvFileUploadForm").get(0));
+
+                                    if (formData) {
+                                        $.ajax({
+                                            url: "${createLink(action:'uploadImagesFromCSVFile', controller: 'admin')}",
+                                            data: formData,
+                                            processData: false,
+                                            contentType: false,
+                                            type: 'POST'
+                                        }).done(function(result) {
+                                            if (!result.success) {
+                                                $("#resultsDiv").html('<div class="alert alert-danger">' + result.message + '</div>').css("display", "block");
+                                            } else {
+                                                $("#resultsDiv").html('<div class="alert alert-success">' + result.message + '</div>').css("display", "block");
+                                                renderProgress(result.batchId);
+                                            }
+                                        });
+                                    }
+                                });
+
+                            </script>
+                        </g:uploadForm>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                    <div class="card mb-4 bg-light">
+                        <div class="card-body">
+                            <h1>Single Image Upload</h1>
+                            <g:form action="storeImage" controller="admin" method="post" enctype="multipart/form-data">
+                                <div class="mb-3">
+                                    <label for="dataResourceUid">Data resource UID e.g. dr376 (retrieve from collectory)</label>
+                                    <input type="text" class="form-control" id="dataResourceUid" name="dataResourceUid">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="title">Title</label>
+                                    <input type="text" class="form-control" id="title" name="title">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="creator">Creator</label>
+                                    <input type="text" class="form-control" id="creator" name="creator">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="description">Description</label>
+                                    <input type="text" class="form-control" id="description" name="description">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="rights">Rights</label>
+                                    <input type="text" class="form-control" id="rights" name="rights">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="rightsHolder">Rights holder</label>
+                                    <input type="text" class="form-control" id="rightsHolder" name="rightsHolder">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="license">Licence</label>
+                                    <g:select name="license"
+                                              class="form-select"
+                                              from="${au.org.ala.images.License.list()}"
+                                              value=""
+                                              optionKey="url"
+                                              optionValue="name"
+                                    />
+                                </div>
+                                <div class="mb-3">
+                                    <input type="file" name="image"  />
+                                </div>
+                                <g:submitButton class="btn btn-primary" name="Upload"/>
+                            </g:form>
+                        </div>
+                    </div>
+            </div>
+            <script>
+                $(document).ready(function() {
+                    $("#btnUploadFromCSV").on('click', function(e) {
+                        var opts = {
+                            url:"${createLink(controller:'imageClient', action:'uploadFromCSVFragment')}",
+                            title:"Upload images from CSV"
+                        };
+                        imgvwr.showModal(opts);
+                    });
+                });
+            </script>
+        </div>
+
+        <div id="uploadFromCSVModal" class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Add Search Criteria</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="criteriaForm">
+                            <div class="mb-3">
+                                <label class="col-form-label" for='searchCriteriaDefinitionId'>Criteria:</label>
+                                <g:select class="form-select" id="cmbCriteria" name="searchCriteriaDefinitionId" from="${criteriaDefinitions}"
+                                          optionValue="name" optionKey="id" noSelection="${[0:"<Select Criteria>"]}" />
+                            </div>
+                            <div id="criteriaDetail" class="mt-3">
+
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="btnSaveCriteria" type="button" class="btn btn-sm btn-primary" style="order: 2;">Add criteria</button>
+                        <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal" style="order: 1;">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </body>
+</html>
+

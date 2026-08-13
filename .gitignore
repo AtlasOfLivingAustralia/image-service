@@ -1,14 +1,67 @@
-out
-.gradle
-build
-.slcache
-/target
-/.idea
+# IntelliJ IDEA
+.idea/
 *.iml
-*/*.debhelper
-*/*.debhelper.log
-*.buildinfo
-*.substvars
-debian/files
-debian/ala-image
-debian/debhelper-build-stamp
+*.iws
+*.ipr
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# NetBeans
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# OS Specific
+.DS_Store
+Thumbs.db
+
+# Build
+target/
+*.class
+*.war
+*.ear
+*.jar
+*.zip
+*.tar.gz
+*.rar
+
+# Logs
+*.log
+
+# Temp
+tmp/
+temp/
+
+# Native
+*.so
+*.dll
+*.dylib
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+!*/gradle/wrapper/gradle-wrapper.jar
+!*/gradle/wrapper/gradle-wrapper.properties
+.gradle-home/
+
+# Specific to image-service
+.secrets
+image-service/debian/ala-image
+image-service/debian/debhelper-build-stamp
+image-service/debian/files
+image-service/.slcache
+image-service/.secrets
+image-service/*.debhelper
+image-service/*.debhelper.log
+image-service/*.buildinfo
+image-service/*.substvars

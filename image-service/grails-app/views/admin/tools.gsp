@@ -1,0 +1,249 @@
+<!doctype html>
+<html>
+<head>
+    <meta name="layout" content="adminLayout"/>
+    <title>Images service | Admin | Tools</title>
+    <style type="text/css" media="screen">
+    </style>
+</head>
+
+<body>
+    <content tag="pageTitle">Tools</content>
+    <content tag="adminButtonBar" />
+
+    <g:if test="${flash.message}">
+        <div class="alert alert-success" style="display: block">${flash.message}</div>
+    </g:if>
+    <g:if test="${flash.errorMessage}">
+        <div class="alert alert-danger" style="display: block">${flash.errorMessage}</div>
+    </g:if>
+
+    <table class="table">
+        <tbody>
+        <tr>
+            <td>
+                <button id="btnImportFromLocalInbox" class="btn btn-outline-dark">Import images from local incoming directory</button>
+            </td>
+            <td>
+                Imports image files from the designated incoming server directory ("${grailsApplication.config.getProperty('imageservice.imagestore.inbox')}")
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnRebuildKeywords" class="btn btn-outline-dark">Rebuild Keywords</button>
+            </td>
+            <td>
+                Rebuild the synthetic keywords based on image tags (used for fast searching)
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnDeleteIndex" class="btn btn-danger">Re-initialise Index</button>
+            </td>
+            <td>
+                Delete and reinitialize the index (creates an empty index)
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnReindexAllImages" class="btn btn-outline-dark">Reindex All Images</button>
+            </td>
+            <td>
+                Rebuild the full text index used for searching for images - this will take several minutes for
+                1 million + images
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnRematchLicencesAllImages" class="btn btn-outline-dark">Rematch licences for all images</button>
+            </td>
+            <td>
+                Rematch licences for images - <strong>note:</strong>
+                rematching licences only affects the database. A full re-index is required
+                to pick up the changes in the search interface (i.e. facets)
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearQueues" class="btn btn-outline-dark">Clear processing queues</button>
+            </td>
+            <td>
+                Clear processing queues (tiling, background queues) - this will stop tiling, thumbnail generation
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnSearchIndex" class="btn btn-outline-dark">Search image index</button>
+            </td>
+            <td>
+                Find image by the elastic search index (Advanced)
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearCollectoryCache" class="btn btn-outline-dark">Clear collectory cache</button>
+            </td>
+            <td>
+                Clear the cache of collectory metadata for data resources (rights, license etc)
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearS3Cache" class="btn btn-outline-dark">Clear S3 Client cache</button>
+            </td>
+            <td>
+                Clear any cached S3 clients and close all connections associated with them
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearHibernateCache" class="btn btn-outline-dark">Clear hibernate query cache</button>
+            </td>
+            <td>
+                Clear the hibernate query cache of cached data
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearThumbnailLookupCache" class="btn btn-outline-dark">Clear thumbnail existence cache</button>
+            </td>
+            <td>
+                Clear the thumbnail lookup cache, useful if thumbnails need to be regenerated
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearTileLookupCache" class="btn btn-outline-dark">Clear tile existence cache</button>
+            </td>
+            <td>
+                Clear the tile lookup cache, useful if tiles need to be regenerated
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnMissingImagesCheck" class="btn btn-outline-dark">Missing images check</button>
+            </td>
+            <td>
+                Missing images report - generates a CSV file of image IDs for images with missing artefacts
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnPurgeDeletedImages" class="btn btn-outline-dark">Purge deleted images</button>
+            </td>
+            <td>
+                This will run a background task that will remove deleted images from the filesystem and the database.
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnClearFailedUploads" class="btn btn-outline-dark">Clear Failed Uploads by Regex</button>
+            </td>
+            <td>
+                Delete failed upload entries based on a regular expression pattern that matches the URL.
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <button id="btnRunCheckFailedUploads" class="btn btn-outline-dark">Run Failed Uploads Check</button>
+            </td>
+            <td>
+                Manually trigger the failed uploads check job to verify if previously failed URLs are now accessible.
+                This will override the time interval check and run immediately.
+            </td>
+        </tr>
+        </tbody>
+    </table>
+<script>
+
+    $(document).ready(function() {
+
+        $("#btnMissingImagesCheck").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'checkForMissingImages')}";
+        });
+
+        $("#btnRebuildKeywords").on('click', function(e) {
+            e.preventDefault();
+            $.ajax("${createLink(controller:'webService', action:'scheduleKeywordRegeneration')}").done(function() {
+                window.location = "${createLink(action:'tools')}";
+            });
+        });
+
+        $("#btnRematchLicencesAllImages").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'rematchLicenses')}";
+        });
+
+        $("#btnClearQueues").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearQueues')}";
+        });
+
+        $("#btnImportFromLocalInbox").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'localIngest')}";
+        });
+
+        $("#btnDeleteIndex").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'reinitialiseImageIndex')}";
+        });
+
+
+        $("#btnReindexAllImages").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'reindexImages')}";
+        });
+
+        $("#btnSearchIndex").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'indexSearch')}";
+        });
+
+        $("#btnClearCollectoryCache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearCollectoryCache')}";
+        });
+
+        $("#btnClearHibernateCache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearHibernateCache')}";
+        });
+
+        $("#btnClearS3Cache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearS3Cache')}";
+        });
+
+        $("#btnClearThumbnailLookupCache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearThumbnailLookupCache')}";
+        });
+        $("#btnClearTileLookupCache").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearTileLookupCache')}";
+        });
+
+        $("#btnPurgeDeletedImages").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'scheduleDeletedImagesPurge')}";
+        });
+        
+        $("#btnClearFailedUploads").on('click', function(e) {
+            e.preventDefault();
+            window.location = "${createLink(action:'clearFailedUploads')}";
+        });
+
+        $("#btnRunCheckFailedUploads").on('click', function(e) {
+            e.preventDefault();
+            if (confirm('This will manually trigger the failed uploads check job. Are you sure?')) {
+                window.location = "${createLink(action:'runCheckFailedUploadsJob')}";
+            }
+        });
+    });
+
+</script>
+</body>
+
+</html>

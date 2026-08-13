@@ -1,0 +1,154 @@
+package au.org.ala.images.jna;
+
+import com.sun.jna.Pointer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.OutputStream;
+
+/**
+ * Wrapper that creates a VipsTargetCustom from a Java OutputStream.
+ * This allows streaming data directly from libvips to Java without buffering the entire image.
+ *
+ * This class relies on libvips not overlapping calls to the write callback, which is true for libvips 8.12.
+ */
+public class OutputStreamVipsTarget implements AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(OutputStreamVipsTarget.class);
+
+    private final VipsLibrary vips;
+    private final OutputStream outputStream;
+    private final Pointer target;
+    private final VipsLibrary.WriteCallback writeCallback;
+    private final byte[] javaBuffer;
+    private long bytesWritten = 0;
+    private boolean closed = false;
+
+    // Buffer size for copying from native memory to Java byte array
+    private static final int BUFFER_SIZE = 64 * 1024;  // 64KB
+
+    /**
+     * Create a VipsTarget from an OutputStream.
+     * @param vips VipsLibrary instance
+     * @param outputStream the output stream to wrap
+     */
+    public OutputStreamVipsTarget(VipsLibrary vips, OutputStream outputStream) throws IOException {
+        this.vips = vips;
+        this.outputStream = outputStream;
+        this.javaBuffer = new byte[BUFFER_SIZE];
+
+        try {
+            // Create the custom target
+            this.target = vips.vips_target_custom_new();
+            if (target == null || target == Pointer.NULL) {
+                throw new IOException("Failed to create VipsTargetCustom");
+            }
+
+            // Create callback that delegates to this instance
+            this.writeCallback = (target1, buffer, length, user_data) -> handleWrite(buffer, length);
+
+            // Connect the "write" signal
+            long writeHandlerId = vips.g_signal_connect_data(target, "write", writeCallback,
+                                                              Pointer.NULL, null, 0);
+
+            if (writeHandlerId == 0) {
+                throw new IOException("Failed to connect write callback to VipsTargetCustom");
+            }
+
+            log.debug("Created OutputStreamVipsTarget with write handler: {}", writeHandlerId);
+        } catch (Throwable e) {
+            close();
+            if (e instanceof IOException) {
+                throw (IOException) e;
+            }
+            throw new IOException("Failed to create VipsTarget", e);
+        }
+    }
+
+    /**
+     * Get the number of bytes written to the OutputStream.
+     * @return bytes written
+     */
+    public long getBytesWritten() {
+        return bytesWritten;
+    }
+
+    /**
+     * Get the VipsTarget pointer.
+     * @return pointer to VipsTargetCustom
+     */
+    public Pointer getTarget() {
+        if (closed) {
+            throw new IllegalStateException("Target has been closed");
+        }
+        return target;
+    }
+
+    /**
+     * Handle write callback from libvips.
+     * Write 'length' bytes from the buffer to the OutputStream.
+     *
+     * @param buffer native buffer containing data
+     * @param length number of bytes to write
+     * @return number of bytes written, -1 for error
+     */
+    private long handleWrite(Pointer buffer, long length) {
+        if (closed) {
+            log.warn("Write called on closed target");
+            return -1;
+        }
+
+        try {
+            long remaining = length;
+            long offset = 0;
+            while (remaining > 0) {
+                int toWrite = (int) Math.min(remaining, (long) BUFFER_SIZE);
+                
+                // Copy from native buffer to Java byte array
+                buffer.read(offset, javaBuffer, 0, toWrite);
+                
+                outputStream.write(javaBuffer, 0, toWrite);
+                
+                bytesWritten += toWrite;
+                remaining -= toWrite;
+                offset += toWrite;
+            }
+            
+            log.trace("Wrote {} bytes to OutputStream", length);
+            return length;
+
+        } catch (IOException e) {
+            log.error("Error writing to OutputStream", e);
+            return -1;
+        } catch (Exception e) {
+            log.error("Unexpected error in write callback", e);
+            return -1;
+        }
+    }
+
+    @Override
+    public void close() {
+        if (!closed) {
+            closed = true;
+
+            // Unref the target object
+            if (target != null && target != Pointer.NULL) {
+                try {
+                    vips.g_object_unref(target);
+                    log.trace("Closed OutputStreamVipsTarget");
+                } catch (Exception e) {
+                    log.warn("Error unreffing VipsTarget", e);
+                }
+            }
+
+            // Flush the underlying stream
+            try {
+                outputStream.flush();
+                // We DON'T close the output stream here, as it's owned by the ByteSink
+            } catch (IOException e) {
+                log.debug("Error flushing OutputStream", e);
+            }
+        }
+    }
+}

@@ -1,65 +1,92 @@
-# image-service   [![Build Status](https://travis-ci.com/AtlasOfLivingAustralia/image-service.svg?branch=master)](https://travis-ci.org/AtlasOfLivingAustralia/image-service)
+# image-project
 
-This Grails application provides the webservices and backend for the storage of all images in the Atlas.
-It includes:
+The **image-project** provides a high-performance system for image storage, metadata management, and processing (thumbnailing and tiling), optimized for large-scale image repositories.
 
-* Support for large images, generation of thumbnails and tile views
-* Extensible key/value pair storage for image metadata
-* Support for subimaging and maintaining the relationships between parent and child images
-* Exif extraction
-* Tile view for large images compatible with GIS Javascript clients such as LeafletJS, OpenLayers and Google Maps
-* Web services for image upload
-* Generate of derivative images for thumbnail presentation
-* Tagging support via webservices
-* Administrator console for image management
-* Swagger API definition
-* Integration with google analytics to monitor image usage by data resource
-* Support for image storage in S3, Swift
-* Support for batch uploads with AVRO
+## Overview
 
-There are other related repositories to this one:
-* [images-client-plugin](https://github.com/AtlasOfLivingAustralia/images-client-plugin) - a grails plugin to provide a Javascript based viewer to be used in other applications requiring a image viewer. This viewer is based on LeafletJS.
-* [image-tiling-agent](https://github.com/AtlasOfLivingAustralia/image-tiling-agent) - a utility to run tiling jobs for the image-service. This is intended to used on multiple machine as tiling is CPU intensive and best parallelised.
-* [image-loader](https://github.com/AtlasOfLivingAustralia/image-loader) - utility for bulk loading images into the image-service.
+The goal of this project is to provide a scalable and efficient way to store and serve images, with a focus on:
+*   **Metadata Management**: Flexible key/value pair storage for image metadata.
+*   **High Performance**: Native library integration (`libvips`) via JNA or Java's Foreign Function & Memory (FFM) API.
+*   **Memory Efficiency**: Streaming-based image processing that avoids loading large images into Java heap memory.
+*   **Tiling Support**: Generation of GIS-compatible tile views for very large images.
 
-## Upgrading from 1.0
+## Project Structure
 
-Please see the [Upgrading from 1.0 to 1.1](https://github.com/AtlasOfLivingAustralia/image-service/wiki/Upgrading-from-1.0-to-1.1) wiki page before upgrading an image-service 1.0 or earlier installation to the latest version.
+This repository is organized into several modules:
 
-## Architecture
+### [image-service](./image-service/README.md)
+The main **Grails 6** web application. It provides the RESTful API for image upload, metadata management, and serves thumbnails and tiles. It also includes the base **JNA-based** integration for `libvips`.
 
-* Grails 3 web application ran as standalone executable jar
-* Open JDK 8
-* Postgres database (9.6 or above)
-* Elastic search 7
-* Debian package install
+### [image-utils](./image-utils/README.md)
+A shared **Java 11** core library that defines the common interfaces (`IImageThumbnailer`, `IImageTiler`) and provides a baseline pure Java implementation for image processing.
 
-## Installation
+### [image-utils-ffm-libvips](./image-service-ffm-libvips/README.md)
+A high-performance image processing implementation using the **Java FFM API** (introduced in Java 22). It uses `jextract`-generated bindings for `libvips`.
 
-There are ansible scripts for this applications (and other ALA tools) in the [ala-install](https://github.com/AtlasOfLivingAustralia/ala-install) project. The ansible playbook for the image-service is [here](https://github.com/AtlasOfLivingAustralia/ala-install/blob/master/ansible/image-service.yml)
+### [image-service-photofox](./image-service-photofox/README.md)
+An alternative FFM implementation that leverages the [lopcode/vips-ffm](https://github.com/lopcode/vips-ffm) library for a more idiomatic Java wrapper around `libvips`.
 
-You can also run this application locally by following the instructions on its [wiki page](https://github.com/AtlasOfLivingAustralia/image-service/wiki)
+## Building and Running
 
-## Running it locally
+The root gradle project includes the `image-utils` and `image-service` modules.  To build and run the image-service, follow the instructions in the [image-service README](./image-service/README.md).
 
-### Postgres
-There is a docker-compose YML file that can be used to run postgres locally for local development purposes.
-To use run:
-```$xslt
-docker-compose -f postgres.yml up -d
-```
-And to shutdown
-```$xslt
-docker-compose -f postgres.yml kill
+The repo also includes nested gradle projects for:
+*   `image-service-ffm-libvips` - FFM-based implementation using `jextract` bindings for `libvips`
+*   `image-service-photofox` - FFM-based implementation using the `lopcode/vips-ffm` library
+
+Both these modules require Java 22+ to build but *currently* the Grails 6 web application only supports Java 21.
+
+To build the main projects:
+```bash
+./gradlew build
 ```
 
-### Elastic search
-There is a docker-compose YML file that can be used to run elastic search locally for local development purposes.
-To use run:
-```$xslt
-docker-compose -f elastic.yml up -d
+To build the FFM based submodules:
+```bash
+./gradlew :image-service-ffm-libvips:build
+./gradlew :image-service-photofox:build
 ```
-And to shutdown
-```$xslt
-docker-compose -f elastic.yml kill
+
+## Benchmark test toggle (CI and local)
+
+Benchmark specs/tests are disabled by default in test tasks and only run when `runBenchmarks` is enabled.
+
+Disable benchmarks explicitly (recommended for CI):
+```bash
+./gradlew test -PrunBenchmarks=false
 ```
+
+Enable benchmarks explicitly:
+```bash
+./gradlew test -PrunBenchmarks=true
+```
+
+For nested builds, use each module wrapper from its directory:
+```bash
+cd image-utils-ffm-libvips && ./gradlew test -PrunBenchmarks=true
+cd image-utils-photofox && ./gradlew test -PrunBenchmarks=true
+```
+
+Equivalent JVM system property is also supported:
+```bash
+./gradlew test -DrunBenchmarks=true
+```
+
+## Dependencies
+
+The native image processing implementations (JNA and FFM) require **libvips** to be installed on the host system.
+*   **Ubuntu/Debian**: `sudo apt-get install libvips-dev libvips-tools`
+*   **macOS**: `brew install vips`
+
+## Deployment
+
+The image-utils modules are designed to be extensible.  The `image-utils` provides a Service Provider for loading the
+implementation at runtime. The `image-service` module is configured to include and use the JNA-based implementation by 
+default.
+
+Other image-utils clients can drop the `image-utils-photofox` module into the classpath and it will be found as the
+highest priority implementation by the service provider.
+
+The `image-utils-ffm-libvips` module includes support for the Java 21 FFM preview, so it can be used in the 
+`image-service` application *if* the `image-service` is run with the JVM enable preview flag switch on (e.g. `--enable-preview`).
+When present on the classpath the ffm-libvips implementation has a higher priority than the JNA-based implementation.
