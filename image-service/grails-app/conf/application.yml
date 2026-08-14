@@ -174,6 +174,9 @@ dataSource:
 
 environments:
     development:
+        images:
+            faceBlurring:
+                enabled: true
         dataSource:
             logSql: false
             url: jdbc:postgresql://localhost/images?autoReconnect=true&connectTimeout=0&useUnicode=true&characterEncoding=UTF-8
@@ -208,6 +211,9 @@ environments:
                 inbox: '/tmp/image-service/incoming'
             exportDir: '/tmp/image-service/exports'
             batchUpload: '/tmp/image-service/uploads'
+        images:
+            faceBlurring:
+                enabled: false
     travis:
       info:
         app:
@@ -256,7 +262,13 @@ environments:
           inbox: '${RUNNER_TEMP}/temp-incoming'
         exportDir: '${RUNNER_TEMP}/temp-exports'
         batchUpload: '${RUNNER_TEMP}/temp-uploads'
+      images:
+        faceBlurring:
+          enabled: false
     production:
+        images:
+            faceBlurring:
+                enabled: true
         hibernate:
 #            dialect: gpc.pgext.hibernate.PostgresqlExtensionsDialect
             dialect: net.kaleidos.hibernate.PostgresqlExtensionsDialect
@@ -456,6 +468,9 @@ purgeCompletedAgeInDays: 3
 imageServiceUrls: ["http://dev.ala.org.au:8080","https://images.ala.org.au"]
 
 images:
+  # Detect and blur human faces before an image is stored. Requires S3 and Rekognition access.
+  faceBlurring:
+    enabled: false
   # Toggle for the global no-cache interceptor. Default: true
   nocacheInterceptor:
     enabled: true

@@ -802,7 +802,9 @@ unnest(all_urls) AS unnest_url;
         log.trace("storeImageBytes: called with originalFilename: {}, filesize: {}, contentType: {}, uploaderId: {}, createDuplicates: {}, metadata: {}", originalFilename, filesize, contentType, uploaderId, createDuplicates, metadata)
         ImageStoreResult result
 
-        if (contentType?.toLowerCase() in ['image/jpeg', 'image/jpg', 'image/png']) {
+        boolean faceBlurringEnabled = grailsApplication.config.getProperty(
+                'images.faceBlurring.enabled', Boolean, false)
+        if (faceBlurringEnabled && contentType?.toLowerCase() in ['image/jpeg', 'image/jpg', 'image/png']) {
             byte[] originalBytes = bytes.read()
             byte[] processedBytes = imageRecognitionService.blurHumanFaces(originalBytes, contentType)
             if (!processedBytes.is(originalBytes)) {
