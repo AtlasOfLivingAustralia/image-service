@@ -1,0 +1,59 @@
+# Pre-commit hooks for CloudFormation validation and linting
+repos:
+  - repo: local
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+        entry: trailing-whitespace-fixer
+        language: system
+        types: [text]
+      - id: end-of-file-fixer
+        name: Fix End of Files
+        entry: end-of-file-fixer
+        language: system
+        types: [text]
+      - id: rain-format
+        name: CloudFormation Formatter (rain)
+        entry: bash -c 'for file in "$@"; do rain fmt -w "$file"; done' --
+        language: system
+        files: (app\/.*\.yaml)|(pipeline\/pipeline\.yaml)$
+        exclude: (\.pre-commit-config\.yaml)|(buildspec.yaml)$
+      - id: check-yaml
+        name: Check Yaml
+        entry: check-yaml
+        language: system
+        types: [yaml]
+        exclude: (^helm/templates/)  # Helm templates use Go templating, not valid raw YAML
+        args: ['--unsafe']  # Allow CloudFormation intrinsic functions
+      - id: check-added-large-files
+        name: Check for added large files
+        entry: check-added-large-files
+        language: system
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        entry: check-merge-conflict
+        language: system
+        types: [text]
+
+  - repo: local
+    hooks:
+      - id: cfn-python-lint
+        name: CloudFormation Linter (cfn-lint)
+        entry: cfn-lint
+        language: system
+        files: (app\/.*\.yaml)|(pipeline\/pipeline\.yaml)$
+        exclude: (\.pre-commit-config\.yaml)|(buildspec.yaml)$
+        args:
+          - --format=parseable
+          - --ignore-checks=W
+
+  - repo: local
+    hooks:
+      - id: cfn-nag
+        name: CloudFormation Security Scanner (cfn-nag)
+        entry: bash -c 'for file in "$@"; do cfn_nag_scan --input-path "$file" || true; done' --
+        language: system
+        files: (app\/.*\.yaml)|(pipeline\/pipeline\.yaml)$
+        exclude: (\.pre-commit-config\.yaml)|(buildspec.yaml)$
+        pass_filenames: true
+        verbose: true

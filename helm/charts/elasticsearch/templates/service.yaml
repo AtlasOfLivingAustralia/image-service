@@ -1,0 +1,23 @@
+{{- if .Values.single_node_es }}
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.service.name }}
+  annotations:
+    helm.sh/resource-policy: keep
+    meta.helm.sh/release-name: "{{ .Release.Name }}"
+    meta.helm.sh/release-namespace: "{{ .Release.Namespace }}"
+  labels:
+    app.kubernetes.io/managed-by: "Helm"
+spec:
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+    - name: transport
+      port: 9300
+      targetPort: 9300
+  selector:
+    app: {{ .Values.deployment.name }}
+{{- end }}

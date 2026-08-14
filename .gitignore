@@ -65,3 +65,7 @@ image-service/*.debhelper
 image-service/*.debhelper.log
 image-service/*.buildinfo
 image-service/*.substvars
+
+# Agents
+.claude
+EPCC_*

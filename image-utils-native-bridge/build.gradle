@@ -176,6 +176,20 @@ library {
     }
 }
 
+tasks.configureEach { t ->
+    if (t.name.startsWith('stripSymbols')) {
+        def isHostStripTask =
+                (nativeOs == 'linux' && nativeArch == 'x86_64' && t.name.contains('LinuxX86-64')) ||
+                        (nativeOs == 'linux' && nativeArch == 'aarch64' && t.name.contains('LinuxAarch64')) ||
+                        (nativeOs == 'macos' && nativeArch == 'x86_64' && t.name.contains('MacosX86-64')) ||
+                        (nativeOs == 'macos' && nativeArch == 'aarch64' && t.name.contains('MacosAarch64'))
+
+        if (!isHostStripTask) {
+            t.enabled = false
+        }
+    }
+}
+
 def hostLinkTaskName = (nativeOs == 'linux' && nativeArch == 'x86_64') ? "link${linkBuildTypeToken}LinuxX86-64" :
         (nativeOs == 'linux' && nativeArch == 'aarch64') ? "link${linkBuildTypeToken}LinuxAarch64" :
         (nativeOs == 'macos' && nativeArch == 'x86_64') ? "link${linkBuildTypeToken}MacosX86-64" :
