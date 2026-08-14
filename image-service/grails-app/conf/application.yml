@@ -786,3 +786,6 @@ tiling:
     ioVirtualTaskConcurrencyLimit: 0 # 0 means automatic limit depending on whether we're using cloud or local filesystem storage
     ioVirtualTaskConcurrencyLimitCloud: 512 # default limit for cloud storage
     ioVirtualTaskConcurrencyLimitLocal: 32 # default limit for local filesystem storage
+
+aws:
+  tempImageBucket: "road-kill-images"

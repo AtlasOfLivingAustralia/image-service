@@ -89,6 +89,7 @@ class ImageService implements MetricsSupport {
     def collectoryService
     def downloadService
     def storageLocationService
+    def imageRecognitionService
 
     final static List<String> SUPPORTED_UPDATE_FIELDS = [
         "audience",
@@ -800,6 +801,16 @@ unnest(all_urls) AS unnest_url;
                                      String uploaderId, boolean createDuplicates, Map metadata = [:]) {
         log.trace("storeImageBytes: called with originalFilename: {}, filesize: {}, contentType: {}, uploaderId: {}, createDuplicates: {}, metadata: {}", originalFilename, filesize, contentType, uploaderId, createDuplicates, metadata)
         ImageStoreResult result
+
+        if (contentType?.toLowerCase() in ['image/jpeg', 'image/jpg', 'image/png']) {
+            byte[] originalBytes = bytes.read()
+            byte[] processedBytes = imageRecognitionService.blurHumanFaces(originalBytes, contentType)
+            if (!processedBytes.is(originalBytes)) {
+                bytes = ByteSource.wrap(processedBytes)
+                filesize = processedBytes.length
+                log.debug("Blurred human faces in image {} before storage", originalFilename)
+            }
+        }
 
         def md5Hash = bytes.hash(Hashing.md5()).asBytes().encodeAsHex() // DigestUtils.digest(DigestUtils.getDigest('MD5'), bytes.openStream())
         log.trace("storeImageBytes: calculated MD5 hash: {} for originalFilename: {}", md5Hash, originalFilename)

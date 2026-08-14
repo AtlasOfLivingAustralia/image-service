@@ -2,6 +2,7 @@ plugins {
     id "groovy"
     id "org.grails.grails-web" version "6.2.4"
     id "org.grails.grails-gsp" version "6.2.4"
+    id "com.github.erdi.webdriver-binaries" version "3.2"
     id "war"
     id "idea"
     id "com.bertramlabs.asset-pipeline" version "4.3.0"
@@ -45,6 +46,11 @@ def sanitizedBridgePath = project(':image-utils-native-bridge').layout.buildDire
 configurations {
     all {
         resolutionStrategy.force 'org.codehaus.groovy:groovy-xml:3.0.13'
+        resolutionStrategy.eachDependency { DependencyResolveDetails details->
+            if (details.requested.group == 'org.seleniumhq.selenium') {
+                details.useVersion('4.14.1')
+            }
+        }
     }
 }
 
@@ -100,6 +106,8 @@ dependencies {
     implementation "software.amazon.awssdk:s3-transfer-manager"
     implementation "software.amazon.awssdk:sts"
     implementation "software.amazon.awssdk:auth"
+    implementation "software.amazon.awssdk:rekognition"
+    implementation "software.amazon.awssdk:sagemakerruntime"
     implementation("software.amazon.awssdk.crt:aws-crt:0.47.3")
 
     // AWS SDK requires Apache HTTP Client v5.6+ but Grails/Spring Boot pin it to 5.1, so force it here:
@@ -107,13 +115,6 @@ dependencies {
     implementation "org.apache.httpcomponents.client5:httpclient5:5.6.2"
     implementation "org.apache.httpcomponents.core5:httpcore5:5.4.3"
     implementation "org.apache.httpcomponents.core5:httpcore5-h2:5.4.3"
-
-    // TEMP: Keep AWS SDK v1 during migration; remove once all code/tests are v2
-//    implementation "com.amazonaws:aws-java-sdk-s3:1.12.418"
-    implementation "com.amazonaws:aws-java-sdk-s3:$amazonAwsSdkVersion"
-    implementation "com.amazonaws:aws-java-sdk-rekognition:$amazonAwsSdkVersion"
-    implementation "com.amazonaws:aws-java-sdk-core:$amazonAwsSdkVersion"
-    implementation "com.amazonaws:aws-java-sdk-sagemakerruntime:$amazonAwsSdkVersion"
 
     implementation 'org.javaswift:joss:0.10.4'
     runtimeOnly 'org.postgresql:postgresql:42.7.8'
@@ -191,13 +192,19 @@ dependencies {
     testImplementation("io.micronaut:micronaut-inject-groovy")
     testImplementation("org.grails:grails-gorm-testing-support")
     testImplementation("org.grails:grails-web-testing-support")
+    testImplementation("org.grails.plugins:geb")
+    testImplementation("org.seleniumhq.selenium:selenium-api:4.14.1")
+    testImplementation("org.seleniumhq.selenium:selenium-remote-driver:4.14.1")
+    testImplementation("org.seleniumhq.selenium:selenium-support:4.14.1")
     testImplementation("org.spockframework:spock-core")
+    testRuntimeOnly("org.seleniumhq.selenium:selenium-chrome-driver:4.14.1")
+    testRuntimeOnly("org.seleniumhq.selenium:selenium-firefox-driver:4.14.1")
+    testRuntimeOnly("org.seleniumhq.selenium:selenium-safari-driver:4.14.1")
     testImplementation("io.micronaut:micronaut-http-client")
 
     implementation "org.grails.plugins:cache-ehcache:3.0.0"
     implementation "org.hibernate:hibernate-jcache"
     runtimeOnly 'org.ehcache:ehcache'
-    implementation "com.amazonaws:aws-java-sdk-sts:1.12.418"
 
 //    testImplementation 'io.micronaut:micronaut-http-client'
 
@@ -225,6 +232,10 @@ java {
 
 tasks.withType(Test) {
     useJUnitPlatform()
+    systemProperty "geb.env", System.getProperty('geb.env')
+    systemProperty "geb.build.reportsDir", reporting.file("geb/integrationTest")
+    systemProperty 'webdriver.chrome.driver', "${System.getenv('CHROMEWEBDRIVER')}/chromedriver"
+    systemProperty 'webdriver.gecko.driver', "${System.getenv('GECKOWEBDRIVER')}/geckodriver"
     testLogging {
         showStandardStreams = Boolean.getBoolean('testLogging')
         exceptionFormat = 'full'
@@ -249,6 +260,11 @@ tasks.withType(JavaExec).configureEach {
 }
 tasks.withType(War).configureEach { War war ->
     war.dependsOn compileGroovyPages
+}
+webdriverBinaries {
+    chromedriver '110.0.5481.77'
+    geckodriver '0.32.2'
+//    edgedriver '110.0.1587.57'
 }
 assets {
     minifyJs = true

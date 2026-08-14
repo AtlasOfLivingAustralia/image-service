@@ -30,6 +30,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.core.task.TaskExecutor
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.rekognition.RekognitionClient
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.sagemakerruntime.SageMakerRuntimeClient
 
 import javax.annotation.PostConstruct
 import javax.imageio.ImageIO
@@ -345,5 +354,54 @@ class Application extends GrailsAutoConfiguration {
             nativeDzTilerJnaEnabled: Boolean.toString(nativeDzTilerJnaEnabled),
             nativeDzTilerFfmEnabled: Boolean.toString(nativeDzTilerFfmEnabled)
         ]
+    }
+
+    @Bean
+    AwsCredentialsProvider awsCredentialsProvider() {
+        def accessKey = grailsApplication.config.getProperty('aws.access-key') ?: System.getenv('AWS_ACCESS_KEY_ID')
+        def secretKey = grailsApplication.config.getProperty('aws.secret-key') ?: System.getenv('AWS_SECRET_ACCESS_KEY')
+        def sessionToken = grailsApplication.config.getProperty('aws.session-token') ?: System.getenv('AWS_SESSION_TOKEN')
+
+        if (accessKey && secretKey) {
+            def credentials
+            if (sessionToken) {
+                credentials = AwsSessionCredentials.create(accessKey, secretKey, sessionToken)
+            } else {
+                credentials = AwsBasicCredentials.create(accessKey, secretKey)
+            }
+            return StaticCredentialsProvider.create(credentials)
+        } else {
+            return DefaultCredentialsProvider.create()
+        }
+    }
+
+    @Bean('awsRegion')
+    Region awsRegion() {
+        def region = grailsApplication.config.getProperty('aws.region', String, "ap-southeast-2")
+        return Region.of(region)
+    }
+
+    @Bean
+    RekognitionClient rekognitionClient(AwsCredentialsProvider awsCredentialsProvider, Region awsRegion) {
+        return RekognitionClient.builder()
+                .credentialsProvider(awsCredentialsProvider)
+                .region(awsRegion)
+                .build()
+    }
+
+    @Bean
+    S3Client s3Client(AwsCredentialsProvider awsCredentialsProvider, Region awsRegion) {
+        return S3Client.builder()
+                .credentialsProvider(awsCredentialsProvider)
+                .region(awsRegion)
+                .build()
+    }
+
+    @Bean
+    SageMakerRuntimeClient sageMakerRuntime(AwsCredentialsProvider awsCredentialsProvider, Region awsRegion) {
+        return SageMakerRuntimeClient.builder()
+                .region(awsRegion)
+                .credentialsProvider(awsCredentialsProvider)
+                .build()
     }
 }
