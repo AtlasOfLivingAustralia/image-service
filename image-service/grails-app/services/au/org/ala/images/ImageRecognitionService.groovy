@@ -93,6 +93,12 @@ class ImageRecognitionService {
     }
 
     def cleanup(filePath) {
+        boolean faceBlurringEnabled = grailsApplication.config.getProperty(
+                'images.faceBlurring.enabled', Boolean, false)
+        if (!faceBlurringEnabled) {
+            return
+        }
+
         String tempImageBucket = grailsApplication.config.getProperty('aws.tempImageBucket', String, "ala-image-service-test-uploads-production")
         String tempImageName = grailsApplication.config.getProperty('aws.tempImageName', String, "temp-image")
         if (filePath) {
