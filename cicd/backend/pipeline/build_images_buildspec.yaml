@@ -31,6 +31,10 @@ phases:
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
       - export GRADLE_OPTS="-Dgrails.env=travis"
+      - echo Registering QEMU emulators for cross-platform builds...
+      - docker run --rm --privileged public.ecr.aws/eks-distro-build-tooling/binfmt-misc:qemu-v9.2.2 --install all
+      - docker buildx version
+      - docker buildx create --use --name multiarch-builder || docker buildx use multiarch-builder
 
   build:
     commands:
@@ -53,17 +57,23 @@ phases:
       - docker compose -f image-service/elastic-dc2.yml down || true
       - echo Post-build phase...
       - echo Build completed on $(date)
-      - echo Building the Docker image...
-      - docker pull $ECR_REPO:latest || echo "No existing :latest image found in $ECR_REPO, building without cache"
-      - docker build --cache-from $ECR_REPO:latest --build-arg BUILDKIT_INLINE_CACHE=1 -t ala-images .
-      - echo Tagging the Docker image...
       - echo build tag is $BUILD_TAG
-      - echo tagging
-      - docker tag ala-images:latest $ECR_REPO:$BUILD_TAG
-      - docker tag ala-images:latest $ECR_REPO:latest
-      - echo Pushing the Docker image to Amazon ECR...
-      - docker push $ECR_REPO:$BUILD_TAG
-      - docker push $ECR_REPO:latest
+      - echo Building and pushing the multi-arch Docker image to ECR...
+      - |
+          CACHE_FROM_ARGS=()
+          if docker manifest inspect $ECR_REPO:latest > /dev/null 2>&1; then
+            CACHE_FROM_ARGS=(--cache-from type=registry,ref=$ECR_REPO:latest)
+          else
+            echo "No existing :latest image found in $ECR_REPO, building without cache"
+          fi
+          docker buildx build --platform linux/amd64,linux/arm64 \
+                              -f Dockerfile \
+                              "${CACHE_FROM_ARGS[@]}" \
+                              --cache-to type=inline \
+                              -t $ECR_REPO:$BUILD_TAG \
+                              -t $ECR_REPO:latest \
+                              --push \
+                              .
 
 
 cache:
