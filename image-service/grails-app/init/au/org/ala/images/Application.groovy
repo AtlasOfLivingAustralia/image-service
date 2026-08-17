@@ -47,6 +47,7 @@ import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
 import java.util.ServiceLoader
 import java.util.concurrent.Executor
+import java.util.concurrent.ThreadPoolExecutor
 
 //@EnableConfigurationProperties(ImageOptimisationConfig)
 @Slf4j
@@ -124,7 +125,11 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     TaskExecutor derivativeLoaderExecutor() {
-        return createThreadPoolTaskExecutor("derivative-loader-", derivativeLoaderThreads, derivativeLoaderThreads, Math.max(0, derivativeLoaderQueueCapacity))
+        ThreadPoolTaskExecutor executor = createThreadPoolTaskExecutor("derivative-loader-", derivativeLoaderThreads, derivativeLoaderThreads, Math.max(0, derivativeLoaderQueueCapacity)) as ThreadPoolTaskExecutor
+        // Derivative requests are user-facing. When the bounded executor is full, apply
+        // backpressure on the request thread instead of rejecting every subsequent image.
+        executor.rejectedExecutionHandler = new ThreadPoolExecutor.CallerRunsPolicy()
+        return executor
     }
 
     @Bean
