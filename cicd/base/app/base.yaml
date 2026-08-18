@@ -205,6 +205,15 @@ Resources:
                 Resource:
                   - arn:aws:s3:::road-kill-images/*
           PolicyName: temporaryAiImagesBucket
+        - PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rekognition:DetectFaces
+                  - rekognition:DetectModerationLabels
+                Resource: "*"
+          PolicyName: imageRecognition
       RoleName: !Sub ${AWS::StackName}--${pEnvironment}--${pBuild}
       Tags:
         - Key: Name
