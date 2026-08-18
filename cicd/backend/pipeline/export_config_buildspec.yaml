@@ -182,6 +182,8 @@ phases:
           url: $COLLECTORY_URL
         biocache:
             url: $BIOCACHE_URL
+        biocacheWs:
+            url: $BIOCACHE_WS_URL
         ala:
           baseURL: $ALA_BASE_URL
         bie:

@@ -165,6 +165,8 @@ db:
 
 biocache:
   url: "https://biocache.ala.org.au"
+biocacheWs:
+  url: "https://biocache-ws.ala.org.au"
 collectory:
   url: "https://collections.ala.org.au"
 ala:
