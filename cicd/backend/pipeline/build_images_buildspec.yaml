@@ -42,14 +42,27 @@ phases:
       - echo Building the project...
       - chmod 666 /var/run/docker.sock
       - docker compose -f image-service/elastic-dc2.yml up -d
-      - echo "Waiting 30 seconds for Elasticsearch to start..."
+      - echo "Waiting 60 seconds for Elasticsearch to start..."
       - sleep 60
+      - docker compose -f image-service/elastic-dc2.yml ps
+      - |
+        if ! curl --fail --silent http://127.0.0.1:9200 >/dev/null; then
+          echo "Elasticsearch is not ready"
+          docker compose -f image-service/elastic-dc2.yml logs elasticsearch
+          exit 1
+        fi
+        echo "Elasticsearch is ready"
       - useradd -ms /bin/bash postgresuser
       - chown -RL postgresuser:postgresuser /home/postgresuser # makes sure restored gradle cache is owned by postgresuser
       - echo "Non-root user 'postgresuser' created"
       - chown -R postgresuser:postgresuser /tmp
       - chown -R postgresuser .
-      - su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"
+      - |
+        if ! su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"; then
+          docker compose -f image-service/elastic-dc2.yml ps
+          docker compose -f image-service/elastic-dc2.yml logs elasticsearch
+          exit 1
+        fi
       - su - postgresuser -c "cd $(pwd) && exec ./gradlew bootJar"
 
   post_build:
