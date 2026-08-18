@@ -363,21 +363,7 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     AwsCredentialsProvider awsCredentialsProvider() {
-        def accessKey = grailsApplication.config.getProperty('aws.access-key') ?: System.getenv('AWS_ACCESS_KEY_ID')
-        def secretKey = grailsApplication.config.getProperty('aws.secret-key') ?: System.getenv('AWS_SECRET_ACCESS_KEY')
-        def sessionToken = grailsApplication.config.getProperty('aws.session-token') ?: System.getenv('AWS_SESSION_TOKEN')
-
-        if (accessKey && secretKey) {
-            def credentials
-            if (sessionToken) {
-                credentials = AwsSessionCredentials.create(accessKey, secretKey, sessionToken)
-            } else {
-                credentials = AwsBasicCredentials.create(accessKey, secretKey)
-            }
-            return StaticCredentialsProvider.create(credentials)
-        } else {
-            return DefaultCredentialsProvider.create()
-        }
+        return DefaultCredentialsProvider.create()
     }
 
     @Bean('awsRegion')
