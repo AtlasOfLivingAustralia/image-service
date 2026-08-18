@@ -573,6 +573,10 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
             def builder = S3AsyncClient.builder()
                     .credentialsProvider(credProvider)
+                    // Streaming derivatives use request bodies with no known content length.
+                    // The standard async client must enable multipart support so Transfer
+                    // Manager subscribes to those bodies instead of rejecting the upload.
+                    .multipartEnabled(true)
                     .overrideConfiguration(overrideConfig)
                     .httpClientBuilder(NettyNioAsyncHttpClient.builder()
                             .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
