@@ -197,6 +197,8 @@ images:
         startTime: {{ .Values.images.metadata.jsonb.migration.startTime }}
         endTime: {{ .Values.images.metadata.jsonb.migration.endTime }}
         maxLoadAverage: {{ .Values.images.metadata.jsonb.migration.maxLoadAverage }}
+  faceBlurring:
+    enabled: true
 
 tiling:
   levelThreads: {{ .Values.tiling.levelThreads }}
