@@ -46,6 +46,7 @@ class WebServiceController implements MetricsSupport {
     def elasticSearchService
     def collectoryService
     def authService
+    def imageRecognitionService
 
     @Operation(
             method = "DELETE",
@@ -2034,6 +2035,41 @@ class WebServiceController implements MetricsSupport {
         } catch (Exception e){
             log.error("Problem storing image " + e.getMessage(), e)
             renderResults([success: false, message: "Failed to store image!"], 500)
+        }
+        finally {
+            imageRecognitionService.cleanup(null)
+        }
+    }
+
+    @RequireApiKey(scopes=["image-service/write"])
+    def uploadImageAI() {
+
+        MultipartFile file
+        def url = params.imageUrl ?: params.url
+        if (!url) {
+            if (request.metaClass.respondsTo(request, 'getFile', String)) {
+                file = request.getFile('image')
+            }
+        }
+        if(!url && !file) {
+            renderResults([success: false, message: "No url parameter, therefore expected multipart request!"], HttpStatus.SC_BAD_REQUEST)
+            return
+        }
+        try {
+            Map response = imageRecognitionService.checkImageContent(file, url)
+            if (!response.success) {
+                renderResults([success: false, message: response.message], HttpStatus.SC_BAD_REQUEST)
+                return
+            } else {
+                uploadImage()
+            }
+        }
+        catch (Exception e) {
+            log.error("Problem storing image " + e.getMessage(), e)
+            renderResults([success: false, message: "Failed to store image!"],  HttpStatus.SC_INTERNAL_SERVER_ERROR)
+        }
+        finally {
+            imageRecognitionService.cleanup(url)
         }
     }
 

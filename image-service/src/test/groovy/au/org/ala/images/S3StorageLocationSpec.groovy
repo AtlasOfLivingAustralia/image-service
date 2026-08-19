@@ -12,6 +12,7 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest
 import grails.testing.gorm.DomainUnitTest
 import org.junit.jupiter.api.extension.ExtendWith
+import spock.lang.Ignore
 
 import static cloud.localstack.deprecated.TestUtils.DEFAULT_REGION
 

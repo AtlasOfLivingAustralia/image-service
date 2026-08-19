@@ -1,0 +1,37 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    commands:
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
+      - echo Installing dependencies...
+      - cat /etc/lsb-release
+      - apt update -y
+      - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+      - chmod 700 get_helm.sh
+      - ./get_helm.sh
+
+  build:
+    commands:
+      - echo Build started on $(date)
+      - aws eks --region ap-southeast-2 update-kubeconfig --name $EKS_CLUSTER_NAME
+      - kubectl config set-context --current --namespace=$EKS_NAMESPACE
+      - eksctl delete iamserviceaccount --name=images-service-account-$CLEAN_BRANCH --namespace=$EKS_NAMESPACE --cluster=$EKS_CLUSTER_NAME
+      - |
+        if helm list -n $EKS_NAMESPACE | grep -q $HELM_RELEASE_NAME; then
+          helm uninstall $HELM_RELEASE_NAME -n $EKS_NAMESPACE
+        else
+          echo "Release $HELM_RELEASE_NAME does not exist."
+        fi
+      - echo "Deleting Elasticsearch resources kept by helm.sh/resource-policy=keep..."
+      - kubectl delete deployment elasticsearch-images-$CLEAN_BRANCH -n $EKS_NAMESPACE --ignore-not-found
+      - kubectl delete service elasticsearch-images-$CLEAN_BRANCH -n $EKS_NAMESPACE --ignore-not-found
+      - kubectl delete pvc elasticsearch-images-$CLEAN_BRANCH-pvc elasticsearch-images-$CLEAN_BRANCH-backups-pvc -n $EKS_NAMESPACE --ignore-not-found
+  post_build:
+    commands:
+      - echo Post-build phase...
+      - echo Build completed on $(date)

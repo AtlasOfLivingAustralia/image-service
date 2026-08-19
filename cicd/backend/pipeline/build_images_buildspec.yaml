@@ -1,0 +1,97 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    JAVA_TOOL_OPTIONS: -Dhttps.protocols=TLSv1.2
+    DOCKER_BUILDKIT: 1
+  secrets-manager:
+    DOCKER_USERNAME: ala-secrets-production:dockerhub-username
+    DOCKER_PASSWORD: ala-secrets-production:dockerhub-password
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto21
+    commands:
+      - echo loading all exported vars..
+      - set -a ; source env.txt ; set +a
+      - echo Installing dependencies...
+      - cat /etc/lsb-release
+      - apt update -y
+        && apt-get install -y apt-transport-https ca-certificates software-properties-common build-essential pkg-config libvips-dev libglib2.0-dev
+      - curl -s "https://get.sdkman.io" | bash
+      - chmod a+x /root/.sdkman/bin/sdkman-init.sh
+      - GRAILS_VERSION=$(grep '^grailsVersion=' image-service/gradle.properties | cut -d'=' -f2)
+        && echo "GRAILS_VERSION=$GRAILS_VERSION"
+        && source /root/.sdkman/bin/sdkman-init.sh && sdk install grails "$GRAILS_VERSION" /root/.sdkman/candidates/grails/$GRAILS_VERSION
+      - java -version
+      - echo Logging in to Docker Hub...
+      - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password | docker login -u AWS --password-stdin "https://$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - export GRADLE_OPTS="-Dgrails.env=travis"
+      - echo Registering QEMU emulators for cross-platform builds...
+      - docker run --rm --privileged public.ecr.aws/eks-distro-build-tooling/binfmt-misc:qemu-v9.2.2 --install all
+      - docker buildx version
+      - docker buildx create --use --name multiarch-builder || docker buildx use multiarch-builder
+
+  build:
+    commands:
+      - echo Build started on $(date)
+      - echo Building the project...
+      - chmod 666 /var/run/docker.sock
+      - docker compose -f image-service/elastic-dc2.yml up -d
+      - echo "Waiting 60 seconds for Elasticsearch to start..."
+      - sleep 60
+      - docker compose -f image-service/elastic-dc2.yml ps
+      - |
+        if ! curl --fail --silent http://127.0.0.1:9200 >/dev/null; then
+          echo "Elasticsearch is not ready"
+          docker compose -f image-service/elastic-dc2.yml logs elasticsearch
+          exit 1
+        fi
+        echo "Elasticsearch is ready"
+      - useradd -ms /bin/bash postgresuser
+      - chown -RL postgresuser:postgresuser /home/postgresuser # makes sure restored gradle cache is owned by postgresuser
+      - echo "Non-root user 'postgresuser' created"
+      - chown -R postgresuser:postgresuser /tmp
+      - chown -R postgresuser .
+      - |
+        if ! su - postgresuser -c "cd $(pwd) && exec ./gradlew clean build"; then
+          docker compose -f image-service/elastic-dc2.yml ps
+          docker compose -f image-service/elastic-dc2.yml logs elasticsearch
+          exit 1
+        fi
+      - su - postgresuser -c "cd $(pwd) && exec ./gradlew bootJar"
+
+  post_build:
+    commands:
+      - docker compose -f image-service/elastic-dc2.yml down || true
+      - echo Post-build phase...
+      - echo Build completed on $(date)
+      - echo build tag is $BUILD_TAG
+      - echo Building and pushing the multi-arch Docker image to ECR...
+      - |
+          CACHE_FROM_ARGS=()
+          if docker manifest inspect $ECR_REPO:latest > /dev/null 2>&1; then
+            CACHE_FROM_ARGS=(--cache-from type=registry,ref=$ECR_REPO:latest)
+          else
+            echo "No existing :latest image found in $ECR_REPO, building without cache"
+          fi
+          docker buildx build --platform linux/amd64,linux/arm64 \
+                              -f Dockerfile \
+                              "${CACHE_FROM_ARGS[@]}" \
+                              --cache-to type=inline \
+                              -t $ECR_REPO:$BUILD_TAG \
+                              -t $ECR_REPO:latest \
+                              --push \
+                              .
+
+
+cache:
+  paths:
+    - '/home/postgresuser/.gradle/caches/**/*'
+    - '/home/postgresuser/.gradle/wrapper/**/*'
+    - '/root/.sdkman/candidates/grails/**/*'
+    - '/root/.cargo/registry/**/*'

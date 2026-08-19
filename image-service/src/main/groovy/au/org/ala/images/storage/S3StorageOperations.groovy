@@ -439,7 +439,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
         log.info("Creating S3Client for bucket: ${bucket} in region: ${region ?: 'default'}")
 
-        def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+        def credProvider = containerCredentials ? DefaultCredentialsProvider.builder().build() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
 
         // Configure HTTP Client with max connections
         def httpClientBuilder = ApacheHttpClient.builder()
@@ -556,7 +556,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
         log.info("Creating S3AsyncClient for bucket: ${bucket} in region: ${region ?: 'default'}")
 
-        def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+        def credProvider = containerCredentials ? DefaultCredentialsProvider.builder().build() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
 
         def client
 
@@ -573,6 +573,10 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
             def builder = S3AsyncClient.builder()
                     .credentialsProvider(credProvider)
+                    // Streaming derivatives use request bodies with no known content length.
+                    // The standard async client must enable multipart support so Transfer
+                    // Manager subscribes to those bodies instead of rejecting the upload.
+                    .multipartEnabled(true)
                     .overrideConfiguration(overrideConfig)
                     .httpClientBuilder(NettyNioAsyncHttpClient.builder()
                             .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
@@ -712,7 +716,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
     @VisibleForTesting
     protected S3Presigner getS3Presigner() {
-            def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+            def credProvider = containerCredentials ? DefaultCredentialsProvider.builder().build() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
             def builder = S3Presigner.builder().credentialsProvider(credProvider)
             if (region) {
                 builder = builder.region(Region.of(region))
@@ -1331,6 +1335,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
                 AsyncRequestBody blockingBody = BlockingInputStreamAsyncRequestBody.builder()
                         .contentType(contentType)
                         .contentLength(length) // TODO remove this because it is optional and throws if wrong?
+                        .subscribeTimeout(Duration.ofSeconds(apiCallTimeout))
                         .build()
 
                 def uploadReq = UploadRequest.builder()

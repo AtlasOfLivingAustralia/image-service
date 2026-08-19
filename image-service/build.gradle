@@ -106,6 +106,8 @@ dependencies {
     implementation "software.amazon.awssdk:s3-transfer-manager"
     implementation "software.amazon.awssdk:sts"
     implementation "software.amazon.awssdk:auth"
+    implementation "software.amazon.awssdk:rekognition"
+    implementation "software.amazon.awssdk:sagemakerruntime"
     implementation("software.amazon.awssdk.crt:aws-crt:0.47.3")
 
     // AWS SDK requires Apache HTTP Client v5.6+ but Grails/Spring Boot pin it to 5.1, so force it here:
@@ -114,8 +116,6 @@ dependencies {
     implementation "org.apache.httpcomponents.core5:httpcore5:5.4.3"
     implementation "org.apache.httpcomponents.core5:httpcore5-h2:5.4.3"
 
-    // TEMP: Keep AWS SDK v1 during migration; remove once all code/tests are v2
-//    implementation "com.amazonaws:aws-java-sdk-s3:1.12.418"
     implementation 'org.javaswift:joss:0.10.4'
     runtimeOnly 'org.postgresql:postgresql:42.7.8'
 
