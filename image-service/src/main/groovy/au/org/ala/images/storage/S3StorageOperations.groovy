@@ -573,6 +573,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
             def builder = S3AsyncClient.builder()
                     .credentialsProvider(credProvider)
+                    .multipartEnabled(true)
                     .overrideConfiguration(overrideConfig)
                     .httpClientBuilder(NettyNioAsyncHttpClient.builder()
                             .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))

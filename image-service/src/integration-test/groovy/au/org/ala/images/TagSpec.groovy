@@ -41,7 +41,6 @@ class TagSpec extends ImagesIntegrationSpec {
         HttpClient.create(baseUrl, configuration).toBlocking()
     }
 
-    @Ignore
     //Fail in the jenkins
     void "test home page"() {
         when:

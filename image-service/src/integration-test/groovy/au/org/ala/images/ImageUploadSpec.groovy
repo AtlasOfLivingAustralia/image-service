@@ -39,7 +39,6 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         HttpClient.create(baseUrl, configuration).toBlocking()
     }
 
-    @Ignore
     //Fail in the jenkins
     void "test home page"() {
         when:
@@ -138,7 +137,6 @@ class ImageUploadSpec extends ImagesIntegrationSpec {
         jsonResponse.results.get(url2).imageId != null
     }
 
-    @Ignore
     /* Set to ignore as it is problematic in Travis - working here */
     void 'test iNaturalist bug'(){
         when:

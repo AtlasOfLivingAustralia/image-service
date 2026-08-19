@@ -278,3 +278,5 @@ flyway:
 thumbnail:
   concurrency:
     timeout: 30
+biocacheWs:
+  url: "https://biocache-ws.ala.org.au"

@@ -41,6 +41,9 @@ phases:
       - echo Build started on $(date)
       - echo Building the project...
       - chmod 666 /var/run/docker.sock
+      - docker compose -f image-service/elastic-dc2.yml up -d
+      - echo "Waiting 60 seconds for Elasticsearch to start..."
+      - sleep 60
       - useradd -ms /bin/bash postgresuser
       - chown -RL postgresuser:postgresuser /home/postgresuser # makes sure restored gradle cache is owned by postgresuser
       - echo "Non-root user 'postgresuser' created"
@@ -51,6 +54,7 @@ phases:
 
   post_build:
     commands:
+      - docker compose -f image-service/elastic-dc2.yml down || true
       - echo Post-build phase...
       - echo Build completed on $(date)
       - echo build tag is $BUILD_TAG

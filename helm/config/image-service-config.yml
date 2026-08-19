@@ -118,7 +118,7 @@ collectory:
 biocache:
   baseURL: {{ .Values.biocache.url }}
   service:
-    baseURL: "{{ .Values.biocache.url }}/ws"
+    baseURL: "{{ .Values.biocacheWs.url }}/ws"
 
 # header block
 headerAndFooter:
