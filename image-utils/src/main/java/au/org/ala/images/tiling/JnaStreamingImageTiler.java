@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.awt.Color;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -345,7 +346,7 @@ public class JnaStreamingImageTiler implements IImageTiler {
         Pointer outputImage = tileImage;
         try {
             outputImage = prepareImageForOutput(tileImage, width, height);
-            try (OutputStreamVipsTarget target = new OutputStreamVipsTarget(vips, tileSink.openStream())) {
+            try (OutputStream outputStream = tileSink.openStream(); OutputStreamVipsTarget target = new OutputStreamVipsTarget(vips, outputStream)) {
                 if (vips.vips_image_write_to_target(outputImage, encodeSuffix, target.getTarget(), (Object) null) != 0) {
                     String error = vips.vips_error_buffer();
                     vips.vips_error_clear();
