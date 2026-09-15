@@ -155,7 +155,7 @@ Resources:
       Source:
         Type: CODEPIPELINE
         BuildSpec: !Sub cicd/${pProductComponent}/pipeline/deploy_images_buildspec.yaml
-      TimeoutInMinutes: 20
+      TimeoutInMinutes: 60
 
   TeardownImages:
     Type: AWS::CodeBuild::Project
