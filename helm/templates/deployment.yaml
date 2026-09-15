@@ -5,12 +5,24 @@ metadata:
   labels:
     {{- include "ala-images.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       {{- include "ala-images.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ tpl (.Files.Get "config/image-service-config.yml") . | sha256sum | quote }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       labels:
         {{- include "ala-images.selectorLabels" . | nindent 8 }}
     spec:
@@ -62,7 +74,7 @@ spec:
           startupProbe:
             httpGet:
               path: {{ .Values.startupProbe.httpGet.path }}
-              port: {{ .Values.livenessProbe.httpGet.port }}
+              port: {{ .Values.startupProbe.httpGet.port }}
               scheme: {{ .Values.startupProbe.httpGet.scheme }}
             initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.startupProbe.periodSeconds }}
@@ -74,7 +86,7 @@ spec:
           readinessProbe:
             httpGet:
               path: {{ .Values.readinessProbe.httpGet.path }}
-              port: {{ .Values.livenessProbe.httpGet.port }}
+              port: {{ .Values.readinessProbe.httpGet.port }}
               scheme: {{ .Values.readinessProbe.httpGet.scheme }}
             initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.readinessProbe.periodSeconds }}

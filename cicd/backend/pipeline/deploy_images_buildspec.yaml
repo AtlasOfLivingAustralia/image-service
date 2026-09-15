@@ -49,8 +49,9 @@ phases:
           --set serviceAccount.name=images-service-account-$CLEAN_BRANCH \
           --set rds.name=images-pg-rds-$CLEAN_BRANCH \
           --set fullnameOverride=$HELM_RELEASE_NAME \
-          -f $CODEBUILD_SRC_DIR/helm_values.yaml
-      - kubectl rollout restart deployment $HELM_RELEASE_NAME
+          -f $CODEBUILD_SRC_DIR/helm_values.yaml \
+          --wait --atomic --timeout 25m
+      - kubectl rollout status deployment -n $EKS_NAMESPACE -l app.kubernetes.io/instance=$HELM_RELEASE_NAME --timeout=5m
 
   post_build:
     commands:
