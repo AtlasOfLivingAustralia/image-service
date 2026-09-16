@@ -174,7 +174,7 @@ jobs:
       - name: Wait for services to be ready
         run: sleep 10
       - name: Build and Test
-        run: ./gradlew :image-service:clean :image-service:build
+        run: ./gradlew :image-service:clean :image-service:build -DtestLogging=true
         env:
           GRADLE_OPTS: ${{ env.GRADLE_OPTS_BASE }}
       - name: Publish image-service (on push)
