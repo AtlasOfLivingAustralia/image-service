@@ -11,7 +11,7 @@ import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 
-import javax.annotation.PostConstruct
+import jakarta.annotation.PostConstruct
 import javax.imageio.ImageIO
 import java.awt.image.BufferedImage
 import groovy.transform.EqualsAndHashCode

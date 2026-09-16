@@ -2,7 +2,6 @@ package au.org.ala.images
 
 import au.org.ala.web.AuthService
 import au.org.ala.web.IAuthService
-import grails.plugins.cacheheaders.CacheHeadersService
 import grails.testing.gorm.DataTest
 import grails.testing.web.controllers.ControllerUnitTest
 import grails.web.mapping.LinkGenerator
@@ -30,7 +29,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
     @Override
     Closure doWithSpring() {{ ->
         imageService(ImageService)
-        cacheHeadersService(CacheHeadersService)
+        httpCacheService(HttpCacheService)
     }}
 
     @Override
@@ -504,9 +503,9 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         if (statusCode < 400) {
             assert response.header('etag') == image.contentSHA1Hash
             assert response.getDateHeader('last-modified') == image.dateUploaded.time
-        }
-        if (statusCode < 300) {
-            assert response.getDateHeader('Expires') > (new Date() + 364).time
+            assert response.header('Cache-Control') == 'public, s-maxage=31536000, max-age=31536000'
+            assert response.getDateHeader('Expires') > System.currentTimeMillis() + 364L * 24 * 60 * 60 * 1000
+            assert response.getDateHeader('Expires') <= System.currentTimeMillis() + 366L * 24 * 60 * 60 * 1000
         }
         if (statusCode < 300 && ranges.size() == 1) {
             if (request.method == 'HEAD') {

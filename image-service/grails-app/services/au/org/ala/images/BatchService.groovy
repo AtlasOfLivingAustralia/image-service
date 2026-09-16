@@ -9,7 +9,7 @@ import org.apache.avro.file.DataFileStream
 import org.apache.avro.generic.GenericDatumReader
 import org.apache.avro.generic.GenericRecord
 
-import javax.annotation.PreDestroy
+import jakarta.annotation.PreDestroy
 import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime

@@ -38,7 +38,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
 import org.springframework.web.multipart.MultipartFile
 
-import javax.annotation.PostConstruct
+import jakarta.annotation.PostConstruct
 import javax.imageio.IIOException
 import javax.imageio.ImageIO
 import javax.imageio.ImageReadParam

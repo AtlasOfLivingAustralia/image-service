@@ -110,27 +110,6 @@ management:
             tomcat: true
             logback: true
             hikaricp: true
-        export:
-            datadog:
-                enabled: false
-                apiKey: 'changeme'
-                uri: https://api.datadoghq.com
-                step: 1m
-                descriptions: true
-                applicationKey: 'changeme'
-            cloudwatch:
-                enabled: false
-                namespace: 'ImageService'
-                region: ${AWS_REGION:ap-southeast-2}
-                step: 1m
-                batchSize: 20
-            statsd:
-              enabled: false
-              flavor: datadog
-            simple:
-                enabled: true
-                mode: step
-                step: 1m
         tags:
             application: 'image-service'
             environment: 'development'
@@ -139,6 +118,34 @@ management:
                 http.server.requests: true
                 storage.operations: true
                 image.processing: true
+    datadog:
+        metrics:
+            export:
+                enabled: false
+                api-key: 'changeme'
+                uri: https://api.datadoghq.com
+                step: 1m
+                descriptions: true
+                application-key: 'changeme'
+    cloudwatch:
+        metrics:
+            export:
+                enabled: false
+                namespace: 'ImageService'
+                region: ${AWS_REGION:ap-southeast-2}
+                step: 1m
+                batch-size: 20
+    statsd:
+        metrics:
+            export:
+                enabled: false
+                flavor: datadog
+    simple:
+        metrics:
+            export:
+                enabled: true
+                mode: step
+                step: 1m
 
 ---
 flyway:
@@ -151,8 +158,7 @@ flyway:
 hibernate:
     allow_update_outside_transaction: true # Hibernate 5 made transactions required to flush changes, set to true for backwards compat but should be set to false and bugs fixed in the future
     show_sql: false
-#    dialect: gpc.pgext.hibernate.PostgresqlExtensionsDialect
-    dialect: net.kaleidos.hibernate.PostgresqlExtensionsDialect
+    dialect: gpc.pgext.hibernate.PostgresqlExtensionsDialect
     cache:
         queries: true
         use_second_level_cache: false
@@ -258,8 +264,7 @@ environments:
         batchUpload: '${RUNNER_TEMP}/temp-uploads'
     production:
         hibernate:
-#            dialect: gpc.pgext.hibernate.PostgresqlExtensionsDialect
-            dialect: net.kaleidos.hibernate.PostgresqlExtensionsDialect
+            dialect: gpc.pgext.hibernate.PostgresqlExtensionsDialect
         dataSource:
             dbCreate: validate
             driverClassName: org.postgresql.Driver

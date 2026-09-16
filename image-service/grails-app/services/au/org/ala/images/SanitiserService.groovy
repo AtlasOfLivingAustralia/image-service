@@ -10,7 +10,7 @@ import org.owasp.html.HtmlStreamEventReceiverWrapper
 import org.owasp.html.PolicyFactory
 import org.owasp.html.Sanitizers
 
-import javax.annotation.Nullable
+import jakarta.annotation.Nullable
 
 @Slf4j
 class SanitiserService {

@@ -31,13 +31,14 @@ import org.springframework.context.annotation.Bean
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.core.task.TaskExecutor
 
-import javax.annotation.PostConstruct
+import jakarta.annotation.PostConstruct
 import javax.imageio.ImageIO
 import java.awt.Color
 import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
 import java.util.ServiceLoader
 import java.util.concurrent.Executor
+import java.util.concurrent.ThreadPoolExecutor
 
 //@EnableConfigurationProperties(ImageOptimisationConfig)
 @Slf4j
@@ -115,7 +116,9 @@ class Application extends GrailsAutoConfiguration {
 
     @Bean
     TaskExecutor derivativeLoaderExecutor() {
-        return createThreadPoolTaskExecutor("derivative-loader-", derivativeLoaderThreads, derivativeLoaderThreads, Math.max(0, derivativeLoaderQueueCapacity))
+        ThreadPoolTaskExecutor executor = createThreadPoolTaskExecutor("derivative-loader-", derivativeLoaderThreads, derivativeLoaderThreads, Math.max(0, derivativeLoaderQueueCapacity)) as ThreadPoolTaskExecutor
+        executor.rejectedExecutionHandler = new ThreadPoolExecutor.CallerRunsPolicy()
+        return executor
     }
 
     @Bean
