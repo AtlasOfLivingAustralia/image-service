@@ -43,13 +43,13 @@ import org.elasticsearch.client.RestClient
 import org.apache.http.conn.ssl.NoopHostnameVerifier
 import org.springframework.beans.factory.annotation.Value
 
-import javax.annotation.PreDestroy
+import jakarta.annotation.PreDestroy
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import java.security.SecureRandom
 import java.util.regex.Pattern
-import javax.annotation.PostConstruct
+import jakarta.annotation.PostConstruct
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 

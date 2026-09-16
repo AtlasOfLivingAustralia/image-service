@@ -8,7 +8,7 @@ import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
 import org.apache.commons.io.input.BOMInputStream
 import grails.web.servlet.mvc.GrailsParameterMap
-import grails.plugins.csv.CSVMapReader
+import com.opencsv.CSVReaderHeaderAware
 import org.springframework.web.multipart.MultipartFile
 
 import java.nio.file.Path
@@ -197,7 +197,9 @@ class ImageStagingService {
             FileInputStream fis = new FileInputStream(dataFile)
             BOMInputStream bomInputStream = new BOMInputStream(fis, ByteOrderMark.UTF_8) // Ignore any UTF-8 Byte Order Marks, as they will stuff up the mapping!
             try {
-                new CSVMapReader(new InputStreamReader(bomInputStream)).each { Map map ->
+                def reader = new CSVReaderHeaderAware(new InputStreamReader(bomInputStream))
+                Map<String, String> map
+                while ((map = reader.readMap()) != null) {
                     if (map.filename) {
                         if (!dataFileColumns) {
                             map.each {
