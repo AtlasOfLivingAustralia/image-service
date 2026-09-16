@@ -12,6 +12,8 @@ plugins {
     id "org.flywaydb.flyway" version "9.4.0"
 }
 
+ext['netty.version'] = '4.2.5.Final'
+
 repositories {
     mavenLocal()
     maven { url "https://nexus.ala.org.au/content/groups/public/" }
@@ -51,7 +53,6 @@ dependencies {
     // Grails 7 BOM
     implementation platform("org.apache.grails:grails-bom:$grailsVersion")
     implementation enforcedPlatform("org.apache.grails:grails-micronaut-bom:$grailsVersion")
-    implementation enforcedPlatform("io.netty:netty-bom:4.2.2.Final")
     implementation 'org.apache.grails:grails-micronaut'
 
     // Core Grails 7

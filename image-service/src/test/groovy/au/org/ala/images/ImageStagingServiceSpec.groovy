@@ -2,6 +2,7 @@ package au.org.ala.images
 
 import grails.testing.gorm.DataTest
 import grails.testing.services.ServiceUnitTest
+import grails.web.mapping.LinkGenerator
 import org.springframework.web.multipart.MultipartFile
 import spock.lang.Specification
 import java.nio.file.Files
@@ -10,9 +11,13 @@ class ImageStagingServiceSpec extends Specification implements ServiceUnitTest<I
 
     def setup() {
         mockDomain(StagedFile)
+        mockDomain(StagingColumnDefinition)
         def tempDir = Files.createTempDirectory("image-service-staging").toFile()
         tempDir.deleteOnExit()
         config.imageservice.imagestore.staging = tempDir.absolutePath
+        service.grailsLinkGenerator = Mock(LinkGenerator) {
+            link(_ as Map) >> '/staging/file'
+        }
     }
 
     def "test uploadDataFile creates parent directory and not a directory at the file path (Finding 4)"() {
@@ -66,5 +71,49 @@ class ImageStagingServiceSpec extends Specification implements ServiceUnitTest<I
 
         then:
         thrown(RuntimeException)
+    }
+
+    def "buildStagedImageData maps a BOM-prefixed CSV fixture through headers, blanks and EOF"() {
+        given:
+        String userId = 'csv-user'
+        def stagedFile = new StagedFile(
+                userId: userId,
+                filename: 'fixture-one.jpg',
+                dateStaged: new Date()
+        ).save(flush: true, failOnError: true)
+        new StagingColumnDefinition(
+                userId: userId,
+                fieldName: 'title',
+                fieldDefinitionType: StagingColumnType.DataFileColumn,
+                format: 'title'
+        ).save(flush: true, failOnError: true)
+        new StagingColumnDefinition(
+                userId: userId,
+                fieldName: 'description',
+                fieldDefinitionType: StagingColumnType.DataFileColumn,
+                format: 'description'
+        ).save(flush: true, failOnError: true)
+
+        File stagedImage = new File(service.getStagedFileLocalPath(stagedFile))
+        stagedImage.parentFile.mkdirs()
+        stagedImage.bytes = [1, 2, 3] as byte[]
+
+        File dataFile = new File(stagedImage.parentFile, 'datafile/datafile.txt')
+        dataFile.parentFile.mkdirs()
+        dataFile.withOutputStream { output ->
+            output.write([0xEF, 0xBB, 0xBF] as byte[])
+            getClass().getResourceAsStream('/fixtures/staging-metadata.csv').withCloseable { fixture ->
+                fixture.transferTo(output)
+            }
+        }
+
+        when:
+        def images = service.buildStagedImageData(userId, [:])
+
+        then:
+        images.size() == 1
+        images[0].filename == 'fixture-one.jpg'
+        images[0].title == 'Bird, red'
+        images[0].description == ''
     }
 }
