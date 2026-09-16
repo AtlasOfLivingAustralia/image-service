@@ -12,10 +12,12 @@ import io.micronaut.http.client.HttpClient
 import io.micronaut.http.client.exceptions.HttpClientResponseException
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
+import org.springframework.test.context.TestPropertySource
 import spock.lang.Shared
 
 @Integration(applicationClass = Application.class)
 @Rollback
+@TestPropertySource(properties = 'ala.admin.systemMessage.path=/tmp/image-service/config')
 class CacheControlInterceptorSpec extends ImagesIntegrationSpec {
 
     @Shared
