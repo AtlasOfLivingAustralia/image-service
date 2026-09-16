@@ -120,6 +120,7 @@ abstract class ImagesIntegrationSpec extends Specification {
 
     def setup() {
         def logger = LoggerFactory.getLogger(getClass())
+        storageOperationsRegistry.grailsApplication.config.ala.admin.systemMessage.path = '/tmp/image-service/config'
         alaAuthClient = Mock(AlaDirectClient)
         profileCreator = Mock()
         def creds = new OidcCredentials(
