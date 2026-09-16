@@ -117,7 +117,7 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     TaskExecutor derivativeLoaderExecutor() {
         ThreadPoolTaskExecutor executor = createThreadPoolTaskExecutor("derivative-loader-", derivativeLoaderThreads, derivativeLoaderThreads, Math.max(0, derivativeLoaderQueueCapacity)) as ThreadPoolTaskExecutor
-        executor.rejectedExecutionHandler = new ThreadPoolExecutor.CallerRunsPolicy()
+        executor.rejectedExecutionHandler = new ThreadPoolExecutor.AbortPolicy()
         return executor
     }
 
