@@ -25,9 +25,9 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
 import org.springframework.core.task.TaskExecutor
 
 import java.awt.Color
@@ -42,12 +42,13 @@ import java.util.concurrent.Executor
  * These beans were moved out of {@link Application} because {@code GrailsAutoConfiguration}
  * invokes {@code @Bean} factory methods before {@code AutowiredAnnotationBeanPostProcessor}
  * populates {@code @Value} fields on the bootstrap instance, causing every {@code @Value} field
- * to silently read its Groovy default (0 / false / ""). Field and method-parameter injection on a standard
- * {@code @Configuration} class is processed by the full Spring annotation pipeline and therefore
- * resolves property placeholders correctly.
+ * to silently read its Groovy default (0 / false / ""). Field and method-parameter injection on a regular
+ * configuration class is processed by the full Spring annotation pipeline and therefore
+ * resolves property placeholders correctly. Grails does not component-scan, so this class is
+ * registered via {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}.
  */
 @Slf4j
-@Configuration
+@AutoConfiguration
 class ImageServiceConfiguration {
 
     @Autowired
