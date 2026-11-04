@@ -1,5 +1,7 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import com.google.common.io.ByteSink;
 
 import javax.imageio.ImageIO;
@@ -73,8 +75,13 @@ public final class TilePadding {
     public static void writeImage(ByteSink tileSink, BufferedImage image, TileFormat tileFormat) throws IOException {
         String format = tileFormat == TileFormat.PNG ? "png" : "jpeg";
         try (OutputStream tileStream = tileSink.openStream()) {
-            if (!ImageIO.write(image, format, tileStream)) {
-                throw new IOException("Failed to write tile");
+            try {
+                if (!ImageIO.write(image, format, tileStream)) {
+                    throw new IOException("Failed to write tile");
+                }
+            } catch (Throwable t) {
+                AbortableOutputStream.abortQuietly(tileStream, t);
+                throw t;
             }
         }
     }
@@ -89,7 +96,12 @@ public final class TilePadding {
                                         boolean padTiles) throws IOException {
         if (!requiresPadding(padTiles, tileSize, tileWidth, tileHeight)) {
             try (OutputStream outputStream = tileSink.openStream()) {
-                outputStream.write(encodedTile);
+                try {
+                    outputStream.write(encodedTile);
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
+                }
             }
             return;
         }

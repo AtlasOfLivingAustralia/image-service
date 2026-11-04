@@ -1,5 +1,7 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import au.org.ala.images.ffm.InputStreamVipsSourceFFM;
 import au.org.ala.images.ffm.NativeLibraryDetectorFFM;
 import au.org.ala.images.ffm.OutputStreamVipsTargetFFM;
@@ -148,8 +150,13 @@ public class FfmOnDemandImageTiler implements IOnDemandImageTiler {
             try (OutputStream outputStream = byteSink.openStream();
                  OutputStreamVipsTargetFFM target = new OutputStreamVipsTargetFFM(vips, outputStream)) {
                 String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg";
-                if (vips.vipsImageWriteToTarget(outputImage, suffix, target.getTarget()) != 0) {
-                    throw new IOException("vips_image_write_to_target failed: " + vips.vipsErrorBuffer());
+                try {
+                    if (vips.vipsImageWriteToTarget(outputImage, suffix, target.getTarget()) != 0) {
+                        throw new IOException("vips_image_write_to_target failed: " + vips.vipsErrorBuffer());
+                    }
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
                 }
             }
         } catch (IOException e) {

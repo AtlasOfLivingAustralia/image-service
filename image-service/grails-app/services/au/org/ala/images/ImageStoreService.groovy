@@ -49,12 +49,15 @@ import java.awt.image.BufferedImage
 import java.nio.file.Files
 
 import org.grails.orm.hibernate.cfg.GrailsHibernateUtil
+import software.amazon.awssdk.awscore.exception.AwsServiceException
 
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
+import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.function.BiFunction
@@ -64,6 +67,9 @@ import java.util.function.Consumer
 class ImageStoreService implements MetricsSupport {
 
     public static final int TILE_SIZE = 256
+
+    // Upper bound for the original-image ingest retry backoff; exponential delays are capped here.
+    private static final long INGEST_RETRY_MAX_DELAY_MS = 10_000L
 
     def grailsApplication
     def auditService
@@ -217,7 +223,7 @@ class ImageStoreService implements MetricsSupport {
             }
 
             try {
-                operations.store(uuid, finalByteSource.openStream(), finalContentType, contentDisposition, finalByteSource.sizeIfKnown().orNull())
+                storeOriginalWithRetry(operations, uuid, finalByteSource, finalContentType, contentDisposition)
                 def filename = ImageUtils.getFilename(originalFilename)
                 if (finalContentType?.toLowerCase()?.startsWith('image')) {
                     if (log.isTraceEnabled()) {
@@ -243,6 +249,85 @@ class ImageStoreService implements MetricsSupport {
                 // clean up any optimiser files
                 cleanup()
             }
+        }
+    }
+
+    /**
+     * Stores the original image bytes with a bounded retry so that a single transient failure
+     * (for example the S3 blocking-body subscribe timeout) does not permanently lose the original.
+     * Each attempt opens a fresh stream from the re-openable {@code finalByteSource}; the stream
+     * handed to {@code operations.store} is never reused across attempts. Synchronous and runs on
+     * the calling background ingest thread.
+     */
+    private void storeOriginalWithRetry(StorageOperations operations, String uuid, ByteSource finalByteSource, String finalContentType, String contentDisposition) {
+        int maxAttempts = grailsApplication.config.getProperty('aws.s3.upload.ingest.retry.max.attempts', Integer, 3)
+        long baseDelayMs = grailsApplication.config.getProperty('aws.s3.upload.ingest.retry.base.delay.ms', Long, 500L)
+
+        RuntimeException lastFailure = null
+        for (int attempt = 1; attempt <= Math.max(1, maxAttempts); attempt++) {
+            try {
+                operations.store(uuid, finalByteSource.openStream(), finalContentType, contentDisposition, finalByteSource.sizeIfKnown().orNull())
+                return
+            } catch (Exception exception) {
+                if (!isIngestUploadRetryable(exception) || attempt == Math.max(1, maxAttempts)) {
+                    throw exception
+                }
+                lastFailure = exception
+                long backoffMs = ingestRetryBackoffMs(attempt, baseDelayMs)
+                log.warn('Transient failure storing original image {} (attempt {}/{}): {}. Retrying in {} ms.', uuid, attempt, maxAttempts, exception.message, backoffMs)
+                sleepQuietly(backoffMs)
+            }
+        }
+        throw lastFailure
+    }
+
+    /**
+     * Classifies whether an original-image ingest failure is transient and worth retrying.
+     * Retryable: the blocking-body subscribe-timeout {@link IllegalStateException}, IOExceptions,
+     * and S3 throttling / 5xx (or otherwise SDK-retryable) service errors. Deterministic 4xx
+     * errors such as NoSuchBucket or AccessDenied are NOT retried; they fail fast.
+     */
+    private static boolean isIngestUploadRetryable(Throwable throwable) {
+        for (Throwable cause = throwable; cause != null; cause = cause.cause) {
+            if (isSubscribeTimeout(cause) || cause instanceof IOException) {
+                return true
+            }
+            if (cause instanceof AwsServiceException) {
+                def serviceException = (AwsServiceException) cause
+                if (serviceException.isThrottlingException() || serviceException.isRetryableException()) {
+                    return true
+                }
+                int statusCode = serviceException.statusCode()
+                if (statusCode >= 500) {
+                    return true
+                }
+                if (statusCode >= 400 && statusCode < 500) {
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    private static boolean isSubscribeTimeout(Throwable throwable) {
+        return throwable instanceof IllegalStateException &&
+                throwable.message != null &&
+                throwable.message ==~ /(?s).*was not made within .* seconds.*/
+    }
+
+    private static long ingestRetryBackoffMs(int attempt, long baseDelayMs) {
+        long exponential = baseDelayMs * (1L << (attempt - 1))
+        long capped = Math.min(exponential, INGEST_RETRY_MAX_DELAY_MS)
+        long half = capped.intdiv(2L)
+        long jitter = ThreadLocalRandom.current().nextLong(half + 1L)
+        return half + jitter
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis)
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt()
         }
     }
 

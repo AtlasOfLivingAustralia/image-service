@@ -1,5 +1,7 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
 import com.google.common.io.ByteSink;
 import org.apache.commons.io.IOUtils;
@@ -256,8 +258,14 @@ public class ImageTiler implements IImageTiler {
 
                 String format = _tileFormat == TileFormat.PNG ? "png" : "jpeg";
                 try (OutputStream tileStream = tileSink.openStream()) {
-                    if (!ImageIO.write(image, format, tileStream)) {
-                        errorOccurred.set(true);
+                    try {
+                        if (!ImageIO.write(image, format, tileStream)) {
+                            errorOccurred.set(true);
+                            AbortableOutputStream.abortQuietly(tileStream, new IOException("ImageIO failed to write " + format + " tile"));
+                        }
+                    } catch (Throwable t) {
+                        AbortableOutputStream.abortQuietly(tileStream, t);
+                        throw t;
                     }
                 }
 

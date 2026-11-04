@@ -1,5 +1,7 @@
 package au.org.ala.images.vipsffm;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import app.photofox.vipsffm.VImage;
 import app.photofox.vipsffm.Vips;
 import app.photofox.vipsffm.VipsOption;
@@ -443,6 +445,9 @@ public class VipsFfmStreamingImageTiler implements IImageTiler {
             TimedOutputStream timed = new TimedOutputStream(outputStream, metrics.sinkWriteNanos);
             try {
                 outputImage.writeToStream(timed, encodeSuffix);
+            } catch (Throwable t) {
+                AbortableOutputStream.abortQuietly(outputStream, t);
+                throw t;
             } finally {
                 long tClose0 = System.nanoTime();
                 timed.close();

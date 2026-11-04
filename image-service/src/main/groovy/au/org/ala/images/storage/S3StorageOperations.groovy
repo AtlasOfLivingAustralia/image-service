@@ -67,6 +67,8 @@ import java.util.concurrent.ThreadFactory
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -75,6 +77,7 @@ import java.util.function.Consumer
 import java.util.function.IntConsumer
 import java.util.function.IntSupplier
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 
 import com.google.common.annotations.VisibleForTesting
 import groovy.transform.CompileStatic
@@ -137,6 +140,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
     private static final boolean tcpKeepAlive = Holders.getConfig().getProperty('aws.s3.sync.keepalive', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.keepalive', 'true')))
     private static final boolean idleReaperEnabled = Holders.getConfig().getProperty('aws.s3.sync.idlereaper', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.sync.idlereaper', 'true')))
     private static final boolean useCrtAsyncClient = Holders.getConfig().getProperty('aws.s3.crt.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.crt.enabled', 'true')))
+    private static final boolean nettyMultipartEnabled = Holders.getConfig().getProperty('aws.s3.netty.multipart.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.netty.multipart.enabled', 'true')))
     private static final int crtThroughputSeconds = Holders.getConfig().getProperty('aws.s3.crt.throughput.seconds', Integer, Integer.getInteger('au.org.ala.images.s3.crt.throughput.seconds', 10))
     // Minimum acceptable throughput for an active S3 data transfer before the CRT kills the connection.
     // 32 KB/s is a reasonable floor for image content — well below any normal transfer rate but high enough
@@ -154,6 +158,24 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
     private static final String syncCacheSpec = Holders.getConfig().getProperty('aws.s3.cache.spec.sync', String, System.getProperty('au.org.ala.images.s3.cache.spec.sync', 'maximumSize=10,expireAfterAccess=1h'))
     private static final String asyncCacheSpec = Holders.getConfig().getProperty('aws.s3.cache.spec.async', String, System.getProperty('au.org.ala.images.s3.cache.spec.sync', 'maximumSize=10,expireAfterAccess=1h'))
     private static final String transferManagerCacheSpec = Holders.getConfig().getProperty('aws.s3.cache.spec.xferman', String, System.getProperty('au.org.ala.images.s3.cache.spec.xferman', 'maximumSize=10,expireAfterAccess=1h'))
+    // Derivative (thumbnail/tile) upload isolation pool. The shared, Caffeine-cached
+    // S3TransferManager can enter a stuck state where it never subscribes new upload request
+    // bodies (aws-sdk-java-v2#4893), which makes every derivative upload fail with the
+    // subscribe-timeout IllegalStateException. When enabled, derivative uploads instead use a
+    // small bounded pool of transfer managers, each backed by its OWN dedicated S3AsyncClient,
+    // so one stuck entry cannot poison all derivative uploads. Opt-in (default false) so it can
+    // be A/B'd without a redeploy.
+    private static final boolean derivativeUploadPoolEnabledFlag = Holders.getConfig().getProperty('aws.s3.upload.derivative.pool.enabled', Boolean, Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.upload.derivative.pool.enabled', 'false')))
+    private static final int derivativeUploadPoolSizeValue = positiveConfig('aws.s3.upload.derivative.pool.size', 'au.org.ala.images.s3.upload.derivative.pool.size', 4)
+    private static final String derivativeUploadPoolCacheSpec = Holders.getConfig().getProperty('aws.s3.cache.spec.derivative.pool', String, System.getProperty('au.org.ala.images.s3.cache.spec.derivative.pool', 'maximumSize=10'))
+
+    // How long BlockingInputStreamAsyncRequestBody.writeInputStream waits for the transfer
+    // manager to subscribe the request body before failing the original-image ingest upload.
+    // The SDK default of 10s is too short under load and was permanently losing originals.
+    private static final int ingestSubscribeTimeoutSeconds = positiveConfig('aws.s3.upload.ingest.subscribe.timeout.seconds', 'au.org.ala.images.s3.upload.ingest.subscribe.timeout', 60)
+    // Upper bound on waiting for an ingest upload to finish once its body has been written; the
+    // upload is cancelled on timeout so a wedged request cannot block the caller forever.
+    private static final int ingestCompletionTimeoutSeconds = positiveConfig('aws.s3.upload.ingest.completion.timeout.seconds', 'au.org.ala.images.s3.upload.ingest.completion.timeout', 300)
 
     private static ScheduledExecutorService evictionScheduler = Executors.newSingleThreadScheduledExecutor({ Runnable r ->
         new Thread(r, "s3-eviction-scheduler").tap {
@@ -270,12 +292,27 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
         return s3TransferManagerCacheLoader(key)
     }
 
+    /**
+     * Isolation pool for derivative (thumbnail/tile) uploads. Deliberately a separate cache from
+     * {@link #s3TransferManagerCache}: each entry owns transfer managers built over dedicated,
+     * non-shared {@link S3AsyncClient}s, so a stuck shared manager/client cannot poison every
+     * derivative upload.
+     */
+    private static final LoadingCache<CacheKey, DerivativeUploadPool> derivativeUploadPoolCache = Caffeine<String, DerivativeUploadPool>.from(derivativeUploadPoolCacheSpec).removalListener {
+        CacheKey key, DerivativeUploadPool pool, RemovalCause cause ->
+            log.info("S3 derivative upload pool evicted from cache: ${key.bucket}")
+            pool?.scheduleClose(evictionScheduler, inflightTimeout, TimeUnit.SECONDS)
+    }.build { CacheKey key ->
+        return derivativeUploadPoolLoader(key)
+    }
+
     static final void clearS3ClientCache() {
         s3TransferManagerCache.invalidateAll()
         s3DownloadAsyncClientCache.invalidateAll()
         s3UploadAsyncClientCache.invalidateAll()
         smallS3AsyncClientCache.invalidateAll()
         s3ClientCache.invalidateAll()
+        derivativeUploadPoolCache.invalidateAll()
     }
 
     /**
@@ -292,6 +329,9 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
         closeAll(s3UploadAsyncClientCache.asMap().values())
         closeAll(smallS3AsyncClientCache.asMap().values())
         closeAll(s3ClientCache.asMap().values())
+        derivativeUploadPoolCache.asMap().values().each { DerivativeUploadPool pool ->
+            pool?.scheduleClose(evictionScheduler, 0, TimeUnit.SECONDS)
+        }
         clearS3ClientCache()
         crtFutureCompletionExecutor.shutdown()
     }
@@ -439,7 +479,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
         log.info("Creating S3Client for bucket: ${bucket} in region: ${region ?: 'default'}")
 
-        def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+        def credProvider = containerCredentials ? DefaultCredentialsProvider.builder().build() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
 
         // Configure HTTP Client with max connections
         def httpClientBuilder = ApacheHttpClient.builder()
@@ -556,7 +596,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
         log.info("Creating S3AsyncClient for bucket: ${bucket} in region: ${region ?: 'default'}")
 
-        def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+        def credProvider = containerCredentials ? DefaultCredentialsProvider.builder().build() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
 
         def client
 
@@ -573,6 +613,9 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
             def builder = S3AsyncClient.builder()
                     .credentialsProvider(credProvider)
+                    // Without multipart the Java client cannot upload streams of unknown length, so every
+                    // streaming (BlockingOutputStreamAsyncRequestBody) upload fails with "Content-Length header must be specified".
+                    .multipartEnabled(nettyMultipartEnabled)
                     .overrideConfiguration(overrideConfig)
                     .httpClientBuilder(NettyNioAsyncHttpClient.builder()
                             .connectionTimeout(Duration.ofSeconds(apacheConnectionTimeout))
@@ -710,9 +753,103 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
                 .build()
     }
 
+    /**
+     * A bounded pool of {@link S3TransferManager}s for derivative (thumbnail/tile) uploads.
+     * Every entry owns a dedicated, non-shared {@link S3AsyncClient} built by the exact same
+     * construction path as the shared upload client, so credentials, region, endpoints, and
+     * timeouts stay identical while remaining isolated from a stuck shared manager/client.
+     * Entries are handed out round-robin.
+     */
+    @VisibleForTesting
+    static final class DerivativeUploadPool {
+        final List<S3AsyncClient> clients
+        final List<S3TransferManager> managers
+        private final AtomicInteger roundRobin = new AtomicInteger()
+
+        DerivativeUploadPool(List<S3AsyncClient> clients, List<S3TransferManager> managers) {
+            this.clients = clients
+            this.managers = managers
+        }
+
+        int size() {
+            return managers.size()
+        }
+
+        S3TransferManager managerAt(int index) {
+            return managers.get(index)
+        }
+
+        S3AsyncClient clientAt(int index) {
+            return clients.get(index)
+        }
+
+        int nextIndex() {
+            // floorMod keeps the counter bounded; overflow wraps cleanly to a positive value
+            return Math.floorMod(roundRobin.getAndIncrement(), managers.size())
+        }
+
+        /**
+         * Closes each pool transfer manager and its dedicated client after the given delay, so
+         * in-flight uploads are not killed. Mirrors the cache eviction close pattern.
+         */
+        void scheduleClose(ScheduledExecutorService scheduler, long delay, TimeUnit unit) {
+            scheduler.schedule({
+                managers.each { S3TransferManager manager ->
+                    try {
+                        manager?.close()
+                    } catch (Exception exception) {
+                        log.warn('Failed to close derivative upload pool S3TransferManager', exception)
+                    }
+                }
+                clients.each { S3AsyncClient client ->
+                    try {
+                        client?.close()
+                    } catch (Exception exception) {
+                        log.warn('Failed to close derivative upload pool S3AsyncClient', exception)
+                    }
+                }
+            } as Runnable, delay, unit)
+        }
+    }
+
+    /**
+     * Builds the derivative upload pool. Each pool client is intentionally created on the
+     * standard/Netty path ({@code smallOps = true}) regardless of the global
+     * {@code aws.s3.crt.enabled} flag. All CRT clients share the process-wide CRT
+     * EventLoopGroup, which has exhibited a stuck-subscribe failure mode under
+     * {@code BlockingOutputStreamAsyncRequestBody.waitForSubscriptionIfNeeded}
+     * (see aws-sdk-java-v2#4893); the pool is only an isolation boundary if its clients do
+     * not share that event loop, so they must be Netty clients.
+     */
+    private static DerivativeUploadPool derivativeUploadPoolLoader(CacheKey key) {
+        log.info("Creating S3 derivative upload pool of size {} for bucket: {} in region: {} using Netty/standard S3AsyncClient (CRT intentionally bypassed for pool isolation)", derivativeUploadPoolSizeValue, key.bucket, key.region ?: 'default')
+        List<S3AsyncClient> clients = []
+        List<S3TransferManager> managers = []
+        for (int index = 0; index < derivativeUploadPoolSizeValue; index++) {
+            S3AsyncClient client = s3AsyncClientCacheLoader(key, true)
+            clients.add(client)
+            S3TransferManager manager = S3TransferManager.builder().s3Client(client).build()
+            managers.add(manager)
+            // Log each entry's identity so S3UploadHealth WARNs (s3AsyncClientId/transferManagerId)
+            // can be attributed to a specific pool entry during verification, without DEBUG logs.
+            log.info("Derivative upload pool entry {}: transferManagerId={} s3AsyncClientId={}", index,
+                    Integer.toHexString(System.identityHashCode(manager)), Integer.toHexString(System.identityHashCode(client)))
+        }
+        return new DerivativeUploadPool(clients, managers)
+    }
+
+    /**
+     * Instance-level seam over {@link #derivativeUploadPoolLoader(CacheKey)} so tests can build a
+     * real pool (and thus assert the client type) via a subclass without a real S3 endpoint.
+     */
+    @VisibleForTesting
+    protected DerivativeUploadPool buildDerivativeUploadPool() {
+        return derivativeUploadPoolLoader(getCacheKeyObject())
+    }
+
     @VisibleForTesting
     protected S3Presigner getS3Presigner() {
-            def credProvider = containerCredentials ? DefaultCredentialsProvider.create() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+            def credProvider = containerCredentials ? DefaultCredentialsProvider.builder().build() : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
             def builder = S3Presigner.builder().credentialsProvider(credProvider)
             if (region) {
                 builder = builder.region(Region.of(region))
@@ -1288,7 +1425,82 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
     }
 
     ByteSinkFactory byteSinkFactory(String uuid, Map<String, String> tags, String... prefixes) {
-        return new S3ByteSinkFactory(s3UploadAsyncClient, s3TransferManager, apiCallTimeout, storagePathStrategy(), bucket, uuid, tags, meterRegistry, region, prefixes)
+        S3AsyncClient uploadClient
+        S3TransferManager uploadTransferManager
+        if (isDerivativeUploadPoolActive()) {
+            DerivativeUploadPool pool = derivativeUploadPool()
+            int index = pool.nextIndex()
+            uploadClient = pool.clientAt(index)
+            uploadTransferManager = pool.managerAt(index)
+            incrementDerivativePoolCounter()
+            log.debug('Derivative S3 upload for uuid {} using pool entry {}/{} (transferManagerId={}, s3AsyncClientId={})',
+                    uuid, index, pool.size(),
+                    Integer.toHexString(System.identityHashCode(uploadTransferManager)),
+                    Integer.toHexString(System.identityHashCode(uploadClient)))
+        } else {
+            uploadClient = s3UploadAsyncClient
+            uploadTransferManager = s3TransferManager
+        }
+        return new S3ByteSinkFactory(uploadClient, uploadTransferManager, apiCallTimeout, storagePathStrategy(), bucket, uuid, tags, meterRegistry, region, prefixes)
+    }
+
+    /**
+     * The derivative upload isolation pool is active only when explicitly enabled, and only when
+     * no test seam or legacy single-client override is in play. Both the testing seam and the
+     * legacy override must keep their current behavior of routing through
+     * {@link #getS3TransferManager()}.
+     */
+    private boolean isDerivativeUploadPoolActive() {
+        if (!derivativeUploadPoolEnabled()) {
+            return false
+        }
+        if (transferManagerFactoryForTesting != null) {
+            return false
+        }
+        return !hasLegacyAsyncClientOverride()
+    }
+
+    /**
+     * Instance-level seam reading the static opt-in flag so tests can override it per instance.
+     * Named without the bean-style `get`/`is` prefix to avoid a Groovy property-accessor clash.
+     */
+    @VisibleForTesting
+    protected boolean derivativeUploadPoolEnabled() {
+        return derivativeUploadPoolEnabledFlag
+    }
+
+    @VisibleForTesting
+    protected int derivativeUploadPoolSize() {
+        return derivativeUploadPoolSizeValue
+    }
+
+    /**
+     * Exposes the pool entry selected for the current call so tests can assert isolation and
+     * round-robin behavior without opening a stream. Named without the bean-style `get` prefix
+     * to avoid a Groovy property-accessor clash with the static cache.
+     */
+    @VisibleForTesting
+    protected DerivativeUploadPool derivativeUploadPool() {
+        return derivativeUploadPoolCache.get(getCacheKeyObject())
+    }
+
+    /**
+     * Bumps a counter tagged by bucket/region/pool-size recording use of the derivative upload
+     * pool. No-op when no registry is present.
+     */
+    private void incrementDerivativePoolCounter() {
+        if (meterRegistry == null) {
+            return
+        }
+        try {
+            meterRegistry.counter('s3.upload.derivative.pool.size',
+                    'bucket', bucket ?: 'unknown',
+                    'region', region ?: 'unknown',
+                    'size', Integer.toString(derivativeUploadPoolSize()))
+                    .increment()
+        } catch (Exception exception) {
+            log.warn('Failed to record S3 derivative upload pool metric', exception)
+        }
     }
 
     @Override
@@ -1331,6 +1543,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
                 AsyncRequestBody blockingBody = BlockingInputStreamAsyncRequestBody.builder()
                         .contentType(contentType)
                         .contentLength(length) // TODO remove this because it is optional and throws if wrong?
+                        .subscribeTimeout(Duration.ofSeconds(ingestSubscribeTimeoutSeconds))
                         .build()
 
                 def uploadReq = UploadRequest.builder()
@@ -1339,10 +1552,30 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
                         .build()
 
                 def uploadFuture = transferManager.upload(uploadReq).completionFuture()
+                def progress = new S3UploadProgress('ingest', bucket, absolutePath)
 
-                blockingBody.writeInputStream(input)
+                try {
+                    blockingBody.writeInputStream(progress.track(input))
+                    progress.producerFinished()
+                } catch (Exception writeFailure) {
+                    // Don't leave the request queued in the client waiting for a body that won't come.
+                    uploadFuture.cancel(true)
+                    progress.reportFailure(writeFailure, S3UploadHealth.describe(transferManager, null, uploadFuture))
+                    throw writeFailure
+                }
 
-                def result = uploadFuture.join()
+                def result
+                try {
+                    result = uploadFuture.get(ingestCompletionTimeoutSeconds, TimeUnit.SECONDS)
+                } catch (TimeoutException timedOut) {
+                    uploadFuture.cancel(true)
+                    def timeout = new S3UploadCompletionTimeoutException("S3 upload of ${absolutePath} did not complete within ${ingestCompletionTimeoutSeconds}s", timedOut)
+                    progress.reportFailure(timeout, S3UploadHealth.describe(transferManager, null, uploadFuture))
+                    throw timeout
+                } catch (ExecutionException failed) {
+                    progress.reportFailure(failed, S3UploadHealth.describe(transferManager, null, uploadFuture))
+                    throw failed
+                }
                 log.debug("Uploaded {} to S3 {}:{} with result etag {}", absolutePath, region, bucket, result.response().eTag())
             }
         } catch (Exception exception) {
