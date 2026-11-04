@@ -42,7 +42,7 @@ import java.util.concurrent.Executor
  * These beans were moved out of {@link Application} because {@code GrailsAutoConfiguration}
  * invokes {@code @Bean} factory methods before {@code AutowiredAnnotationBeanPostProcessor}
  * populates {@code @Value} fields on the bootstrap instance, causing every {@code @Value} field
- * to silently read its Groovy default (0 / false / ""). Method-parameter injection on a standard
+ * to silently read its Groovy default (0 / false / ""). Field and method-parameter injection on a standard
  * {@code @Configuration} class is processed by the full Spring annotation pipeline and therefore
  * resolves property placeholders correctly.
  */
@@ -52,6 +52,18 @@ class ImageServiceConfiguration {
 
     @Autowired
     GrailsApplication grailsApplication
+
+    @Value('${images.vipsCommand:vips}')
+    String vipsCommand
+
+    @Value('${images.magickCommand:magick}')
+    String magickCommand
+
+    @Value('${images.nativeDzTiler.jna.enabled:false}')
+    boolean nativeDzTilerJnaEnabled
+
+    @Value('${images.nativeDzTiler.ffm.enabled:false}')
+    boolean nativeDzTilerFfmEnabled
 
     // ------------------------------------------------------------------
     // Native bridge path — must be set before any tiler bean constructs
@@ -85,17 +97,20 @@ class ImageServiceConfiguration {
             @Value('${derivative.loader.threads:4}') int threads,
             @Value('${derivative.loader.queueCapacity:100}') int queueCapacity,
             @Value('${derivative.loader.submitTimeoutSeconds:5}') long submitTimeoutSeconds) {
-        // Admission control: the caller-blocks rejection handler backpressures the HTTP thread by
-        // waiting up to submitTimeoutSeconds for a queue slot instead of rejecting instantly (the old
-        // AbortPolicy fast-rejected bursts, turning a transient spike into a wave of 503s). It never
-        // runs the task on the caller thread (that would be CallerRunsPolicy, which floods the request
-        // threads). Worst-case added HTTP latency = submitTimeoutSeconds + derivativeLoadTimeoutSeconds.
+        if (threads < 1) {
+            throw new IllegalArgumentException("derivative.loader.threads must be >= 1 but was ${threads}")
+        }
+        if (queueCapacity < 0) {
+            throw new IllegalArgumentException("derivative.loader.queueCapacity must be >= 0 but was ${queueCapacity}")
+        }
+        // Caller-blocks admission: wait up to submitTimeoutSeconds for a queue slot, then reject (503).
+        // Never runs the task on the caller thread.
         return Application.createThreadPoolTaskExecutor(
                 "derivative-loader-",
                 threads,
                 threads,
-                Math.max(0, queueCapacity),
-                new Application.CallerBlocksPolicy(submitTimeoutSeconds))
+                queueCapacity,
+                new CallerBlocksPolicy("Derivative loader", submitTimeoutSeconds))
     }
 
     @Bean
@@ -165,13 +180,9 @@ class ImageServiceConfiguration {
     IImageThumbnailer streamingImageThumbnailer(
             CommandExecutor commandExecutor,
             @Qualifier("fallbackThumbnailer") IImageThumbnailer fallbackThumbnailer,
-            List<ImageLibraryFactory> availableFactories,
-            @Value('${images.vipsCommand:vips}') String vipsCommand,
-            @Value('${images.magickCommand:magick}') String magickCommand,
-            @Value('${images.nativeDzTiler.jna.enabled:false}') boolean nativeDzTilerJnaEnabled,
-            @Value('${images.nativeDzTiler.ffm.enabled:false}') boolean nativeDzTilerFfmEnabled) {
+            List<ImageLibraryFactory> availableFactories) {
         IImageThumbnailer current = fallbackThumbnailer
-        Map<String, String> commands = buildLibraryCommandMap(vipsCommand, magickCommand, nativeDzTilerJnaEnabled, nativeDzTilerFfmEnabled)
+        Map<String, String> commands = buildLibraryCommandMap()
         // Build up from lowest priority
         for (ImageLibraryFactory factory : availableFactories.reverse()) {
             IImageThumbnailer thumb = factory.createThumbnailer(commandExecutor, commands, current)
@@ -224,13 +235,9 @@ class ImageServiceConfiguration {
             CommandExecutor commandExecutor,
             ImageTilerConfig imageTilerConfig,
             IImageTiler fallbackTiler,
-            List<ImageLibraryFactory> availableFactories,
-            @Value('${images.vipsCommand:vips}') String vipsCommand,
-            @Value('${images.magickCommand:magick}') String magickCommand,
-            @Value('${images.nativeDzTiler.jna.enabled:false}') boolean nativeDzTilerJnaEnabled,
-            @Value('${images.nativeDzTiler.ffm.enabled:false}') boolean nativeDzTilerFfmEnabled) {
+            List<ImageLibraryFactory> availableFactories) {
         IImageTiler current = fallbackTiler
-        Map<String, String> commands = buildLibraryCommandMap(vipsCommand, magickCommand, nativeDzTilerJnaEnabled, nativeDzTilerFfmEnabled)
+        Map<String, String> commands = buildLibraryCommandMap()
         for (ImageLibraryFactory factory : availableFactories.reverse()) {
             IImageTiler tiler = factory.createTiler(commandExecutor, imageTilerConfig, commands, current)
             if (tiler != null) {
@@ -250,13 +257,9 @@ class ImageServiceConfiguration {
     IOnDemandImageTiler onDemandImageTiler(
             CommandExecutor commandExecutor,
             ImageTilerConfig config,
-            List<ImageLibraryFactory> availableFactories,
-            @Value('${images.vipsCommand:vips}') String vipsCommand,
-            @Value('${images.magickCommand:magick}') String magickCommand,
-            @Value('${images.nativeDzTiler.jna.enabled:false}') boolean nativeDzTilerJnaEnabled,
-            @Value('${images.nativeDzTiler.ffm.enabled:false}') boolean nativeDzTilerFfmEnabled) {
+            List<ImageLibraryFactory> availableFactories) {
         IOnDemandImageTiler current = new OnDemandImageTiler(config)
-        Map<String, String> commands = buildLibraryCommandMap(vipsCommand, magickCommand, nativeDzTilerJnaEnabled, nativeDzTilerFfmEnabled)
+        Map<String, String> commands = buildLibraryCommandMap()
         for (ImageLibraryFactory factory : availableFactories.reverse()) {
             IOnDemandImageTiler tiler = factory.createOnDemandTiler(commandExecutor, config, commands, current)
             if (tiler != null) {
@@ -274,13 +277,9 @@ class ImageServiceConfiguration {
     @ConditionalOnProperty(name = "images.useStreamingIiifProcessor", havingValue = "true", matchIfMissing = true)
     IiifImageProcessor iiifImageProcessor(
             CommandExecutor commandExecutor,
-            List<ImageLibraryFactory> availableFactories,
-            @Value('${images.vipsCommand:vips}') String vipsCommand,
-            @Value('${images.magickCommand:magick}') String magickCommand,
-            @Value('${images.nativeDzTiler.jna.enabled:false}') boolean nativeDzTilerJnaEnabled,
-            @Value('${images.nativeDzTiler.ffm.enabled:false}') boolean nativeDzTilerFfmEnabled) {
+            List<ImageLibraryFactory> availableFactories) {
         IiifImageProcessor current = new JavaIiifImageProcessor()
-        Map<String, String> commands = buildLibraryCommandMap(vipsCommand, magickCommand, nativeDzTilerJnaEnabled, nativeDzTilerFfmEnabled)
+        Map<String, String> commands = buildLibraryCommandMap()
         for (ImageLibraryFactory factory : availableFactories.reverse()) {
             IiifImageProcessor proc = factory.createIiifProcessor(commandExecutor, commands, current)
             if (proc != null) {
@@ -302,13 +301,9 @@ class ImageServiceConfiguration {
 
     @Bean
     List<ImageLibraryFactory> availableFactories(
-            @Value('${images.preferPureJavaOperations:false}') boolean preferPureJavaOperations,
-            @Value('${images.vipsCommand:vips}') String vipsCommand,
-            @Value('${images.magickCommand:magick}') String magickCommand,
-            @Value('${images.nativeDzTiler.jna.enabled:false}') boolean nativeDzTilerJnaEnabled,
-            @Value('${images.nativeDzTiler.ffm.enabled:false}') boolean nativeDzTilerFfmEnabled) {
+            @Value('${images.preferPureJavaOperations:false}') boolean preferPureJavaOperations) {
         ServiceLoader<ImageLibraryFactory> loader = ServiceLoader.load(ImageLibraryFactory)
-        Map<String, String> commands = buildLibraryCommandMap(vipsCommand, magickCommand, nativeDzTilerJnaEnabled, nativeDzTilerFfmEnabled)
+        Map<String, String> commands = buildLibraryCommandMap()
         List<ImageLibraryFactory> factories = loader.toList().findAll { it.isAvailable(commands) }.sort { -it.priority }
         if (preferPureJavaOperations) {
             factories = factories.findAll { it.priority == 0 }
@@ -324,21 +319,14 @@ class ImageServiceConfiguration {
         }
         ImageLibraryFactory selected = availableFactories.head()
         log.info("Primary ImageLibraryFactory: {} (priority: {})", selected.implementationName, selected.priority)
+        return selected
     }
 
     // ------------------------------------------------------------------
     // Internal helpers
     // ------------------------------------------------------------------
 
-    /**
-     * Builds the command map passed to every {@link ImageLibraryFactory} method.
-     * Parameters are supplied via {@code @Value} method-parameter injection at the call site.
-     */
-    static Map<String, String> buildLibraryCommandMap(
-            String vipsCommand,
-            String magickCommand,
-            boolean nativeDzTilerJnaEnabled,
-            boolean nativeDzTilerFfmEnabled) {
+    private Map<String, String> buildLibraryCommandMap() {
         return [
             vips                   : vipsCommand,
             magick                 : magickCommand,

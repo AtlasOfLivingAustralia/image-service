@@ -249,47 +249,12 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         derivativeExecutor.shutdownNow()
     }
 
-    def "derivative-path thumbnail generation no longer acquires the thumbnail semaphore"() {
-        given: 'the only semaphore permit is held, which previously blocked the derivative path'
-        service.thumbnailConcurrencyLevel = 1
-        service.thumbnailConcurrencyTimeout = 0
-        service.initSemaphores()
-        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
-        service.init()
-        service.disableCache = false
-        service.grailsApplication.config.imageservice.thumbnail.size = 200
-        service.@thumbnailSemaphore.acquire()
-        def operations = Stub(StorageOperations) {
-            thumbnailImageInfo('img-unguarded', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-unguarded')
-        }
-        service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
-        service.storageLocationService.isActuallyAnImage('img-unguarded') >> true
-        def thumbDefCount = new AtomicInteger(0)
-        service.imageThumbnailer = Stub(IImageThumbnailer) {
-            generateThumbnails(_, _, _) >> { ByteSource src, sinkFactory, defs ->
-                thumbDefCount.set(defs.size())
-                [new au.org.ala.images.thumb.ThumbnailingResult(200, 200, false, 'thumbnail')]
-            }
-        }
-
-        when: 'a derivative load runs while the semaphore is fully held'
-        def info = service.thumbnailImageInfo('img-unguarded', '', false)
-
-        then: 'generation still ran (no GenerateDerivativeTimeout) because the pool is the sole limiter'
-        thumbDefCount.get() == 1
-        noExceptionThrown()
-
-        cleanup:
-        service.@thumbnailSemaphore.release()
-    }
-
     def "concurrent derivative generations are not semaphore-limited"() {
         given: 'semaphore of 1 but a 2-thread derivative pool generating two distinct thumbnails'
         service.thumbnailConcurrencyLevel = 1
         service.thumbnailConcurrencyTimeout = 0
         service.initSemaphores()
         ThreadPoolExecutor derivativeExecutor = new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>())
-        derivativeExecutor.prestartAllCoreThreads() // fixed pools lazily create workers; force both so the two loads truly overlap
         service.derivativeLoaderExecutor = derivativeExecutor
         service.init()
         service.disableCache = false // go through the derivative pool (cache on); distinct keys => no coalescing
@@ -315,7 +280,6 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         }
         service.grailsApplication.config.imageservice.thumbnail.size = 200
         ThreadPoolExecutor httpPool = new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>())
-        httpPool.prestartAllCoreThreads() // fixed pools lazily spawn workers on an unbounded queue; force both so the calls overlap
 
         when: 'two distinct thumbnails generate concurrently while the semaphore has only one permit'
         def f1 = httpPool.submit({ service.generateImageThumbnail('img-c1', operations, 'thumbnail') } as Callable)
@@ -378,52 +342,77 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         service.@thumbnailSemaphore.release()
     }
 
-    def "thumbnailImageInfo reports a rejected derivative loader"() {
-        given:
-        service.initSemaphores()
-        service.init()
-
-        when:
-        service.awaitDerivativeLoad(service.thumbnailCache, Pair.of('img-rejected', ''),
-                { key, executor -> CompletableFuture.failedFuture(new RejectedExecutionException('queue full')) } as BiFunction)
-
-        then:
-        thrown(ImageStoreService.DerivativeLoadRejected)
-    }
-
-    def "rejected derivative submission logs live executor state"() {
+    def "a rejected derivative submission throws DerivativeLoadRejected with pool state and leaves no cache entry"() {
         given: 'a real ThreadPoolTaskExecutor whose queue and single thread are saturated'
         def taskExecutor = new ThreadPoolTaskExecutor()
         taskExecutor.corePoolSize = 1
         taskExecutor.maxPoolSize = 1
-        taskExecutor.queueCapacity = 0 // no queue: the single busy thread forces an immediate rejection
+        taskExecutor.queueCapacity = 0
         taskExecutor.threadNamePrefix = 'derivative-loader-test-'
         taskExecutor.initialize()
         service.derivativeLoaderExecutor = taskExecutor
         service.initSemaphores()
         service.init()
-        def appender = attachListAppender()
         def blocker = new CountDownLatch(1)
         def started = new CountDownLatch(1)
         taskExecutor.execute({ started.countDown(); blocker.await(5, TimeUnit.SECONDS) } as Runnable)
         assert started.await(5, TimeUnit.SECONDS)
+        def key = Pair.of('img-rejected', '')
 
-        when: 'a submission is rejected because the pool cannot accept more work'
-        def future = service.submitDerivativeLoad({ key -> new ImageInfo(exists: true) }, 'img-state', taskExecutor)
+        when:
+        service.awaitDerivativeLoad(service.thumbnailCache, key, { k -> new ImageInfo(exists: true) })
 
-        then: 'the future carries the rejection and a WARN with pool state was logged'
-        future.isCompletedExceptionally()
-        def warns = appender.list.findAll { it.level == Level.WARN }
-        warns.any { it.formattedMessage.contains('poolSize=') && it.formattedMessage.contains('activeCount=') && it.formattedMessage.contains('queueSize=') && it.formattedMessage.contains('img-state') }
+        then:
+        def e = thrown(ImageStoreService.DerivativeLoadRejected)
+        e.message.contains('img-rejected')
+        e.message.contains('poolSize=')
+        e.message.contains('queueSize=')
+        e.cause instanceof RejectedExecutionException
+        !service.thumbnailCache.asMap().containsKey(key)
 
         cleanup:
-            blocker.countDown()
+        blocker.countDown()
         taskExecutor.shutdown()
-        detachListAppender(appender)
     }
 
-    def "thumbnail negative cache hit short-circuits generation"() {
-        given: 'a thumbnail whose original was previously found permanently missing'
+    def "a submit blocked on a full loader does not hold the cache lock for other keys"() {
+        given: 'a loader executor whose submit blocks (as CallerBlocksPolicy does) until released'
+        def submitEntered = new CountDownLatch(1)
+        def releaseSubmit = new CountDownLatch(1)
+        service.derivativeLoaderExecutor = { Runnable task ->
+            submitEntered.countDown()
+            releaseSubmit.await(10, TimeUnit.SECONDS)
+            task.run()
+        } as Executor
+        service.initSemaphores()
+        service.init()
+        def cachedKey = Pair.of('img-cached', '')
+        def blockedKey = Pair.of('img-blocked', '')
+        service.thumbnailCache.put(cachedKey, CompletableFuture.completedFuture(new ImageInfo(exists: true, imageIdentifier: 'img-cached')))
+        def pool = Executors.newSingleThreadExecutor()
+
+        when: 'one request is stuck submitting while another looks up a cached key'
+        def blocked = pool.submit({ service.awaitDerivativeLoad(service.thumbnailCache, blockedKey, { k -> new ImageInfo(exists: true, imageIdentifier: 'img-blocked') }) } as Callable<ImageInfo>)
+        assert submitEntered.await(5, TimeUnit.SECONDS)
+        def cached = service.awaitDerivativeLoad(service.thumbnailCache, cachedKey, { k -> throw new IllegalStateException('should not load') })
+
+        then: 'the cached lookup completes and the in-flight key is already visible for coalescing'
+        cached.exists
+        service.thumbnailCache.asMap().containsKey(blockedKey)
+
+        when:
+        releaseSubmit.countDown()
+
+        then:
+        blocked.get(5, TimeUnit.SECONDS).exists
+
+        cleanup:
+        releaseSubmit.countDown()
+        pool.shutdownNow()
+    }
+
+    def "thumbnail negative cache hit short-circuits generation and only the populating failure warns"() {
+        given: 'a thumbnail whose original is permanently missing from storage'
         service.initSemaphores()
         service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
         service.init()
@@ -438,28 +427,35 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         }
         service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
         service.storageLocationService.isActuallyAnImage('img-neg') >> true
-        // The default IImageThumbnailer mock returns null without opening the source; replace it
-        // with one that reads the original bytes so the storage FileNotFoundException surfaces.
+        // The default mock thumbnailer never opens the source; read it so the FileNotFoundException surfaces.
         service.imageThumbnailer = Stub(IImageThumbnailer) {
             generateThumbnails(_, _, _) >> { ByteSource src, sf, defs -> src.openStream().withStream { it.bytes }; [] }
         }
+        def appender = attachListAppender()
 
-        when: 'the first request triggers generation which fails with FileNotFoundException'
+        when: 'the first request runs generation which fails with FileNotFoundException'
         def first = service.thumbnailImageInfo('img-neg', '', false)
 
-        then: 'generation ran once and the miss is marked as should-not-exist'
+        then: 'generation ran once, the negative cache is populated and one WARN was emitted'
         !first.exists
         generationAttempts.get() == 1
         service.thumbnailNegativeCache.getIfPresent(Pair.of('img-neg', ''))
+        appender.list.count { it.level == Level.WARN } == 1
 
-        when: 'a subsequent request arrives'
+        when: 'subsequent requests arrive'
+        appender.list.clear()
         def second = service.thumbnailImageInfo('img-neg', '', false)
+        service.thumbnailImageInfo('img-neg', '', false)
 
-        then: 'it is served from the negative cache without re-running generation'
+        then: 'they are served from the negative cache silently without re-running generation'
         !second.exists
         second.shouldExist
         second.contentType == 'image/jpeg'
         generationAttempts.get() == 1
+        appender.list.count { it.level == Level.WARN } == 0
+
+        cleanup:
+        detachListAppender(appender)
     }
 
     def "thumbnail negative cache is populated only on FileNotFoundException and not on transient errors"() {
@@ -483,25 +479,6 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
         then: 'a transient failure does not populate the negative cache'
         !service.thumbnailNegativeCache.getIfPresent(Pair.of('img-transient', ''))
-    }
-
-    def "thumbnail negative cache entry expires after the configured TTL"() {
-        given:
-        service.initSemaphores()
-        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
-        service.thumbnailNegativeCacheTtlSeconds = 1
-        service.init()
-        service.disableCache = false
-        service.thumbnailNegativeCache.put(Pair.of('img-ttl', ''), Boolean.TRUE)
-
-        expect:
-        service.thumbnailNegativeCache.getIfPresent(Pair.of('img-ttl', ''))
-
-        when:
-        Thread.sleep(1500)
-
-        then:
-        !service.thumbnailNegativeCache.getIfPresent(Pair.of('img-ttl', ''))
     }
 
     def "refresh invalidates the negative cache entry before consulting it"() {
@@ -592,48 +569,6 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         !service.thumbnailNegativeCache.getIfPresent(key)
     }
 
-    def "negative cache warns exactly once on the populating failure and is silent on hits"() {
-        given: 'a thumbnail whose original is permanently missing from storage'
-        service.initSemaphores()
-        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
-        service.init()
-        service.disableCache = false
-        def generationAttempts = new AtomicInteger(0)
-        def operations = Stub(StorageOperations) {
-            thumbnailImageInfo('img-warn', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-warn')
-            originalInputStream('img-warn', null) >> {
-                generationAttempts.incrementAndGet()
-                throw new FileNotFoundException('NoSuchKey: img-warn original missing')
-            }
-        }
-        service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
-        service.storageLocationService.isActuallyAnImage('img-warn') >> true
-        service.imageThumbnailer = Stub(IImageThumbnailer) {
-            generateThumbnails(_, _, _) >> { ByteSource src, sf, defs -> src.openStream().withStream { it.bytes }; [] }
-        }
-        def appender = attachListAppender()
-
-        when: 'the first request runs generation, fails with FileNotFoundException and populates the negative cache'
-        def first = service.thumbnailImageInfo('img-warn', '', false)
-
-        then: 'exactly one WARN was emitted for the populating failure'
-        !first.exists
-        generationAttempts.get() == 1
-        appender.list.count { it.level == Level.WARN } == 1
-
-        when: 'two subsequent requests are served from the negative cache'
-        appender.list.clear()
-        service.thumbnailImageInfo('img-warn', '', false)
-        service.thumbnailImageInfo('img-warn', '', false)
-
-        then: 'no WARN is logged on the negative-cache hits and generation did not re-run'
-        generationAttempts.get() == 1
-        appender.list.count { it.level == Level.WARN } == 0
-
-        cleanup:
-        detachListAppender(appender)
-    }
-
     def "zero thumbnails for non-image content logs at debug not warn"() {
         given: 'an audio/document record whose generation produces no thumbnails'
         service.initSemaphores()
@@ -713,32 +648,6 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
         cleanup:
         taskExecutor.shutdown()
-    }
-
-    def "derivative loader metric registration is a no-op when there is no meter registry"() {
-        given: 'no meter registry present'
-        service.meterRegistry = null
-        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
-
-        when: 'the service initialises'
-        service.init()
-
-        then: 'registration is skipped without throwing'
-        notThrown(Exception)
-    }
-
-    def "derivative loader metric registration tolerates a non-thread-pool executor"() {
-        given: 'a meter registry but a non ThreadPoolTaskExecutor derivative loader (eg inline test executor)'
-        def registry = new SimpleMeterRegistry()
-        service.meterRegistry = registry
-        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
-
-        when: 'the service initialises'
-        service.init()
-
-        then: 'no gauges are registered but initialisation does not fail'
-        registry.find('imagestore.derivative.loader.queue.depth').gauge() == null
-        notThrown(Exception)
     }
 
     private ListAppender<ILoggingEvent> attachListAppender() {

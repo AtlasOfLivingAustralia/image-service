@@ -296,7 +296,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         new ImageStoreService.GenerateDerivativeTimeout('generator saturated') | 503    | 'thumbnail' | true
     }
 
-    def "permanently missing thumbnail (negative-cache hit) serves placeholder 404 with a short cache TTL"() {
+    def "permanently missing thumbnail serves placeholder 404 with Cache-Control '#cacheControl'"() {
         given:
         String identifier = UUID.randomUUID().toString()
         ClassPathResource placeholderResource = new ClassPathResource('images/no-image-thumbnail.png')
@@ -305,31 +305,9 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         controller.imageStoreService = Mock(ImageStoreService)
         controller.analyticsService = Mock(AnalyticsService)
         controller.missingImageThumbnail = placeholderResource
-
-        when:
-        controller.proxyImageThumbnail()
-
-        then: 'the service reports a negative-cache hit (shouldExist=true, image derivative)'
-        1 * controller.imageStoreService.thumbnailImageInfo(identifier, '', _) >> {
-            new ImageInfo(exists: false, shouldExist: true, imageIdentifier: identifier, contentType: 'image/jpeg')
+        if (maxAge != null) {
+            controller.missingPlaceholderCacheMaxAgeSeconds = maxAge
         }
-        response.status == 404
-        response.contentType == 'image/png'
-        response.contentAsByteArray == placeholder
-        response.getHeader('Cache-Control') == 'public, max-age=60, must-revalidate'
-        response.getHeader('Pragma') == null
-        0 * controller.analyticsService._
-    }
-
-    def "permanently missing thumbnail placeholder respects the configured cacheMaxAge knob"() {
-        given:
-        String identifier = UUID.randomUUID().toString()
-        ClassPathResource placeholderResource = new ClassPathResource('images/no-image-thumbnail.png')
-        params.id = identifier
-        controller.imageStoreService = Mock(ImageStoreService)
-        controller.analyticsService = Mock(AnalyticsService)
-        controller.missingImageThumbnail = placeholderResource
-        controller.missingPlaceholderCacheMaxAgeSeconds = 5
 
         when:
         controller.proxyImageThumbnail()
@@ -339,8 +317,16 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
             new ImageInfo(exists: false, shouldExist: true, imageIdentifier: identifier, contentType: 'image/jpeg')
         }
         response.status == 404
-        response.getHeader('Cache-Control') == 'public, max-age=5, must-revalidate'
+        response.contentType == 'image/png'
+        response.contentAsByteArray == placeholder
+        response.getHeader('Cache-Control') == cacheControl
+        response.getHeader('Pragma') == null
         0 * controller.analyticsService._
+
+        where:
+        maxAge | cacheControl
+        null   | 'public, max-age=60, must-revalidate'
+        5      | 'public, max-age=5, must-revalidate'
     }
 
     def "a burst of rejected derivative loads emits exactly one WARN per (type, exception) while every response stays a 503 placeholder"() {
@@ -350,10 +336,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         byte[] placeholder = placeholderResource.inputStream.bytes
         controller.analyticsService = Mock(AnalyticsService)
         controller.missingImageThumbnail = placeholderResource
-        Logger controllerLogger = (Logger) LoggerFactory.getLogger(ImageController)
-        def appender = new ListAppender<ILoggingEvent>()
-        appender.start()
-        controllerLogger.addAppender(appender)
+        def appender = attachListAppender()
 
         when: 'a burst of thumbnail requests each reject the derivative load'
         burst.times { int i ->
@@ -379,8 +362,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         warns[0].formattedMessage.contains('overloaded')
 
         cleanup:
-        controllerLogger.detachAppender(appender)
-        appender?.stop()
+        detachListAppender(appender)
     }
 
     def "non-image missing derivative keeps the header-less plain-text 404"() {
@@ -651,4 +633,16 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         return bytes
     }
 
+    private ListAppender<ILoggingEvent> attachListAppender() {
+        Logger controllerLogger = (Logger) LoggerFactory.getLogger(ImageController)
+        def appender = new ListAppender<ILoggingEvent>()
+        appender.start()
+        controllerLogger.addAppender(appender)
+        return appender
+    }
+
+    private void detachListAppender(ListAppender<ILoggingEvent> appender) {
+        ((Logger) LoggerFactory.getLogger(ImageController)).detachAppender(appender)
+        appender?.stop()
+    }
 }

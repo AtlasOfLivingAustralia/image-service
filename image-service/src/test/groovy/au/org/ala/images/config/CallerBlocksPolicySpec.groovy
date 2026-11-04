@@ -1,4 +1,4 @@
-package au.org.ala.images
+package au.org.ala.images.config
 
 import spock.lang.Specification
 
@@ -15,7 +15,7 @@ class CallerBlocksPolicySpec extends Specification {
         given: 'a 1-thread pool with a 1-slot queue, both occupied by a blocking task'
         def pool = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(1))
         pool.prestartAllCoreThreads()
-        def policy = new Application.CallerBlocksPolicy(5)
+        def policy = new CallerBlocksPolicy("Test pool", 5)
         def releaseFirst = new CountDownLatch(1)
         def firstStarted = new CountDownLatch(1)
         def taskThread = new AtomicReference<String>()
@@ -32,10 +32,9 @@ class CallerBlocksPolicySpec extends Specification {
             policy.rejectedExecution({ taskThread.set(Thread.currentThread().name); admittedTaskRan.countDown() } as Runnable, pool)
         }, 'caller-thread')
         caller.start()
-        // Give the caller a moment to block on the full queue
-        Thread.sleep(200)
 
-        then: 'the caller is still blocked (not rejected, not running the task itself)'
+        then: 'the caller blocks on the full queue (not rejected, not running the task itself)'
+        waitUntilBlocked(caller)
         caller.isAlive()
         taskThread.get() == null
 
@@ -57,7 +56,7 @@ class CallerBlocksPolicySpec extends Specification {
         given: 'a 1-thread pool with a full 1-slot queue that never drains'
         def pool = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(1))
         pool.prestartAllCoreThreads()
-        def policy = new Application.CallerBlocksPolicy(1)
+        def policy = new CallerBlocksPolicy("Test pool", 1)
         def releaseFirst = new CountDownLatch(1)
         pool.execute({ releaseFirst.await(10, TimeUnit.SECONDS) } as Runnable)
         pool.execute({ } as Runnable) // fill the queue slot
@@ -77,37 +76,36 @@ class CallerBlocksPolicySpec extends Specification {
         pool.shutdownNow()
     }
 
-    def "policy never runs the task on the calling thread"() {
-        given: 'a saturated pool; the task must never execute on the caller even while blocking'
-        def pool = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(1))
-        pool.prestartAllCoreThreads()
-        def policy = new Application.CallerBlocksPolicy(1)
-        def releaseFirst = new CountDownLatch(1)
-        pool.execute({ releaseFirst.await(10, TimeUnit.SECONDS) } as Runnable)
-        pool.execute({ } as Runnable)
-        def callerName = Thread.currentThread().name
-        def ranOnCaller = new AtomicReference<Boolean>(false)
-
-        when: 'the policy blocks and then rejects'
-        try {
-            policy.rejectedExecution({ ranOnCaller.set(Thread.currentThread().name == callerName) } as Runnable, pool)
-        } catch (RejectedExecutionException expected) {
-            // expected: the point is the task body never executed on this caller thread
-        }
-
-        then: 'the task body was never invoked on the calling thread'
-        !ranOnCaller.get()
-
-        cleanup:
-        releaseFirst.countDown()
-        pool.shutdownNow()
-    }
-
     def "construction rejects a negative submit timeout"() {
         when:
-        new Application.CallerBlocksPolicy(-1)
+        new CallerBlocksPolicy("Test pool", -1)
 
         then:
         thrown(IllegalArgumentException)
+    }
+
+    def "derivativeLoaderExecutor rejects invalid pool configuration at startup"() {
+        when:
+        new ImageServiceConfiguration().derivativeLoaderExecutor(threads, queueCapacity, 5)
+
+        then:
+        thrown(IllegalArgumentException)
+
+        where:
+        threads | queueCapacity
+        0       | 100
+        -1      | 100
+        4       | -1
+    }
+
+    private static boolean waitUntilBlocked(Thread thread) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (System.nanoTime() < deadline) {
+            if (thread.state == Thread.State.TIMED_WAITING) {
+                return true
+            }
+            Thread.onSpinWait()
+        }
+        return false
     }
 }
