@@ -25,6 +25,7 @@ import grails.web.mapping.LinkGenerator
 import groovy.transform.Immutable
 import groovy.transform.NamedVariant
 import groovy.util.logging.Slf4j
+import io.micrometer.core.instrument.Gauge
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.io.inputstream.ZipInputStream
 import net.lingala.zip4j.model.FileHeader
@@ -36,6 +37,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.web.multipart.MultipartFile
 
 import javax.annotation.PostConstruct
@@ -55,6 +57,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.function.BiFunction
@@ -156,6 +159,47 @@ class ImageStoreService implements MetricsSupport {
         tileCache = Caffeine.from(tileLookupCacheConfig).executor(derivativeLoaderExecutor).buildAsync()
         originalCache = Caffeine.from(originalLookupCacheConfig).build()
         thumbnailNegativeCache = Caffeine.newBuilder().expireAfterWrite(thumbnailNegativeCacheTtlSeconds, TimeUnit.SECONDS).build()
+        registerDerivativeLoaderMetrics()
+    }
+
+    /**
+     * Exposes the derivative-loader thread pool's queue depth, active thread count and completed
+     * task count as Micrometer gauges so operators can see loader saturation/backlog. The gauges
+     * re-read the live {@link ThreadPoolExecutor} on every scrape, so they cost nothing between
+     * observations. No-op when no MeterRegistry is present or the executor is not a Spring
+     * {@link ThreadPoolTaskExecutor} (eg the inline test executor).
+     */
+    private void registerDerivativeLoaderMetrics() {
+        if (!meterRegistry) {
+            log.debug('No MeterRegistry available; derivative loader executor metrics will not be recorded')
+            return
+        }
+        ThreadPoolExecutor derivativeLoaderPool = unwrapDerivativeLoaderThreadPool()
+        if (!derivativeLoaderPool) {
+            log.debug('derivativeLoaderExecutor is not a ThreadPoolTaskExecutor ({}); executor metrics will not be recorded', derivativeLoaderExecutor?.class?.name)
+            return
+        }
+        Gauge.builder('imagestore.derivative.loader.queue.depth', derivativeLoaderPool, { pool -> pool.queue.size() } as java.util.function.ToDoubleFunction<ThreadPoolExecutor>)
+                .description('Derivative loader executor queued (waiting) task count')
+                .register(meterRegistry)
+        Gauge.builder('imagestore.derivative.loader.active', derivativeLoaderPool, { pool -> pool.activeCount } as java.util.function.ToDoubleFunction<ThreadPoolExecutor>)
+                .description('Derivative loader executor active (running) thread count')
+                .register(meterRegistry)
+        Gauge.builder('imagestore.derivative.loader.completed', derivativeLoaderPool, { pool -> pool.completedTaskCount } as java.util.function.ToDoubleFunction<ThreadPoolExecutor>)
+                .description('Derivative loader executor completed task count')
+                .register(meterRegistry)
+    }
+
+    private ThreadPoolExecutor unwrapDerivativeLoaderThreadPool() {
+        if (!(derivativeLoaderExecutor instanceof ThreadPoolTaskExecutor)) {
+            return null
+        }
+        try {
+            return ((ThreadPoolTaskExecutor) derivativeLoaderExecutor).threadPoolExecutor
+        } catch (IllegalStateException executorNotInitialised) {
+            log.debug('derivativeLoaderExecutor ThreadPoolExecutor not yet initialised: {}', executorNotInitialised.message)
+            return null
+        }
     }
 
     @NotTransactional
@@ -513,7 +557,22 @@ class ImageStoreService implements MetricsSupport {
                 return ImageStoreService.this.retrieveImageInputStream(image)
             }
         }
-        return generateThumbnailsImpl(byteSource, image.imageIdentifier, image.storageLocation.asStandaloneStorageOperations())
+        // Ingest/eager path only: bound thumbnail generation concurrency with the semaphore so a
+        // burst of background-ingest tasks cannot stampede the CPU. The on-demand derivative path
+        // deliberately does NOT use this semaphore — the derivativeLoaderExecutor pool is its sole
+        // concurrency limiter (a second gate here could serialize the pool threads when storage is slow).
+        if (!thumbnailSemaphore.tryAcquire(thumbnailConcurrencyTimeout, TimeUnit.SECONDS)) {
+            incrementCounter('imagestore.thumbnail.timeout', 'Thumbnail generation timeouts', [type: 'all'])
+            throw new GenerateDerivativeTimeout("Could not acquire thumbnail semaphore to thumb image ${image.imageIdentifier} in ${thumbnailConcurrencyTimeout}s")
+        }
+        try {
+            return generateThumbnailsImpl(byteSource, image.imageIdentifier, image.storageLocation.asStandaloneStorageOperations())
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt()
+            throw new IllegalStateException("Interrupted while thumbnailing image ${image.imageIdentifier}", ie)
+        } finally {
+            thumbnailSemaphore.release()
+        }
     }
 
     @NotTransactional
@@ -563,24 +622,20 @@ class ImageStoreService implements MetricsSupport {
                 thumbDefs.add(ThumbDefinition.centreCrop(650, "thumbnail_centre_crop_large"))
             }
 
+            // No thumbnailSemaphore here: this runs on the derivativeLoaderExecutor pool (on-demand
+            // path) which is the sole concurrency limiter. The eager ingest path guards separately in
+            // generateImageThumbnails(Image).
             List<ThumbnailingResult> results
-            if (thumbnailSemaphore.tryAcquire(thumbnailConcurrencyTimeout, TimeUnit.SECONDS)) {
-                try {
-                    results = t.generateThumbnails(
-                            byteSource,
-                            operations.thumbnailByteSinkFactory(imageIdentifier),
-                            thumbDefs
-                    )
-                    incrementCounter('imagestore.thumbnail.success', 'Successful thumbnail generations', [type: type ?: 'all'])
-                } catch (Exception e) {
-                    incrementCounter('imagestore.thumbnail.error', 'Thumbnail generation errors', [type: type ?: 'all', error: e.class.simpleName])
-                    throw e
-                } finally {
-                    thumbnailSemaphore.release()
-                }
-            } else {
-                incrementCounter('imagestore.thumbnail.timeout', 'Thumbnail generation timeouts', [type: type ?: 'all'])
-                throw new GenerateDerivativeTimeout("Could not acquire thumbnail semaphore to thumb image ${imageIdentifier} in ${thumbnailConcurrencyTimeout}s")
+            try {
+                results = t.generateThumbnails(
+                        byteSource,
+                        operations.thumbnailByteSinkFactory(imageIdentifier),
+                        thumbDefs
+                )
+                incrementCounter('imagestore.thumbnail.success', 'Successful thumbnail generations', [type: type ?: 'all'])
+            } catch (Exception e) {
+                incrementCounter('imagestore.thumbnail.error', 'Thumbnail generation errors', [type: type ?: 'all', error: e.class.simpleName])
+                throw e
             }
 
             auditService.log(imageIdentifier, "Thumbnails created", "N/A")
@@ -1279,6 +1334,17 @@ class ImageStoreService implements MetricsSupport {
         try {
             return CompletableFuture.supplyAsync({ loader.call(key) }, executor)
         } catch (RejectedExecutionException e) {
+            // Rejection is rare (CallerBlocksPolicy already blocked the submitter for a queue slot),
+            // so enrich it eagerly with live pool state to settle why the loader saturated. The
+            // controller's rate-limited WARN picks this up via cause.message.
+            ThreadPoolExecutor derivativePool = unwrapDerivativeLoaderThreadPool()
+            if (derivativePool) {
+                log.warn('Derivative load rejected for {} (poolSize={} activeCount={} queueSize={} queueRemainingCapacity={} maximumPoolSize={})',
+                        key, derivativePool.poolSize, derivativePool.activeCount, derivativePool.queue.size(),
+                        derivativePool.queue.remainingCapacity(), derivativePool.maximumPoolSize)
+            } else {
+                log.warn('Derivative load rejected for {} (executor {} is not a ThreadPoolTaskExecutor)', key, executor?.class?.name)
+            }
             CompletableFuture<ImageInfo> rejectedLoad = new CompletableFuture<>()
             rejectedLoad.completeExceptionally(e)
             return rejectedLoad

@@ -10,11 +10,13 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.google.common.io.ByteSource
 import com.google.common.io.Resources
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.apache.commons.lang3.tuple.Pair
 import grails.testing.gorm.DataTest
 import grails.testing.services.ServiceUnitTest
 import org.grails.plugins.testing.GrailsMockMultipartFile
 import org.slf4j.LoggerFactory
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import spock.lang.Specification
 
 import java.util.concurrent.Callable
@@ -23,7 +25,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -245,24 +249,130 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         derivativeExecutor.shutdownNow()
     }
 
-    def "thumbnailImageInfo propagates a saturated thumbnail generator"() {
-        given:
+    def "derivative-path thumbnail generation no longer acquires the thumbnail semaphore"() {
+        given: 'the only semaphore permit is held, which previously blocked the derivative path'
         service.thumbnailConcurrencyLevel = 1
         service.thumbnailConcurrencyTimeout = 0
         service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
         service.init()
         service.disableCache = false
+        service.grailsApplication.config.imageservice.thumbnail.size = 200
         service.@thumbnailSemaphore.acquire()
         def operations = Stub(StorageOperations) {
-            thumbnailImageInfo('img-saturated', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-saturated')
+            thumbnailImageInfo('img-unguarded', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-unguarded')
         }
         service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
+        service.storageLocationService.isActuallyAnImage('img-unguarded') >> true
+        def thumbDefCount = new AtomicInteger(0)
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> { ByteSource src, sinkFactory, defs ->
+                thumbDefCount.set(defs.size())
+                [new au.org.ala.images.thumb.ThumbnailingResult(200, 200, false, 'thumbnail')]
+            }
+        }
+
+        when: 'a derivative load runs while the semaphore is fully held'
+        def info = service.thumbnailImageInfo('img-unguarded', '', false)
+
+        then: 'generation still ran (no GenerateDerivativeTimeout) because the pool is the sole limiter'
+        thumbDefCount.get() == 1
+        noExceptionThrown()
+
+        cleanup:
+        service.@thumbnailSemaphore.release()
+    }
+
+    def "concurrent derivative generations are not semaphore-limited"() {
+        given: 'semaphore of 1 but a 2-thread derivative pool generating two distinct thumbnails'
+        service.thumbnailConcurrencyLevel = 1
+        service.thumbnailConcurrencyTimeout = 0
+        service.initSemaphores()
+        ThreadPoolExecutor derivativeExecutor = new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>())
+        derivativeExecutor.prestartAllCoreThreads() // fixed pools lazily create workers; force both so the two loads truly overlap
+        service.derivativeLoaderExecutor = derivativeExecutor
+        service.init()
+        service.disableCache = false // go through the derivative pool (cache on); distinct keys => no coalescing
+        def inside = new AtomicInteger(0)
+        def maxInside = new AtomicInteger(0)
+        def entered = new CountDownLatch(2)
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo(_, _) >> { String id, String t -> new ImageInfo(exists: false, imageIdentifier: id) }
+        }
+        service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
+        // Hand-written fake: Spock mocks/stubs serialize concurrent invocations on a single mock,
+        // which would falsely serialize the two generations and mask the semaphore removal.
+        service.imageThumbnailer = new IImageThumbnailer() {
+            @Override
+            List<au.org.ala.images.thumb.ThumbnailingResult> generateThumbnails(ByteSource src, au.org.ala.images.util.ByteSinkFactory sinkFactory, List<au.org.ala.images.thumb.ThumbDefinition> defs) {
+                def now = inside.incrementAndGet()
+                maxInside.updateAndGet({ int prev -> Math.max(prev, now) })
+                entered.countDown()
+                entered.await(10, TimeUnit.SECONDS) // hold both generations open until both have entered
+                inside.decrementAndGet()
+                []
+            }
+        }
+        service.grailsApplication.config.imageservice.thumbnail.size = 200
+        ThreadPoolExecutor httpPool = new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>())
+        httpPool.prestartAllCoreThreads() // fixed pools lazily spawn workers on an unbounded queue; force both so the calls overlap
+
+        when: 'two distinct thumbnails generate concurrently while the semaphore has only one permit'
+        def f1 = httpPool.submit({ service.generateImageThumbnail('img-c1', operations, 'thumbnail') } as Callable)
+        def f2 = httpPool.submit({ service.generateImageThumbnail('img-c2', operations, 'thumbnail') } as Callable)
+        f1.get(15, TimeUnit.SECONDS)
+        f2.get(15, TimeUnit.SECONDS)
+
+        then: 'both ran inside generateThumbnailsImpl at the same time (pool, not semaphore, is the limiter)'
+        maxInside.get() == 2
+        noExceptionThrown()
+
+        cleanup:
+        httpPool.shutdownNow()
+        derivativeExecutor.shutdownNow()
+    }
+
+    def "ingest-path generateImageThumbnails is still bounded by the thumbnail semaphore"() {
+        given: 'the only semaphore permit is held, so the eager ingest path must time out'
+        service.thumbnailConcurrencyLevel = 1
+        service.thumbnailConcurrencyTimeout = 0
+        service.initSemaphores()
+        service.@thumbnailSemaphore.acquire()
+        def image = Mock(Image) {
+            getImageIdentifier() >> 'img-ingest'
+            getStorageLocation() >> Mock(StorageLocation)
+        }
 
         when:
-        service.thumbnailImageInfo('img-saturated', '', false)
+        service.generateImageThumbnails(image)
 
         then:
         thrown(ImageStoreService.GenerateDerivativeTimeout)
+
+        cleanup:
+        service.@thumbnailSemaphore.release()
+    }
+
+    def "ingest-path generateImageThumbnails acquires and releases the semaphore around generation"() {
+        given: 'a free semaphore; generation runs and must release the permit afterwards'
+        service.thumbnailConcurrencyLevel = 1
+        service.thumbnailConcurrencyTimeout = 5
+        service.initSemaphores()
+        service.grailsApplication.config.imageservice.thumbnail.size = 200
+        def operations = Mock(StorageOperations)
+        def image = Mock(Image) {
+            getImageIdentifier() >> 'img-ingest-ok'
+            getStorageLocation() >> Mock(StorageLocation) { asStandaloneStorageOperations() >> operations }
+        }
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> []
+        }
+
+        when:
+        service.generateImageThumbnails(image)
+
+        then: 'the permit was released, so a subsequent acquire succeeds immediately'
+        service.@thumbnailSemaphore.tryAcquire(0, TimeUnit.SECONDS)
 
         cleanup:
         service.@thumbnailSemaphore.release()
@@ -279,6 +389,37 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
         then:
         thrown(ImageStoreService.DerivativeLoadRejected)
+    }
+
+    def "rejected derivative submission logs live executor state"() {
+        given: 'a real ThreadPoolTaskExecutor whose queue and single thread are saturated'
+        def taskExecutor = new ThreadPoolTaskExecutor()
+        taskExecutor.corePoolSize = 1
+        taskExecutor.maxPoolSize = 1
+        taskExecutor.queueCapacity = 0 // no queue: the single busy thread forces an immediate rejection
+        taskExecutor.threadNamePrefix = 'derivative-loader-test-'
+        taskExecutor.initialize()
+        service.derivativeLoaderExecutor = taskExecutor
+        service.initSemaphores()
+        service.init()
+        def appender = attachListAppender()
+        def blocker = new CountDownLatch(1)
+        def started = new CountDownLatch(1)
+        taskExecutor.execute({ started.countDown(); blocker.await(5, TimeUnit.SECONDS) } as Runnable)
+        assert started.await(5, TimeUnit.SECONDS)
+
+        when: 'a submission is rejected because the pool cannot accept more work'
+        def future = service.submitDerivativeLoad({ key -> new ImageInfo(exists: true) }, 'img-state', taskExecutor)
+
+        then: 'the future carries the rejection and a WARN with pool state was logged'
+        future.isCompletedExceptionally()
+        def warns = appender.list.findAll { it.level == Level.WARN }
+        warns.any { it.formattedMessage.contains('poolSize=') && it.formattedMessage.contains('activeCount=') && it.formattedMessage.contains('queueSize=') && it.formattedMessage.contains('img-state') }
+
+        cleanup:
+            blocker.countDown()
+        taskExecutor.shutdown()
+        detachListAppender(appender)
     }
 
     def "thumbnail negative cache hit short-circuits generation"() {
@@ -549,6 +690,55 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
         cleanup:
         detachListAppender(appender)
+    }
+
+    def "derivative loader executor gauges are registered against the meter registry"() {
+        given: 'a real ThreadPoolTaskExecutor-backed derivative loader and a meter registry'
+        def registry = new SimpleMeterRegistry()
+        def taskExecutor = new ThreadPoolTaskExecutor()
+        taskExecutor.corePoolSize = 1
+        taskExecutor.maxPoolSize = 1
+        taskExecutor.threadNamePrefix = 'derivative-loader-test-'
+        taskExecutor.initialize()
+        service.meterRegistry = registry
+        service.derivativeLoaderExecutor = taskExecutor
+
+        when: 'the service initialises'
+        service.init()
+
+        then: 'the queue depth, active count and completed task count gauges are registered'
+        registry.get('imagestore.derivative.loader.queue.depth').gauge() != null
+        registry.get('imagestore.derivative.loader.active').gauge() != null
+        registry.get('imagestore.derivative.loader.completed').gauge() != null
+
+        cleanup:
+        taskExecutor.shutdown()
+    }
+
+    def "derivative loader metric registration is a no-op when there is no meter registry"() {
+        given: 'no meter registry present'
+        service.meterRegistry = null
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+
+        when: 'the service initialises'
+        service.init()
+
+        then: 'registration is skipped without throwing'
+        notThrown(Exception)
+    }
+
+    def "derivative loader metric registration tolerates a non-thread-pool executor"() {
+        given: 'a meter registry but a non ThreadPoolTaskExecutor derivative loader (eg inline test executor)'
+        def registry = new SimpleMeterRegistry()
+        service.meterRegistry = registry
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+
+        when: 'the service initialises'
+        service.init()
+
+        then: 'no gauges are registered but initialisation does not fail'
+        registry.find('imagestore.derivative.loader.queue.depth').gauge() == null
+        notThrown(Exception)
     }
 
     private ListAppender<ILoggingEvent> attachListAppender() {
