@@ -1,5 +1,7 @@
 package au.org.ala.images.thumb;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import au.org.ala.images.jna.InputStreamVipsSource;
 import au.org.ala.images.jna.NativeLibraryDetector;
 import au.org.ala.images.jna.OutputStreamVipsTarget;
@@ -130,6 +132,9 @@ public class JnaStreamingImageThumbnailer implements IImageThumbnailer {
                     vips.vips_error_clear();
                     throw new IOException("Failed to write thumbnail to target: " + error);
                 }
+            } catch (Throwable t) {
+                AbortableOutputStream.abortQuietly(outputStream, t);
+                throw t;
             } finally {
                 if (vipsTarget != null) {
                     vipsTarget.close();

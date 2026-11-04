@@ -326,15 +326,62 @@ imageservice:
 
 aws:
     s3:
+        # Reliability: the "request was not made within N seconds" stuck state (aws-sdk-java-v2#4893) was
+        # reproduced locally (image-service/s3-local): upload streams that were never closed/cancelled held
+        # client capacity until no new upload could start. Uploads are now cancelled on subscribe/completion
+        # timeout and producers abort failed streams. The earlier "Netty fails too" result was a different
+        # error (no Content-Length without multipart). AWS deps pinned at SDK bom 2.51.2 / aws-crt 0.48.3.
         crt:
+            enabled: true # false = Java/Netty async client
             max-concurrency: 32 # transfer connections, not CRT event-loop threads
             event-loop-threads: 0 # zero retains CRT defaults; must be set before CRT clients are created
             future-completion-threads: 2
             future-completion-queue-capacity: 256
+        netty:
+            # Required for streaming (unknown-length) uploads on the Netty client, which includes the
+            # derivative upload pool; without it every streaming upload fails with "Content-Length header must be specified".
+            multipart:
+                enabled: true
         application:
             stream:
                 idle:
                     timeout: 0 # seconds; zero disables the opt-in S3 application-stream idle watchdog
+        upload:
+            ingest:
+                # Original-image ingest: how long the blocking body waits for the transfer manager
+                # to subscribe before failing. SDK default is 10s, which was losing originals under load.
+                subscribe:
+                    timeout:
+                        seconds: 60
+                # Max wait for the upload to finish once the body is written; on timeout the upload is
+                # cancelled (freeing client capacity) and the failure is retried like other transient errors.
+                completion:
+                    timeout:
+                        seconds: 300
+                # Retry transient ingest failures (subscribe timeout, IO, throttling/5xx) so one
+                # transient error does not permanently lose the original. Deterministic 4xx fail fast.
+                retry:
+                    max:
+                        attempts: 3
+                    base:
+                        delay:
+                            ms: 500
+            derivative:
+                # Max wait for a thumbnail/tile upload to finish once the producer closes the stream;
+                # on timeout the upload is cancelled and close() throws instead of blocking forever.
+                completion:
+                    timeout:
+                        seconds: 60
+                pool:
+                    # Derivative (thumbnail/tile) uploads normally share the single cached
+                    # S3TransferManager, which can enter a stuck state and stop subscribing new
+                    # upload request bodies (aws-sdk-java-v2#4893). When enabled, derivative
+                    # uploads use a small pool of transfer managers, each over its OWN dedicated
+                    # S3AsyncClient, so a stuck shared manager/client cannot poison all derivative
+                    # uploads. Default: false (opt-in for A/B testing; ingest path is unaffected).
+                    enabled: false
+                    # Number of isolated transfer-manager/client pairs in the derivative pool.
+                    size: 4
 
 serverName: 'http://devt.ala.org.au:8080'
 

@@ -1,0 +1,8 @@
+[
+  {
+    "name": "s3",
+    "listen": "0.0.0.0:8666",
+    "upstream": "s3:7070",
+    "enabled": true
+  }
+]

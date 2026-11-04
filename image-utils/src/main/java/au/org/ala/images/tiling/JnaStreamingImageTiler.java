@@ -1,5 +1,8 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+import java.io.OutputStream;
+
 import au.org.ala.images.jna.InputStreamVipsSource;
 import au.org.ala.images.jna.NativeLibraryDetector;
 import au.org.ala.images.jna.OutputStreamVipsTarget;
@@ -345,11 +348,18 @@ public class JnaStreamingImageTiler implements IImageTiler {
         Pointer outputImage = tileImage;
         try {
             outputImage = prepareImageForOutput(tileImage, width, height);
-            try (OutputStreamVipsTarget target = new OutputStreamVipsTarget(vips, tileSink.openStream())) {
-                if (vips.vips_image_write_to_target(outputImage, encodeSuffix, target.getTarget(), (Object) null) != 0) {
-                    String error = vips.vips_error_buffer();
-                    vips.vips_error_clear();
-                    throw new IOException("vips_image_write_to_target failed: " + error);
+            // The target does not close the stream, so the stream must be its own resource or the upload never completes.
+            try (OutputStream outputStream = tileSink.openStream();
+                 OutputStreamVipsTarget target = new OutputStreamVipsTarget(vips, outputStream)) {
+                try {
+                    if (vips.vips_image_write_to_target(outputImage, encodeSuffix, target.getTarget(), (Object) null) != 0) {
+                        String error = vips.vips_error_buffer();
+                        vips.vips_error_clear();
+                        throw new IOException("vips_image_write_to_target failed: " + error);
+                    }
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
                 }
             }
         } finally {

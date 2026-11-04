@@ -181,6 +181,32 @@ class S3StorageOperationsSpec extends Specification implements DataTest {
         1 * upload.completionFuture() >> CompletableFuture.completedFuture(completedUpload)
     }
 
+    def "storeInternal applies the configured ingest subscribe timeout to the blocking body"() {
+        given:
+        def client = Mock(S3Client)
+        def tm = Mock(S3TransferManager)
+        def upload = Mock(Upload)
+        def completedUpload = CompletedUpload.builder()
+                .response(PutObjectResponse.builder().eTag('etag').build())
+                .build()
+
+        def ops = new TestOps(bucket: 'b', publicRead: false, privateAcl: false, mockClient: client, mockTransferManager: tm)
+
+        when:
+        ops.store('uuid-subscribe-timeout', new ByteArrayInputStream('x'.bytes), 'image/jpeg', null, 'x'.bytes.length)
+
+        then:
+        1 * tm.upload(_ as UploadRequest) >> { UploadRequest req ->
+            def body = req.requestBody()
+            def field = body.class.getDeclaredField('subscribeTimeout')
+            field.accessible = true
+            assert (field.get(body) as java.time.Duration) == java.time.Duration.ofSeconds(60)
+            consumeBody(req)
+            return upload
+        }
+        1 * upload.completionFuture() >> CompletableFuture.completedFuture(completedUpload)
+    }
+
     def "updateACL sets PublicRead and public cache-control when publicRead=true"() {
         given:
         def client = Mock(S3Client)

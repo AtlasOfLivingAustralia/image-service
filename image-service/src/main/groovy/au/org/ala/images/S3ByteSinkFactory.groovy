@@ -3,6 +3,10 @@ package au.org.ala.images
 import au.org.ala.images.metrics.MetricsTrackingOutputStream
 import au.org.ala.images.storage.S3ApplicationStreamIdleTimeoutException
 import au.org.ala.images.storage.S3ApplicationWatchdogOutputStream
+import au.org.ala.images.storage.S3UploadCompletionTimeoutException
+import au.org.ala.images.storage.S3UploadHealth
+import au.org.ala.images.storage.S3UploadProgress
+import au.org.ala.images.util.AbortableFilterOutputStream
 import au.org.ala.images.util.ByteSinkFactory
 import com.google.common.io.ByteSink
 import groovy.util.logging.Slf4j
@@ -17,6 +21,11 @@ import software.amazon.awssdk.services.s3.model.Tagging
 
 import java.nio.file.Files
 import java.time.Duration
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import grails.util.Holders
 
 @Slf4j
@@ -24,6 +33,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
 
     static boolean streaming = Boolean.parseBoolean(System.getProperty('au.org.ala.images.s3.upload.streaming', 'true'))
     private static final Duration applicationStreamIdleTimeout = applicationStreamIdleTimeout()
+    private static final Duration derivativeCompletionTimeout = derivativeCompletionTimeout()
 
     private final S3AsyncClient s3Client
     private final S3TransferManager s3TransferManager
@@ -81,28 +91,86 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                     }
 
                     // Use S3TransferManager which supports streaming via BlockingOutputStreamAsyncRequestBody
-                    def blockingBody = BlockingOutputStreamAsyncRequestBody.builder()
-                            .subscribeTimeout(Duration.ofSeconds(connectionTimeout)) // this should wait for any other s3 calls to timeout
-                            .build()
+                    def blockingBody = buildBlockingBody(connectionTimeout)
 
                     def uploadReq = UploadRequest.builder()
                             .putObjectRequest(reqBuilder.build())
                             .requestBody(blockingBody)
                             .build()
+                    incrementUploadCounter('s3.upload.streaming.start')
                     def uploadFuture = s3TransferManager.upload(uploadReq).completionFuture()
 
-                    def outputStream = blockingBody.outputStream()
+                    def outputStream
+                    try {
+                        outputStream = blockingBody.outputStream()
+                    } catch (IllegalStateException stuckState) {
+                        // A stuck shared S3TransferManager / S3AsyncClient surfaces here when the request
+                        // body is never subscribed within subscribeTimeout. Log a rich, single diagnostic
+                        // line that lets us tell from logs whether the SAME manager/client is reused
+                        // across failures. The exception is rethrown unchanged so behaviour is identical.
+                        if (isStuckSubscription(stuckState)) {
+                            recordStuckSubscription(path, uploadFuture)
+                        }
+                        // Otherwise the orphaned request stays queued in the client waiting for a body
+                        // that will never arrive, holding capacity and keeping the client wedged.
+                        uploadFuture.cancel(true)
+                        throw stuckState
+                    }
                     S3ApplicationWatchdogOutputStream watchdogStream = applicationStreamIdleTimeout == null ? null :
                             new S3ApplicationWatchdogOutputStream(outputStream, applicationStreamIdleTimeout, 'upload')
-                    baseStream = new FilterOutputStream(watchdogStream ?: outputStream) {
+                    def progress = new S3UploadProgress('streaming', bucket, path)
+                    baseStream = new AbortableFilterOutputStream(watchdogStream ?: outputStream) {
+                        @Override
+                        void write(int b) throws IOException {
+                            try {
+                                super.write(b)
+                                progress.progressed(1)
+                            } catch (IOException e) {
+                                progress.reportFailure(e, health(uploadFuture))
+                                throw e
+                            }
+                        }
+
+                        @Override
+                        void write(byte[] b, int off, int len) throws IOException {
+                            try {
+                                super.write(b, off, len)
+                                progress.progressed(len)
+                            } catch (IOException e) {
+                                progress.reportFailure(e, health(uploadFuture))
+                                throw e
+                            }
+                        }
+
+                        @Override
+                        protected void onAbort(Throwable cause) {
+                            // If the SDK failed the upload first (e.g. a timeout), make sure that is logged.
+                            if (uploadFuture.isCompletedExceptionally() && !uploadFuture.isCancelled()) {
+                                progress.reportFailure(uploadFailure(uploadFuture), health(uploadFuture))
+                            }
+                            // Fail the request body so the partial object is never committed.
+                            outputStream.cancel()
+                            uploadFuture.cancel(true)
+                            watchdogStream?.failed()
+                            incrementUploadCounter('s3.upload.streaming.aborted')
+                            log.debug("S3 streaming upload aborted by producer: bucket={} key={} cause={}", bucket, path, cause?.toString())
+                        }
+
                         @Override
                         void close() throws IOException {
+                            if (aborted) {
+                                return
+                            }
                             try {
                                 super.close()
+                                progress.producerFinished()
                                 // Producer EOF is not terminal: retain the watchdog while the upload completes.
-                                uploadFuture.join()
+                                awaitCompletion(uploadFuture, path)
                                 watchdogStream?.completed()
+                                incrementUploadCounter('s3.upload.streaming.completion')
                             } catch (Exception e) {
+                                incrementUploadCounter('s3.upload.streaming.failure')
+                                progress.reportFailure(e, health(uploadFuture))
                                 if (watchdogStream?.timedOut) {
                                     throw watchdogStream.timeoutException(e)
                                 }
@@ -118,9 +186,21 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                     def file = tempPath.toFile()
                     file.deleteOnExit()
                     
-                    baseStream = new FilterOutputStream(new BufferedOutputStream(Files.newOutputStream(tempPath))) {
+                    baseStream = new AbortableFilterOutputStream(new BufferedOutputStream(Files.newOutputStream(tempPath))) {
+                        @Override
+                        protected void onAbort(Throwable cause) {
+                            try {
+                                out.close()
+                            } finally {
+                                Files.deleteIfExists(tempPath)
+                            }
+                        }
+
                         @Override
                         void close() throws IOException {
+                            if (aborted) {
+                                return
+                            }
                             super.close()
                             // once the file output is closed we can send it to S3 and then delete the temp file
                             def reqBuilder = PutObjectRequest.builder()
@@ -183,10 +263,114 @@ class S3ByteSinkFactory implements ByteSinkFactory {
             }
         }
     }
+    /**
+     * Builds the streaming request body. Extracted as a protected seam so tests can substitute a
+     * body whose outputStream() never gets subscribed; production behaviour is identical.
+     */
+    protected BlockingOutputStreamAsyncRequestBody buildBlockingBody(int timeoutSeconds) {
+        return BlockingOutputStreamAsyncRequestBody.builder()
+                .subscribeTimeout(Duration.ofSeconds(timeoutSeconds)) // this should wait for any other s3 calls to timeout
+                .build()
+    }
+
+    /**
+     * Upper bound on waiting for an upload to finish after the body has been fully written.
+     * Settable so tests can shorten it.
+     */
+    Duration completionTimeout = derivativeCompletionTimeout
+
+    /**
+     * Waits for the upload with a bound; on timeout the upload is cancelled so the request does not
+     * keep holding client capacity, and the caller gets an exception instead of blocking forever.
+     */
+    private void awaitCompletion(CompletableFuture<?> uploadFuture, String path) {
+        Duration timeout = completionTimeout
+        try {
+            uploadFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS)
+        } catch (TimeoutException timedOut) {
+            uploadFuture.cancel(true)
+            incrementUploadCounter('s3.upload.completion.timeout')
+            log.debug("S3 streaming upload did not complete within {}s, cancelled: bucket={} key={} {}",
+                    timeout.seconds, bucket, path, S3UploadHealth.describe(s3TransferManager, s3Client, uploadFuture))
+            throw new S3UploadCompletionTimeoutException("S3 upload of ${path} did not complete within ${timeout.seconds}s", timedOut)
+        } catch (ExecutionException failed) {
+            throw new CompletionException(failed.cause ?: failed)
+        } catch (InterruptedException interrupted) {
+            uploadFuture.cancel(true)
+            Thread.currentThread().interrupt()
+            throw interrupted
+        }
+    }
+
+    private String health(CompletableFuture<?> uploadFuture) {
+        return S3UploadHealth.describe(s3TransferManager, s3Client, uploadFuture)
+    }
+
+    private static Throwable uploadFailure(CompletableFuture<?> uploadFuture) {
+        try {
+            uploadFuture.getNow(null)
+            return null
+        } catch (Throwable thrown) {
+            return thrown
+        }
+    }
+
+    /**
+     * True when the IllegalStateException is the SDK's "request not made within N seconds"
+     * stuck-subscription failure from BlockingOutputStreamAsyncRequestBody.
+     * Package-private for testing.
+     */
+    static boolean isStuckSubscription(IllegalStateException exception) {
+        String message = exception?.getMessage()
+        return message != null && message.contains('was not made within')
+    }
+
+    /**
+     * Logs a single rich WARN diagnostic for a stuck subscription and bumps the
+     * {@code s3.upload.subscribe.timeout} counter. Never throws; all accessors are null-safe.
+     */
+    private void recordStuckSubscription(String path, def uploadFuture) {
+        String health = S3UploadHealth.describe(s3TransferManager, s3Client, uploadFuture)
+        log.warn("S3 streaming upload stuck: subscribeTimeout={}s bucket={} key={} {}",
+                connectionTimeout, bucket, path, health)
+        incrementUploadCounter('s3.upload.subscribe.timeout')
+    }
+
+    /**
+     * Increments a streaming-upload counter tagged by bucket/region. No-op when no registry
+     * is present so behaviour is unchanged in that configuration.
+     */
+    private void incrementUploadCounter(String metricName) {
+        if (meterRegistry == null) {
+            return
+        }
+        try {
+            meterRegistry.counter(metricName,
+                    'bucket', bucket ?: 'unknown',
+                    'region', region ?: 'unknown')
+                    .increment()
+        } catch (Exception e) {
+            log.warn("Failed to record S3 upload metric ${metricName}", e)
+        }
+    }
+
+    private static Duration derivativeCompletionTimeout() {
+        def defaultValue = Integer.getInteger('au.org.ala.images.s3.upload.derivative.completion.timeout', 60)
+        def config = Holders.getConfig()
+        int timeoutSeconds = config == null ? defaultValue : config.getProperty(
+                'aws.s3.upload.derivative.completion.timeout.seconds', Integer, defaultValue)
+        if (timeoutSeconds <= 0) {
+            throw new IllegalArgumentException('aws.s3.upload.derivative.completion.timeout.seconds must be a positive number of seconds')
+        }
+        return Duration.ofSeconds(timeoutSeconds)
+    }
+
     private static Duration applicationStreamIdleTimeout() {
-        int timeoutSeconds = Holders.getConfig().getProperty(
-                'aws.s3.application.stream.idle.timeout', Integer,
-                Integer.getInteger('au.org.ala.images.s3.application.stream.idle.timeout', 0))
+        def defaultValue = Integer.getInteger('au.org.ala.images.s3.application.stream.idle.timeout', 0)
+        def config = Holders.getConfig()
+        // Holders config is absent in plain unit tests; fall back to the system-property default.
+        int timeoutSeconds = config == null ? defaultValue : config.getProperty(
+                'aws.s3.application.stream.idle.timeout', Integer, defaultValue)
         if (timeoutSeconds < 0) {
             throw new IllegalArgumentException('aws.s3.application.stream.idle.timeout must be zero or a positive number of seconds')
         }

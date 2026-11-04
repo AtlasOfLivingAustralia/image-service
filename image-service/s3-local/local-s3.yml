@@ -1,0 +1,38 @@
+# Overlay config to run the full app against the local S3 stack (s3-local/docker-compose.yml).
+# Loaded via spring.config.additional-location, e.g.:
+#   ./gradlew :image-service:bootRun -PlocalS3=true      (or :image-service:run)
+# or in IntelliJ add VM option:
+#   -Dspring.config.additional-location=optional:file:<repo>/image-service/s3-local/local-s3.yml
+#
+# Uploads go through toxiproxy (localhost:8666) so s3-local/toxic.sh can break the connection.
+imageservice:
+    storage:
+        locations:
+            localS3:
+                type: s3
+                default: true
+                bucket: image-service
+                region: us-east-1
+                prefix: ''
+                accessKey: localdev
+                secretKey: localdev-secret
+                pathStyleAccess: true
+                hostname: 'http://localhost:8666'
+                redirect: false
+
+aws:
+    s3:
+        # Mirror production defaults; uncomment to experiment (all are read once at class init).
+        # crt:
+        #     enabled: true
+        #     max-concurrency: 32
+        # timeouts:
+        #     call: 15        # also the derivative upload subscribeTimeout
+        #     eviction: 30
+        # upload:
+        #     derivative:
+        #         pool:
+        #             enabled: false
+        cloudwatch:
+            metrics:
+                enabled: false

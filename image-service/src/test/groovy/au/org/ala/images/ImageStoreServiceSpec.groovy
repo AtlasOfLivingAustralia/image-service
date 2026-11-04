@@ -121,6 +121,72 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
         optimiserOutputDirectory.deleteDir()
     }
 
+    def "storeImage retries a transient subscribe-timeout failure and succeeds on a later attempt"() {
+        given:
+        service.grailsApplication.config.aws.s3.upload.ingest.retry.max.attempts = 3
+        service.grailsApplication.config.aws.s3.upload.ingest.retry.base.delay.ms = 1L
+        def originalBytes = pngBytes(3, 3)
+        def operations = Mock(StorageOperations)
+        def streams = []
+        def attempts = new AtomicInteger(0)
+
+        when:
+        def descriptor = service.storeImage(ByteSource.wrap(originalBytes), operations, 'image/png', 'original.png')
+
+        then:
+        3 * operations.store(_, _, 'image/png', null, _) >> { String uuid, InputStream stream, String contentType, String contentDisposition, Long length ->
+            streams << stream
+            if (attempts.incrementAndGet() < 3) {
+                throw new RuntimeException(new IllegalStateException('The service request was not made within 10 seconds of the blocking body being written to'))
+            }
+        }
+        descriptor.imageIdentifier != null
+        attempts.get() == 3
+        streams.size() == 3
+        // each attempt must receive a fresh, distinct stream
+        (streams as Set).size() == 3
+    }
+
+    def "storeImage does not retry a deterministic 4xx failure"() {
+        given:
+        service.grailsApplication.config.aws.s3.upload.ingest.retry.max.attempts = 3
+        service.grailsApplication.config.aws.s3.upload.ingest.retry.base.delay.ms = 1L
+        def originalBytes = pngBytes(3, 3)
+        def operations = Mock(StorageOperations)
+        def noSuchBucket = software.amazon.awssdk.services.s3.model.S3Exception.builder()
+                .statusCode(404)
+                .message('The specified bucket does not exist')
+                .build()
+
+        when:
+        service.storeImage(ByteSource.wrap(originalBytes), operations, 'image/png', 'original.png')
+
+        then:
+        1 * operations.store(_, _, 'image/png', null, _) >> { throw new RuntimeException(noSuchBucket) }
+        thrown(RuntimeException)
+    }
+
+    def "storeImage gives up after max attempts and propagates the last exception"() {
+        given:
+        service.grailsApplication.config.aws.s3.upload.ingest.retry.max.attempts = 3
+        service.grailsApplication.config.aws.s3.upload.ingest.retry.base.delay.ms = 1L
+        def originalBytes = pngBytes(3, 3)
+        def operations = Mock(StorageOperations)
+        def attempts = new AtomicInteger(0)
+
+        when:
+        service.storeImage(ByteSource.wrap(originalBytes), operations, 'image/png', 'original.png')
+
+        then:
+        3 * operations.store(_, _, 'image/png', null, _) >> {
+            def marker = "transient-${attempts.incrementAndGet()}"
+            throw new RuntimeException(new IllegalStateException("The service request was not made within 10 seconds (${marker})"))
+        }
+        def thrownError = thrown(RuntimeException)
+        attempts.get() == 3
+        thrownError.cause?.message?.contains('transient-3')
+    }
+
     private static byte[] pngBytes(int width, int height) {
         def image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
         def graphics = image.graphics
