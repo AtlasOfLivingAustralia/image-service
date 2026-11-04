@@ -40,7 +40,7 @@ class Application extends GrailsAutoConfiguration {
 
     // This is a workaround, instead of using @EnableConfigurationProperties above
     // we create the bean manually then load it using the ImageOptimisationConfigLoader
-    // (which is a @Component)
+    // (registered via AutoConfiguration.imports)
     @Bean
     ImageOptimisationConfig imageOptimisationConfig() {
         return new ImageOptimisationConfig()
