@@ -1,6 +1,7 @@
 package au.org.ala.images
 
 import au.org.ala.images.storage.S3StorageOperations
+import au.org.ala.images.storage.S3UploadCompletionTimeoutException
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.core.ResponseBytes
 import software.amazon.awssdk.core.ResponseInputStream
@@ -47,9 +48,13 @@ class S3StorageOperationsSpec extends Specification implements DataTest {
         S3AsyncClient mockUploadAsyncClient
         S3TransferManager mockTransferManager
         boolean forceAsync = false
+        java.time.Duration ingestCompletionTimeout
 
         @Override
         protected S3Client getS3Client() { return mockClient }
+
+        @Override
+        protected java.time.Duration getIngestCompletionTimeout() { return ingestCompletionTimeout ?: super.getIngestCompletionTimeout() }
 
         @Override
         protected S3AsyncClient getSmallS3AsyncClient() { return mockSmallAsyncClient }
@@ -205,6 +210,28 @@ class S3StorageOperationsSpec extends Specification implements DataTest {
             return upload
         }
         1 * upload.completionFuture() >> CompletableFuture.completedFuture(completedUpload)
+    }
+
+    def "storeInternal cancels the upload when the bounded completion wait times out"() {
+        given:
+        def tm = Mock(S3TransferManager)
+        def upload = Mock(Upload)
+        def neverCompleting = new CompletableFuture()
+        def ops = new TestOps(bucket: 'b', publicRead: false, privateAcl: false, mockClient: Mock(S3Client), mockTransferManager: tm,
+                ingestCompletionTimeout: java.time.Duration.ofMillis(100))
+
+        when:
+        ops.store('uuid-completion-timeout', new ByteArrayInputStream('x'.bytes), 'image/jpeg', null, 'x'.bytes.length)
+
+        then:
+        1 * tm.upload(_ as UploadRequest) >> { UploadRequest req ->
+            consumeBody(req)
+            return upload
+        }
+        1 * upload.completionFuture() >> neverCompleting
+        def error = thrown(RuntimeException)
+        error.cause instanceof S3UploadCompletionTimeoutException
+        neverCompleting.isCancelled()
     }
 
     def "updateACL sets PublicRead and public cache-control when publicRead=true"() {

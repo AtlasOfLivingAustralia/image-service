@@ -260,8 +260,7 @@ public class ImageTiler implements IImageTiler {
                 try (OutputStream tileStream = tileSink.openStream()) {
                     try {
                         if (!ImageIO.write(image, format, tileStream)) {
-                            errorOccurred.set(true);
-                            AbortableOutputStream.abortQuietly(tileStream, new IOException("ImageIO failed to write " + format + " tile"));
+                            throw new IOException("ImageIO failed to write " + format + " tile");
                         }
                     } catch (Throwable t) {
                         AbortableOutputStream.abortQuietly(tileStream, t);

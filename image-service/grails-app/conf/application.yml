@@ -326,11 +326,7 @@ imageservice:
 
 aws:
     s3:
-        # Reliability: the "request was not made within N seconds" stuck state (aws-sdk-java-v2#4893) was
-        # reproduced locally (image-service/s3-local): upload streams that were never closed/cancelled held
-        # client capacity until no new upload could start. Uploads are now cancelled on subscribe/completion
-        # timeout and producers abort failed streams. The earlier "Netty fails too" result was a different
-        # error (no Content-Length without multipart). AWS deps pinned at SDK bom 2.51.2 / aws-crt 0.48.3.
+        # Upload reliability settings; see image-service/s3-local/README.md for the local fault-test setup.
         crt:
             enabled: true # false = Java/Netty async client
             max-concurrency: 32 # transfer connections, not CRT event-loop threads
@@ -358,14 +354,6 @@ aws:
                 completion:
                     timeout:
                         seconds: 300
-                # Retry transient ingest failures (subscribe timeout, IO, throttling/5xx) so one
-                # transient error does not permanently lose the original. Deterministic 4xx fail fast.
-                retry:
-                    max:
-                        attempts: 3
-                    base:
-                        delay:
-                            ms: 500
             derivative:
                 # Max wait for a thumbnail/tile upload to finish once the producer closes the stream;
                 # on timeout the upload is cancelled and close() throws instead of blocking forever.
@@ -380,7 +368,9 @@ aws:
                     # S3AsyncClient, so a stuck shared manager/client cannot poison all derivative
                     # uploads. Default: false (opt-in for A/B testing; ingest path is unaffected).
                     enabled: false
-                    # Number of isolated transfer-manager/client pairs in the derivative pool.
+                    # Number of isolated transfer-manager/client pairs in the derivative pool. Each pool
+                    # client is a Netty client with its own maxConcurrency (aws.s3.max.connections), so
+                    # size N allows up to N times that many S3 connections.
                     size: 4
 
 serverName: 'http://devt.ala.org.au:8080'
@@ -528,6 +518,16 @@ images:
   # Tool commands to use for streaming operations
   vipsCommand: 'vips'
   magickCommand: 'magick'
+  storage:
+    ingest:
+      # Retry transient original-image store failures (S3 subscribe timeout, IO, throttling/5xx)
+      # on any storage backend so one transient error does not lose the original. Deterministic 4xx fail fast.
+      retry:
+        max:
+          attempts: 3
+        base:
+          delay:
+            ms: 500
   # Image optimisation settings
   optimisation:
     enabled: false

@@ -22,7 +22,7 @@ publishes free Docker images.
 | Region | `us-east-1` (path-style access) |
 | Bucket created at startup | `image-service` |
 
-Commands below run from the repo root (`image-service-project-parent/image-service`) with Java 21.
+Commands below run with Java 21 from the root of the Gradle build (the directory containing `settings.gradle` and the `image-service/` module), so paths are relative to that directory.
 
 ## Running the app against local S3
 

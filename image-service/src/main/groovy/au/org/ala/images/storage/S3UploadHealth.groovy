@@ -11,7 +11,7 @@ import java.util.concurrent.CompletableFuture
  * Best-effort, null-safe diagnostic snapshot of the shared streaming-upload pipeline
  * (S3TransferManager + its underlying S3AsyncClient).
  *
- * The AWS SDK (2.47.x) does not expose queued-vs-inflight upload counts publicly
+ * The AWS SDK does not expose queued-vs-inflight upload counts publicly
  * (the Java S3TransferManager has no S3ClientStats-style accessor), so this captures
  * only identity and lifecycle state that lets logs determine whether the SAME
  * transfer manager / async client is being reused across successive failures.

@@ -114,8 +114,8 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
     def "storeImage retries a transient subscribe-timeout failure and succeeds on a later attempt"() {
         given:
-        service.grailsApplication.config.aws.s3.upload.ingest.retry.max.attempts = 3
-        service.grailsApplication.config.aws.s3.upload.ingest.retry.base.delay.ms = 1L
+        service.grailsApplication.config.images.storage.ingest.retry.max.attempts = 3
+        service.grailsApplication.config.images.storage.ingest.retry.base.delay.ms = 1L
         def originalBytes = pngBytes(3, 3)
         def operations = Mock(StorageOperations)
         def streams = []
@@ -140,8 +140,8 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
     def "storeImage does not retry a deterministic 4xx failure"() {
         given:
-        service.grailsApplication.config.aws.s3.upload.ingest.retry.max.attempts = 3
-        service.grailsApplication.config.aws.s3.upload.ingest.retry.base.delay.ms = 1L
+        service.grailsApplication.config.images.storage.ingest.retry.max.attempts = 3
+        service.grailsApplication.config.images.storage.ingest.retry.base.delay.ms = 1L
         def originalBytes = pngBytes(3, 3)
         def operations = Mock(StorageOperations)
         def noSuchBucket = software.amazon.awssdk.services.s3.model.S3Exception.builder()
@@ -159,8 +159,8 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
     def "storeImage gives up after max attempts and propagates the last exception"() {
         given:
-        service.grailsApplication.config.aws.s3.upload.ingest.retry.max.attempts = 3
-        service.grailsApplication.config.aws.s3.upload.ingest.retry.base.delay.ms = 1L
+        service.grailsApplication.config.images.storage.ingest.retry.max.attempts = 3
+        service.grailsApplication.config.images.storage.ingest.retry.base.delay.ms = 1L
         def originalBytes = pngBytes(3, 3)
         def operations = Mock(StorageOperations)
         def attempts = new AtomicInteger(0)

@@ -38,5 +38,5 @@ case "$cmd" in
     up)        curl -fsS -X POST "$API/proxies/$PROXY" -H 'Content-Type: application/json' -d '{"enabled":true}' >/dev/null; echo "proxy enabled" ;;
     clear)     curl -fsS -X POST "$API/reset" >/dev/null; echo "toxics cleared, proxy enabled" ;;
     list)      curl -fsS "$API/proxies/$PROXY"; echo ;;
-    *)         sed -n '2,17p' "$0"; exit 1 ;;
+    *)         sed -n '2,15p' "$0"; exit 1 ;;
 esac

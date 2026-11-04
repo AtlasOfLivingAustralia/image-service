@@ -260,25 +260,28 @@ class ImageStoreService implements MetricsSupport {
      * the calling background ingest thread.
      */
     private void storeOriginalWithRetry(StorageOperations operations, String uuid, ByteSource finalByteSource, String finalContentType, String contentDisposition) {
-        int maxAttempts = grailsApplication.config.getProperty('aws.s3.upload.ingest.retry.max.attempts', Integer, 3)
-        long baseDelayMs = grailsApplication.config.getProperty('aws.s3.upload.ingest.retry.base.delay.ms', Long, 500L)
+        int maxAttempts = Math.max(1, grailsApplication.config.getProperty('images.storage.ingest.retry.max.attempts', Integer, 3))
+        long baseDelayMs = grailsApplication.config.getProperty('images.storage.ingest.retry.base.delay.ms', Long, 500L)
 
-        RuntimeException lastFailure = null
-        for (int attempt = 1; attempt <= Math.max(1, maxAttempts); attempt++) {
+        for (int attempt = 1; ; attempt++) {
             try {
                 operations.store(uuid, finalByteSource.openStream(), finalContentType, contentDisposition, finalByteSource.sizeIfKnown().orNull())
                 return
             } catch (Exception exception) {
-                if (!isIngestUploadRetryable(exception) || attempt == Math.max(1, maxAttempts)) {
+                if (!isIngestUploadRetryable(exception) || attempt >= maxAttempts) {
                     throw exception
                 }
-                lastFailure = exception
                 long backoffMs = ingestRetryBackoffMs(attempt, baseDelayMs)
                 log.warn('Transient failure storing original image {} (attempt {}/{}): {}. Retrying in {} ms.', uuid, attempt, maxAttempts, exception.message, backoffMs)
-                sleepQuietly(backoffMs)
+                try {
+                    Thread.sleep(backoffMs)
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt()
+                    exception.addSuppressed(interrupted)
+                    throw exception
+                }
             }
         }
-        throw lastFailure
     }
 
     /**
@@ -321,14 +324,6 @@ class ImageStoreService implements MetricsSupport {
         long half = capped.intdiv(2L)
         long jitter = ThreadLocalRandom.current().nextLong(half + 1L)
         return half + jitter
-    }
-
-    private static void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis)
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt()
-        }
     }
 
     @NamedVariant

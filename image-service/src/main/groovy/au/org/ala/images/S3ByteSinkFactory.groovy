@@ -107,7 +107,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                         // A stuck shared S3TransferManager / S3AsyncClient surfaces here when the request
                         // body is never subscribed within subscribeTimeout. Log a rich, single diagnostic
                         // line that lets us tell from logs whether the SAME manager/client is reused
-                        // across failures. The exception is rethrown unchanged so behaviour is identical.
+                        // across failures, cancel the orphaned upload, then rethrow.
                         if (isStuckSubscription(stuckState)) {
                             recordStuckSubscription(path, uploadFuture)
                         }
@@ -119,7 +119,8 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                     S3ApplicationWatchdogOutputStream watchdogStream = applicationStreamIdleTimeout == null ? null :
                             new S3ApplicationWatchdogOutputStream(outputStream, applicationStreamIdleTimeout, 'upload')
                     def progress = new S3UploadProgress('streaming', bucket, path)
-                    baseStream = new AbortableFilterOutputStream(watchdogStream ?: outputStream) {
+                    OutputStream bodyStream = watchdogStream ?: outputStream
+                    baseStream = new AbortableFilterOutputStream(bodyStream) {
                         @Override
                         void write(int b) throws IOException {
                             try {
@@ -152,17 +153,22 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                             outputStream.cancel()
                             uploadFuture.cancel(true)
                             watchdogStream?.failed()
-                            incrementUploadCounter('s3.upload.streaming.aborted')
                             log.debug("S3 streaming upload aborted by producer: bucket={} key={} cause={}", bucket, path, cause?.toString())
                         }
 
+                        private boolean closed
+
                         @Override
                         void close() throws IOException {
-                            if (aborted) {
+                            if (aborted || closed) {
                                 return
                             }
+                            closed = true
                             try {
-                                super.close()
+                                // Not super.close(): FilterOutputStream closes the body even after a failed
+                                // flush, which would complete the request and commit a truncated object.
+                                bodyStream.flush()
+                                bodyStream.close()
                                 progress.producerFinished()
                                 // Producer EOF is not terminal: retain the watchdog while the upload completes.
                                 awaitCompletion(uploadFuture, path)
@@ -171,6 +177,10 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                             } catch (Exception e) {
                                 incrementUploadCounter('s3.upload.streaming.failure')
                                 progress.reportFailure(e, health(uploadFuture))
+                                if (!uploadFuture.isDone()) {
+                                    outputStream.cancel()
+                                    uploadFuture.cancel(true)
+                                }
                                 if (watchdogStream?.timedOut) {
                                     throw watchdogStream.timeoutException(e)
                                 }
@@ -186,11 +196,12 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                     def file = tempPath.toFile()
                     file.deleteOnExit()
                     
-                    baseStream = new AbortableFilterOutputStream(new BufferedOutputStream(Files.newOutputStream(tempPath))) {
+                    def fileStream = new BufferedOutputStream(Files.newOutputStream(tempPath))
+                    baseStream = new AbortableFilterOutputStream(fileStream) {
                         @Override
                         protected void onAbort(Throwable cause) {
                             try {
-                                out.close()
+                                fileStream.close()
                             } finally {
                                 Files.deleteIfExists(tempPath)
                             }
@@ -265,7 +276,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
     }
     /**
      * Builds the streaming request body. Extracted as a protected seam so tests can substitute a
-     * body whose outputStream() never gets subscribed; production behaviour is identical.
+     * body whose outputStream() never gets subscribed.
      */
     protected BlockingOutputStreamAsyncRequestBody buildBlockingBody(int timeoutSeconds) {
         return BlockingOutputStreamAsyncRequestBody.builder()
@@ -318,7 +329,6 @@ class S3ByteSinkFactory implements ByteSinkFactory {
     /**
      * True when the IllegalStateException is the SDK's "request not made within N seconds"
      * stuck-subscription failure from BlockingOutputStreamAsyncRequestBody.
-     * Package-private for testing.
      */
     static boolean isStuckSubscription(IllegalStateException exception) {
         String message = exception?.getMessage()
