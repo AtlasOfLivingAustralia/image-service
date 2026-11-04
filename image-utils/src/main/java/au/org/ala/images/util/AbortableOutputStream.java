@@ -22,7 +22,7 @@ public interface AbortableOutputStream {
         if (stream instanceof AbortableOutputStream) {
             try {
                 ((AbortableOutputStream) stream).abort(cause);
-            } catch (RuntimeException e) {
+            } catch (Exception e) {
                 if (cause != null && cause != e) {
                     cause.addSuppressed(e);
                 }

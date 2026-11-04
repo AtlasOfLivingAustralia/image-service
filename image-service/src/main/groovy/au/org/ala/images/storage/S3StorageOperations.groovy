@@ -298,10 +298,13 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
      * non-shared {@link S3AsyncClient}s, so a stuck shared manager/client cannot poison every
      * derivative upload.
      */
-    private static final LoadingCache<CacheKey, DerivativeUploadPool> derivativeUploadPoolCache = Caffeine<String, DerivativeUploadPool>.from(derivativeUploadPoolCacheSpec).removalListener {
+    private static final LoadingCache<CacheKey, DerivativeUploadPool> derivativeUploadPoolCache = Caffeine<CacheKey, DerivativeUploadPool>.from(derivativeUploadPoolCacheSpec).removalListener {
         CacheKey key, DerivativeUploadPool pool, RemovalCause cause ->
-            log.info("S3 derivative upload pool evicted from cache: ${key.bucket}")
-            pool?.scheduleClose(evictionScheduler, inflightTimeout, TimeUnit.SECONDS)
+            log.info('S3 derivative upload pool evicted from cache: {}', key.bucket)
+            // shutdownSharedResources() closes pools itself before invalidating the cache.
+            if (!sharedResourcesClosed.get()) {
+                pool?.scheduleClose(evictionScheduler, inflightTimeout, TimeUnit.SECONDS)
+            }
     }.build { CacheKey key ->
         return derivativeUploadPoolLoader(key)
     }
@@ -739,6 +742,12 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
         }
     }
 
+    /** Upper bound on waiting for an original-image upload to finish once the body is written. */
+    @VisibleForTesting
+    protected Duration getIngestCompletionTimeout() {
+        return Duration.ofSeconds(ingestCompletionTimeoutSeconds)
+    }
+
     @VisibleForTesting
     void setTransferManagerFactoryForTesting(Function<S3AsyncClient, S3TransferManager> factory) {
         transferManagerFactoryForTesting = factory
@@ -755,10 +764,11 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
     /**
      * A bounded pool of {@link S3TransferManager}s for derivative (thumbnail/tile) uploads.
-     * Every entry owns a dedicated, non-shared {@link S3AsyncClient} built by the exact same
-     * construction path as the shared upload client, so credentials, region, endpoints, and
-     * timeouts stay identical while remaining isolated from a stuck shared manager/client.
-     * Entries are handed out round-robin.
+     * Every entry owns a dedicated, non-shared {@link S3AsyncClient} built on the standard/Netty
+     * path (see {@link #derivativeUploadPoolLoader(CacheKey)}) with the same credentials, region,
+     * endpoint and timeouts, isolated from a stuck shared manager/client. Each client has its own
+     * {@code maxConcurrency(maxConnections)}, so a pool of size N allows up to N times
+     * {@code aws.s3.max.connections} connections. Entries are handed out round-robin.
      */
     @VisibleForTesting
     static final class DerivativeUploadPool {
@@ -819,7 +829,8 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
      * EventLoopGroup, which has exhibited a stuck-subscribe failure mode under
      * {@code BlockingOutputStreamAsyncRequestBody.waitForSubscriptionIfNeeded}
      * (see aws-sdk-java-v2#4893); the pool is only an isolation boundary if its clients do
-     * not share that event loop, so they must be Netty clients.
+     * not share that event loop, so they must be Netty clients. Each client gets its own
+     * {@code maxConcurrency(maxConnections)} connection limit.
      */
     private static DerivativeUploadPool derivativeUploadPoolLoader(CacheKey key) {
         log.info("Creating S3 derivative upload pool of size {} for bucket: {} in region: {} using Netty/standard S3AsyncClient (CRT intentionally bypassed for pool isolation)", derivativeUploadPoolSizeValue, key.bucket, key.region ?: 'default')
@@ -1565,11 +1576,12 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
                 }
 
                 def result
+                Duration completionTimeout = getIngestCompletionTimeout()
                 try {
-                    result = uploadFuture.get(ingestCompletionTimeoutSeconds, TimeUnit.SECONDS)
+                    result = uploadFuture.get(completionTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 } catch (TimeoutException timedOut) {
                     uploadFuture.cancel(true)
-                    def timeout = new S3UploadCompletionTimeoutException("S3 upload of ${absolutePath} did not complete within ${ingestCompletionTimeoutSeconds}s", timedOut)
+                    def timeout = new S3UploadCompletionTimeoutException("S3 upload of ${absolutePath} did not complete within ${completionTimeout.seconds}s", timedOut)
                     progress.reportFailure(timeout, S3UploadHealth.describe(transferManager, null, uploadFuture))
                     throw timeout
                 } catch (ExecutionException failed) {

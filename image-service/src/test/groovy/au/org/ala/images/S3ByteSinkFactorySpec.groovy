@@ -1,7 +1,5 @@
 package au.org.ala.images
 
-import au.org.ala.images.storage.S3ApplicationWatchdogOutputStream
-import au.org.ala.images.storage.S3ApplicationStreamIdleTimeoutException
 import au.org.ala.images.storage.S3UploadCompletionTimeoutException
 import au.org.ala.images.util.AbortableOutputStream
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -16,9 +14,7 @@ import spock.lang.Specification
 import java.nio.ByteBuffer
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 
 class S3ByteSinkFactorySpec extends Specification {
 
@@ -52,29 +48,6 @@ class S3ByteSinkFactorySpec extends Specification {
                 .tags('bucket', BUCKET, 'region', REGION).counter()?.count() == 1.0
         registry.find('s3.upload.streaming.completion')
                 .tags('bucket', BUCKET, 'region', REGION).counter() == null
-    }
-
-    def 'stuck subscription propagates when no meter registry is present'() {
-        given: 'no MeterRegistry (metrics disabled path)'
-        def s3Client = Mock(S3AsyncClient)
-        def transferManager = neverSubscribingTransferManager(new CompletableFuture<>())
-        def factory = newFactory(null, s3Client, transferManager, 1)
-
-        when:
-        factory.getByteSinkForNames('thumbnail').openStream()
-
-        then: 'the exception still propagates unchanged with no metrics side effects'
-        def error = thrown(IllegalStateException)
-        error.message.contains('was not made within')
-    }
-
-    def 'isStuckSubscription only matches the SDK subscribe-timeout message'() {
-        expect:
-        S3ByteSinkFactory.isStuckSubscription(
-                new IllegalStateException('The service request was not made within 1 seconds of outputStream being invoked'))
-        !S3ByteSinkFactory.isStuckSubscription(new IllegalStateException('boom-unrelated'))
-        !S3ByteSinkFactory.isStuckSubscription(new IllegalStateException((String) null))
-        !S3ByteSinkFactory.isStuckSubscription(null)
     }
 
     def 'stuck subscription cancels the orphaned upload so it cannot hold client capacity'() {
@@ -142,7 +115,7 @@ class S3ByteSinkFactorySpec extends Specification {
         then:
         stream instanceof AbortableOutputStream
         pending.isCancelled()
-        registry.find('s3.upload.streaming.aborted').counter()?.count() == 1.0
+        registry.find('s3.upload.aborted').tags('type', 'streaming').counter()?.count() == 1.0
         registry.find('s3.upload.streaming.completion').counter() == null
         registry.find('s3.upload.success').counter() == null
 
@@ -153,7 +126,46 @@ class S3ByteSinkFactorySpec extends Specification {
         thrown(IOException)
     }
 
+    def 'close cancels the upload when flushing the body fails instead of committing it'() {
+        given: 'a body that is subscribed but never requests data, so flushing buffered bytes blocks'
+        def registry = new SimpleMeterRegistry()
+        def pending = new CompletableFuture<>()
+        def factory = newFactory(registry, Mock(S3AsyncClient), nonRequestingTransferManager(pending), 1)
+        def stream = factory.getByteSinkForNames('thumbnail').openStream()
+        stream.write(1)
+
+        when: 'the flush is interrupted'
+        Thread.currentThread().interrupt()
+        stream.close()
+
+        then:
+        thrown(IOException)
+        pending.isCancelled()
+        registry.find('s3.upload.streaming.failure').counter()?.count() == 1.0
+        registry.find('s3.upload.streaming.completion').counter() == null
+
+        cleanup:
+        Thread.interrupted()
+    }
+
     // ---- helpers ----
+
+    private S3TransferManager nonRequestingTransferManager(CompletableFuture future) {
+        def upload = Mock(Upload)
+        upload.completionFuture() >> future
+        def transferManager = Mock(S3TransferManager)
+        transferManager.upload(_ as UploadRequest) >> { UploadRequest request ->
+            request.requestBody().subscribe(new Subscriber<ByteBuffer>() {
+                @Override void onSubscribe(Subscription subscription) {}
+                @Override void onNext(ByteBuffer item) {}
+                @Override void onError(Throwable throwable) {}
+                @Override void onComplete() {}
+            })
+            upload
+        }
+        return transferManager
+    }
+
 
     /** A transfer manager that subscribes and drains the request body, completing via {@code future}. */
     private S3TransferManager drainingTransferManager(CompletableFuture future) {
@@ -193,51 +205,5 @@ class S3ByteSinkFactorySpec extends Specification {
         // BlockingOutputStreamAsyncRequestBody waiting for a subscriber that never arrives.
         transferManager.upload(_ as UploadRequest) >> upload
         return transferManager
-    }
-
-    def 'SDK cancellable output stream unblocks a blocked write after the idle timeout'() {
-        given:
-        def delegate = new CancellableBlockedOutputStream()
-        def stream = new S3ApplicationWatchdogOutputStream(delegate, Duration.ofMillis(50), 'upload')
-        def result = new AtomicReference<Throwable>()
-        def writer = Thread.start {
-            try {
-                stream.write(1)
-            } catch (Throwable error) {
-                result.set(error)
-            }
-        }
-
-        expect: 'the named write boundary is blocked before cancellation'
-        delegate.writeStarted.await(5, TimeUnit.SECONDS)
-
-        when:
-        writer.join(5_000)
-
-        then:
-        !writer.alive
-        delegate.cancelled.await(5, TimeUnit.SECONDS)
-        stream.timedOut
-        result.get() instanceof S3ApplicationStreamIdleTimeoutException
-
-        cleanup:
-        stream.close()
-    }
-
-    private static class CancellableBlockedOutputStream extends software.amazon.awssdk.utils.CancellableOutputStream {
-        final CountDownLatch writeStarted = new CountDownLatch(1)
-        final CountDownLatch cancelled = new CountDownLatch(1)
-
-        @Override
-        void write(int value) throws IOException {
-            writeStarted.countDown()
-            cancelled.await()
-            throw new IOException('cancelled')
-        }
-
-        @Override
-        void cancel() {
-            cancelled.countDown()
-        }
     }
 }

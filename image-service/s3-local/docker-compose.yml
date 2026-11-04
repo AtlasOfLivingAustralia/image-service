@@ -3,7 +3,7 @@
 #   app / tests --> toxiproxy :8666 --> versitygw (S3) :7070
 #
 # MinIO no longer publishes free Docker images, so Versity S3 Gateway (posix backend) is used.
-# Ports and credentials MUST stay in sync with S3ReproEnvironment (Testcontainers mode) and local-s3.yml.
+# Ports and credentials MUST stay in sync with S3LocalEnvironment (Testcontainers mode) and local-s3.yml.
 #
 #   docker compose -f s3-local/docker-compose.yml up -d                 # S3 + toxiproxy only
 #   docker compose -f s3-local/docker-compose.yml --profile app up -d   # + Elasticsearch for the full app

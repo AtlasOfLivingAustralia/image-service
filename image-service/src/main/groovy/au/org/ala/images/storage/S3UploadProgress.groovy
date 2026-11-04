@@ -102,14 +102,22 @@ final class S3UploadProgress {
             @Override
             int read() throws IOException {
                 int value = super.read()
-                if (value >= 0) progress.progressed(1) else progress.producerFinished()
+                if (value >= 0) {
+                    progress.progressed(1)
+                } else {
+                    progress.producerFinished()
+                }
                 return value
             }
 
             @Override
             int read(byte[] b, int off, int len) throws IOException {
                 int count = super.read(b, off, len)
-                if (count > 0) progress.progressed(count) else if (count < 0) progress.producerFinished()
+                if (count > 0) {
+                    progress.progressed(count)
+                } else if (count < 0) {
+                    progress.producerFinished()
+                }
                 return count
             }
         }

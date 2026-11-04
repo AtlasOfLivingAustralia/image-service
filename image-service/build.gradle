@@ -215,7 +215,8 @@ dependencies {
     testImplementation enforcedPlatform('io.zonky.test.postgres:embedded-postgres-binaries-bom:11.19.0')
 //    testImplementation "com.opentable.components:otj-pg-embedded:1.0.1" // required transitive dependency from the plugin.
     testImplementation 'cloud.localstack:localstack-utils:0.2.23'
-    testImplementation 'org.testcontainers:testcontainers:1.21.4' // s3FaultTest (local S3 + toxiproxy)
+    testImplementation platform('org.testcontainers:testcontainers-bom:1.21.4')
+    testImplementation 'org.testcontainers:testcontainers' // s3FaultTest (local S3 + toxiproxy)
     // TEMP: Keep AWS SDK v1 full in tests during migration (Localstack utils may depend on it)
     testImplementation "com.amazonaws:aws-java-sdk:1.12.418"
     testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:2.3.0'
@@ -307,7 +308,10 @@ tasks.register('s3FaultTest', Test) {
     outputs.upToDateWhen { false }
     testLogging.showStandardStreams = true
     systemProperty 's3local.enabled', 'true'
-    systemProperty 's3local.dumpDir', layout.buildDirectory.dir('s3-local').get().asFile.absolutePath
+    def dumpDir = layout.buildDirectory.dir('s3-local')
+    doFirst {
+        systemProperty 's3local.dumpDir', dumpDir.get().asFile.absolutePath
+    }
     // Faster-failing defaults than production; override per run.
     def defaults = [
             'au.org.ala.images.s3.timeouts.call'      : '5',
@@ -328,7 +332,7 @@ tasks.register('s3FaultTest', Test) {
 
 // -PlocalS3=true runs the app against s3-local/docker-compose.yml (overlay config s3-local/local-s3.yml)
 if (project.hasProperty('localS3') && project.property('localS3') != 'false') {
-    tasks.withType(JavaExec).configureEach {
+    tasks.matching { it.name in ['bootRun', 'run'] }.configureEach {
         systemProperty 'spring.config.additional-location', "optional:file:${file('s3-local/local-s3.yml').absolutePath}"
     }
 }

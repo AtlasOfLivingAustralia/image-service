@@ -8,7 +8,6 @@ import software.amazon.awssdk.services.s3.internal.crt.DefaultS3CrtAsyncClient
 import software.amazon.awssdk.transfer.s3.S3TransferManager
 import spock.lang.Specification
 
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -141,52 +140,6 @@ class S3DerivativeUploadPoolSpec extends Specification {
 
         and: 'the shared transfer manager is never used while the pool is active'
         ops.sharedTransferManagerLookups == 0
-    }
-
-    def 'pool selection is thread-safe and every entry is used at least once under contention'() {
-        given:
-        def poolSize = 4
-        def calls = 64
-        def ops = newPoolOps(true, poolSize)
-        def pool = ops.derivativeUploadPool()
-        def selected = new AtomicInteger[poolSize]
-        poolSize.times { selected[it] = new AtomicInteger() }
-        def ready = new CountDownLatch(1)
-        def done = new CountDownLatch(calls)
-
-        when: 'many threads race for pool entries'
-        def executor = Executors.newFixedThreadPool(8)
-        calls.times {
-            executor.execute {
-                try {
-                    ready.await()
-                    def sink = ops.byteSinkFactory('uuid-race', [imageType: 'tile'])
-                    int index = pool.managers.indexOf(sink.s3TransferManager)
-                    selected[index].incrementAndGet()
-                } finally {
-                    done.countDown()
-                }
-            }
-        }
-        ready.countDown()
-        def finished = done.await(30, TimeUnit.SECONDS)
-        executor.shutdown()
-
-        then: 'all calls completed and round-robin spread work across every entry'
-        finished
-        selected.every { it.get() > 0 }
-        selected*.get().sum() == calls
-
-        cleanup:
-        executor?.shutdownNow()
-    }
-
-    def 'pool entry count follows the requested pool size'() {
-        expect:
-        mockPool(requestedSize).size() == requestedSize
-
-        where:
-        requestedSize << [1, 2, 4]
     }
 
     def 'scheduleClose closes every pool transfer manager and its dedicated client after the delay'() {

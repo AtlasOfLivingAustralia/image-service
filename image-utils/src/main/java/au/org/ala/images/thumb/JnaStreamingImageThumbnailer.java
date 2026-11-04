@@ -122,24 +122,24 @@ public class JnaStreamingImageThumbnailer implements IImageThumbnailer {
 
             // Save to target (streaming output)
             String suffix = thumbDef.getName().endsWith(".png") ? ".png" : ".jpg[Q=85]";
-            OutputStream outputStream = destination.openStream();
-            try {
-                vipsTarget = new OutputStreamVipsTarget(vips, outputStream);
-                result = vips.vips_image_write_to_target(outputImage, suffix, vipsTarget.getTarget(), (Object) null);
+            try (OutputStream outputStream = destination.openStream()) {
+                try {
+                    vipsTarget = new OutputStreamVipsTarget(vips, outputStream);
+                    result = vips.vips_image_write_to_target(outputImage, suffix, vipsTarget.getTarget(), (Object) null);
 
-                if (result != 0) {
-                    String error = vips.vips_error_buffer();
-                    vips.vips_error_clear();
-                    throw new IOException("Failed to write thumbnail to target: " + error);
+                    if (result != 0) {
+                        String error = vips.vips_error_buffer();
+                        vips.vips_error_clear();
+                        throw new IOException("Failed to write thumbnail to target: " + error);
+                    }
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
+                } finally {
+                    if (vipsTarget != null) {
+                        vipsTarget.close();
+                    }
                 }
-            } catch (Throwable t) {
-                AbortableOutputStream.abortQuietly(outputStream, t);
-                throw t;
-            } finally {
-                if (vipsTarget != null) {
-                    vipsTarget.close();
-                }
-                outputStream.close();
             }
 
             // Get actual dimensions from the output image
