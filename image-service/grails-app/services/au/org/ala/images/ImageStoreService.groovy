@@ -121,6 +121,9 @@ class ImageStoreService implements MetricsSupport {
     @Value('${images.disableCache:false}')
     boolean disableCache = false
 
+    @Value('${image.store.thumbnail.negativeCache.ttlSeconds:60}')
+    int thumbnailNegativeCacheTtlSeconds = 60
+
 
     @Value('${tiling.onDemand.enabled:false}')
     boolean onDemandTilingEnabled = false
@@ -142,6 +145,9 @@ class ImageStoreService implements MetricsSupport {
     AsyncCache<Pair<String, String>, ImageInfo> thumbnailCache
     AsyncCache<Pair<String, Point>, ImageInfo> tileCache
     Cache<String, ImageInfo> originalCache
+    // In-memory, per-node negative cache recording thumbnails whose ORIGINAL is permanently
+    // missing (storage NoSuchKey -> FileNotFoundException). Short TTL so a later S3 fix recovers.
+    Cache<Pair<String, String>, Boolean> thumbnailNegativeCache
 
     @PostConstruct
     @NotTransactional
@@ -149,11 +155,13 @@ class ImageStoreService implements MetricsSupport {
         thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).executor(derivativeLoaderExecutor).buildAsync()
         tileCache = Caffeine.from(tileLookupCacheConfig).executor(derivativeLoaderExecutor).buildAsync()
         originalCache = Caffeine.from(originalLookupCacheConfig).build()
+        thumbnailNegativeCache = Caffeine.newBuilder().expireAfterWrite(thumbnailNegativeCacheTtlSeconds, TimeUnit.SECONDS).build()
     }
 
     @NotTransactional
     def clearThumbnailLookupCache() {
         thumbnailCache.invalidateAll()
+        thumbnailNegativeCache.invalidateAll()
     }
 
     @NotTransactional
@@ -755,6 +763,16 @@ class ImageStoreService implements MetricsSupport {
         // TODO undefined behaviour if already loading when invalidate is called.
         if (refresh) {
             thumbnailCache.synchronous().invalidate(key)
+            // Invalidate before consulting so a refresh re-attempts generation even for a
+            // previously negatively-cached thumbnail.
+            thumbnailNegativeCache.invalidate(key)
+        }
+        if (!disableCache && thumbnailNegativeCache.getIfPresent(key)) {
+            // The original is permanently missing (storage NoSuchKey); skip the expensive
+            // generation attempt. The image record still should exist, so shouldExist=true lets
+            // callers serve the (short-TTL) placeholder 404 rather than the header-less text render.
+            incrementCounter('imagestore.thumbnail.negativecache.hit', 'Thumbnail negative cache hits', [type: type ?: 'default'])
+            return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: true, contentType: type == 'square' ? 'image/png' : 'image/jpeg')
         }
         return (disableCache ? loader.call(key) : awaitDerivativeLoad(thumbnailCache, key, mappingFunction)) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
     }
@@ -768,6 +786,9 @@ class ImageStoreService implements MetricsSupport {
             if (!exists) {
                 def results = generateImageThumbnail(imageIdentifierArg, operations, typeArg)
                 if (results.size() > 0) {
+                    // Generation recovered (eg a manual storage fix): clear any negative-cache
+                    // entry so future requests no longer short-circuit.
+                    thumbnailNegativeCache.invalidate(pair)
                     // Create the ImageThumbnail records asynchronously so we don't block any http requests
                     // waiting on the thumbnail to be generated
                     ImageThumbnail.async.task {
@@ -801,8 +822,17 @@ class ImageStoreService implements MetricsSupport {
                         }
                     }
                 } else {
-                    log.warn("Thumbnail generation for image ${imageIdentifierArg} of type ${typeArg} reported success but no thumbnails were returned")
-                    // probably not an image file
+                    // Generation ran but produced zero thumbnails. Distinguish the expected case
+                    // (audio/document content, for which no thumbnails are expected) from a genuine
+                    // image that failed to produce any thumbnail. The discriminator is the DB
+                    // mimeType via isActuallyAnImage: true -> image, false -> audio/doc, null ->
+                    // not found (treated as an image so a real problem still surfaces as a WARN).
+                    Boolean actuallyAnImage = storageLocationService.isActuallyAnImage(imageIdentifierArg)
+                    if (actuallyAnImage == Boolean.FALSE) {
+                        log.debug("No thumbnails generated for ${imageIdentifierArg} of type ${typeArg}: not an image, no thumbnails expected")
+                    } else {
+                        log.warn("Thumbnail generation for image ${imageIdentifierArg} of type ${typeArg} produced no results for an image")
+                    }
                 }
                 info = operations.thumbnailImageInfo(imageIdentifierArg, typeArg)
 
@@ -823,7 +853,17 @@ class ImageStoreService implements MetricsSupport {
         } catch (e) {
             def rootCause = ExceptionUtils.getRootCause(e)
             if (rootCause instanceof FileNotFoundException) {
-                log.warn("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because ${e.message}")
+                // The original is permanently missing (storage NoSuchKey). This WARN fires once on
+                // the request that runs generation and populates the negative cache; subsequent
+                // requests short-circuit on the negative-cache hit in ensureThumbnailExists before
+                // reaching this loader, so they stay silent for the TTL window (no log spam).
+                log.warn("Original image ${imageIdentifierArg} not found in storage; cannot generate thumbnail of type ${typeArg}. Suppressing repeat attempts for ${thumbnailNegativeCacheTtlSeconds}s: ${e.message}")
+                if (!disableCache) {
+                    // Original is permanently missing from storage; remember briefly so we stop
+                    // re-running expensive generation on every hit for known-broken images.
+                    thumbnailNegativeCache.put(pair, Boolean.TRUE)
+                    incrementCounter('imagestore.thumbnail.negativecache.store', 'Thumbnail negative cache stores', [type: typeArg ?: 'default'])
+                }
             } else if (rootCause instanceof IIOException && rootCause.message?.contains('Unsupported marker type 0x13')) {
                 log.warn("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because the image appears to be corrupt: ${e.message}")
             } else {

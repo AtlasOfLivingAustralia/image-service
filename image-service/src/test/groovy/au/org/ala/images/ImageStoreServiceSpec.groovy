@@ -4,12 +4,17 @@ import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.tiling.IImageTiler
 import au.org.ala.images.tiling.IOnDemandImageTiler
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.google.common.io.ByteSource
 import com.google.common.io.Resources
 import org.apache.commons.lang3.tuple.Pair
 import grails.testing.gorm.DataTest
 import grails.testing.services.ServiceUnitTest
 import org.grails.plugins.testing.GrailsMockMultipartFile
+import org.slf4j.LoggerFactory
 import spock.lang.Specification
 
 import java.util.concurrent.Callable
@@ -274,6 +279,289 @@ class ImageStoreServiceSpec extends Specification implements ServiceUnitTest<Ima
 
         then:
         thrown(ImageStoreService.DerivativeLoadRejected)
+    }
+
+    def "thumbnail negative cache hit short-circuits generation"() {
+        given: 'a thumbnail whose original was previously found permanently missing'
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.init()
+        service.disableCache = false
+        def generationAttempts = new AtomicInteger(0)
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo('img-neg', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-neg')
+            originalInputStream('img-neg', null) >> {
+                generationAttempts.incrementAndGet()
+                throw new FileNotFoundException('NoSuchKey: img-neg original missing')
+            }
+        }
+        service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
+        service.storageLocationService.isActuallyAnImage('img-neg') >> true
+        // The default IImageThumbnailer mock returns null without opening the source; replace it
+        // with one that reads the original bytes so the storage FileNotFoundException surfaces.
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> { ByteSource src, sf, defs -> src.openStream().withStream { it.bytes }; [] }
+        }
+
+        when: 'the first request triggers generation which fails with FileNotFoundException'
+        def first = service.thumbnailImageInfo('img-neg', '', false)
+
+        then: 'generation ran once and the miss is marked as should-not-exist'
+        !first.exists
+        generationAttempts.get() == 1
+        service.thumbnailNegativeCache.getIfPresent(Pair.of('img-neg', ''))
+
+        when: 'a subsequent request arrives'
+        def second = service.thumbnailImageInfo('img-neg', '', false)
+
+        then: 'it is served from the negative cache without re-running generation'
+        !second.exists
+        second.shouldExist
+        second.contentType == 'image/jpeg'
+        generationAttempts.get() == 1
+    }
+
+    def "thumbnail negative cache is populated only on FileNotFoundException and not on transient errors"() {
+        given:
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.init()
+        service.disableCache = false
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo('img-transient', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-transient')
+            originalInputStream('img-transient', null) >> { throw new RuntimeException('S3 500 InternalError') }
+        }
+        service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
+        service.storageLocationService.isActuallyAnImage('img-transient') >> true
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> { ByteSource src, sf, defs -> src.openStream().withStream { it.bytes }; [] }
+        }
+
+        when:
+        service.thumbnailImageInfo('img-transient', '', false)
+
+        then: 'a transient failure does not populate the negative cache'
+        !service.thumbnailNegativeCache.getIfPresent(Pair.of('img-transient', ''))
+    }
+
+    def "thumbnail negative cache entry expires after the configured TTL"() {
+        given:
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.thumbnailNegativeCacheTtlSeconds = 1
+        service.init()
+        service.disableCache = false
+        service.thumbnailNegativeCache.put(Pair.of('img-ttl', ''), Boolean.TRUE)
+
+        expect:
+        service.thumbnailNegativeCache.getIfPresent(Pair.of('img-ttl', ''))
+
+        when:
+        Thread.sleep(1500)
+
+        then:
+        !service.thumbnailNegativeCache.getIfPresent(Pair.of('img-ttl', ''))
+    }
+
+    def "refresh invalidates the negative cache entry before consulting it"() {
+        given: 'a thumbnail negatively cached as permanently missing'
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.init()
+        service.disableCache = false
+        def generationAttempts = new AtomicInteger(0)
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo('img-refresh', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-refresh')
+            originalInputStream('img-refresh', null) >> {
+                generationAttempts.incrementAndGet()
+                throw new FileNotFoundException('NoSuchKey')
+            }
+        }
+        service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
+        service.storageLocationService.isActuallyAnImage('img-refresh') >> true
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> { ByteSource src, sf, defs -> src.openStream().withStream { it.bytes }; [] }
+        }
+
+        when: 'the first request populates the negative cache'
+        service.thumbnailImageInfo('img-refresh', '', false)
+
+        then:
+        generationAttempts.get() == 1
+        service.thumbnailNegativeCache.getIfPresent(Pair.of('img-refresh', ''))
+
+        when: 'a refresh request arrives'
+        service.thumbnailImageInfo('img-refresh', '', true)
+
+        then: 'the negative entry was invalidated before consult, so generation re-ran'
+        generationAttempts.get() == 2
+    }
+
+    def "disableCache bypasses both negative-cache consult and populate"() {
+        given:
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.init()
+        service.disableCache = true
+        def generationAttempts = new AtomicInteger(0)
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo('img-nocache', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-nocache')
+            originalInputStream('img-nocache', null) >> {
+                generationAttempts.incrementAndGet()
+                throw new FileNotFoundException('NoSuchKey')
+            }
+        }
+        service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
+        service.storageLocationService.isActuallyAnImage('img-nocache') >> true
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> { ByteSource src, sf, defs -> src.openStream().withStream { it.bytes }; [] }
+        }
+
+        when: 'two requests arrive while caching is disabled'
+        service.thumbnailImageInfo('img-nocache', '', false)
+        service.thumbnailImageInfo('img-nocache', '', false)
+
+        then: 'the FNFE is never written to the negative cache, so generation runs every time'
+        generationAttempts.get() == 2
+        !service.thumbnailNegativeCache.getIfPresent(Pair.of('img-nocache', ''))
+    }
+
+    def "successful generation invalidates the negative cache entry"() {
+        given: 'a thumbnail negatively cached then fixed in storage so generation now succeeds'
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.init()
+        service.disableCache = false
+        service.grailsApplication.config.imageservice.thumbnail.size = 200
+        def key = Pair.of('img-recover', '')
+        service.thumbnailNegativeCache.put(key, Boolean.TRUE)
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo('img-recover', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-recover')
+        }
+        def thumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> [new au.org.ala.images.thumb.ThumbnailingResult(200, 200, false, 'thumbnail')]
+        }
+        service.imageThumbnailer = thumbnailer
+
+        when: 'the cache loader runs and generation succeeds'
+        def loader = service.&ensureThumbnailExistsCacheLoader.curry(null).curry(operations)
+        loader.call(key)
+
+        then: 'the loader cleared the negative-cache entry on success'
+        !service.thumbnailNegativeCache.getIfPresent(key)
+    }
+
+    def "negative cache warns exactly once on the populating failure and is silent on hits"() {
+        given: 'a thumbnail whose original is permanently missing from storage'
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.init()
+        service.disableCache = false
+        def generationAttempts = new AtomicInteger(0)
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo('img-warn', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-warn')
+            originalInputStream('img-warn', null) >> {
+                generationAttempts.incrementAndGet()
+                throw new FileNotFoundException('NoSuchKey: img-warn original missing')
+            }
+        }
+        service.storageLocationService.getStorageOperationsWithoutDbLookup() >> operations
+        service.storageLocationService.isActuallyAnImage('img-warn') >> true
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> { ByteSource src, sf, defs -> src.openStream().withStream { it.bytes }; [] }
+        }
+        def appender = attachListAppender()
+
+        when: 'the first request runs generation, fails with FileNotFoundException and populates the negative cache'
+        def first = service.thumbnailImageInfo('img-warn', '', false)
+
+        then: 'exactly one WARN was emitted for the populating failure'
+        !first.exists
+        generationAttempts.get() == 1
+        appender.list.count { it.level == Level.WARN } == 1
+
+        when: 'two subsequent requests are served from the negative cache'
+        appender.list.clear()
+        service.thumbnailImageInfo('img-warn', '', false)
+        service.thumbnailImageInfo('img-warn', '', false)
+
+        then: 'no WARN is logged on the negative-cache hits and generation did not re-run'
+        generationAttempts.get() == 1
+        appender.list.count { it.level == Level.WARN } == 0
+
+        cleanup:
+        detachListAppender(appender)
+    }
+
+    def "zero thumbnails for non-image content logs at debug not warn"() {
+        given: 'an audio/document record whose generation produces no thumbnails'
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.init()
+        service.disableCache = false
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo('img-audio', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-audio')
+        }
+        // not an image -> expected, no thumbnails produced
+        service.storageLocationService.isActuallyAnImage('img-audio') >> false
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> []
+        }
+        def appender = attachListAppender()
+        def loader = service.&ensureThumbnailExistsCacheLoader.curry(null).curry(operations)
+
+        when: 'the loader runs generation which returns zero thumbnails'
+        loader.call(Pair.of('img-audio', ''))
+
+        then: 'no WARN is emitted for the expected non-image case (a DEBUG/INFO line is fine)'
+        appender.list.count { it.level == Level.WARN } == 0
+        appender.list.count { it.level == Level.ERROR } == 0
+
+        cleanup:
+        detachListAppender(appender)
+    }
+
+    def "zero thumbnails for an image logs a warn without the misleading reported success phrasing"() {
+        given: 'a genuine image whose generation produces zero thumbnails'
+        service.initSemaphores()
+        service.derivativeLoaderExecutor = { Runnable task -> task.run() } as Executor
+        service.init()
+        service.disableCache = false
+        def operations = Stub(StorageOperations) {
+            thumbnailImageInfo('img-zero', '') >> new ImageInfo(exists: false, imageIdentifier: 'img-zero')
+        }
+        // genuinely an image -> a real problem
+        service.storageLocationService.isActuallyAnImage('img-zero') >> true
+        service.imageThumbnailer = Stub(IImageThumbnailer) {
+            generateThumbnails(_, _, _) >> []
+        }
+        def appender = attachListAppender()
+        def loader = service.&ensureThumbnailExistsCacheLoader.curry(null).curry(operations)
+
+        when: 'the loader runs generation which returns zero thumbnails'
+        loader.call(Pair.of('img-zero', ''))
+
+        then: 'a WARN is emitted and it does not use the misleading "reported success" wording'
+        def warns = appender.list.findAll { it.level == Level.WARN }
+        warns.size() == 1
+        !warns[0].formattedMessage.contains('reported success')
+        warns[0].formattedMessage.contains('no results')
+
+        cleanup:
+        detachListAppender(appender)
+    }
+
+    private ListAppender<ILoggingEvent> attachListAppender() {
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(ImageStoreService)
+        def appender = new ListAppender<ILoggingEvent>()
+        appender.start()
+        serviceLogger.addAppender(appender)
+        return appender
+    }
+
+    private void detachListAppender(ListAppender<ILoggingEvent> appender) {
+        ((Logger) LoggerFactory.getLogger(ImageStoreService)).detachAppender(appender)
+        appender?.stop()
     }
 
 }

@@ -3,6 +3,8 @@ package au.org.ala.images
 import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.web.AlaSecured
 import au.org.ala.web.CASRoles
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
 import grails.converters.JSON
 import grails.converters.XML
 import groovy.util.logging.Slf4j
@@ -21,6 +23,7 @@ import org.springframework.core.io.Resource
 import javax.servlet.http.HttpServletRequest
 import javax.ws.rs.Path
 import javax.ws.rs.Produces
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER
@@ -94,6 +97,21 @@ class ImageController implements MetricsSupport {
 
     @Value('${images.disableCache:false}')
     boolean disableCache = false
+
+    /**
+     * Cache-Control max-age (seconds) for the permanently-missing derivative placeholder 404.
+     * Kept short so a browser recovers quickly after the underlying storage fix, while a CDN
+     * may briefly cache the placeholder to absorb a burst. Tune per-deployment via config.
+     */
+    @Value('${image.placeholder.missing.cacheMaxAge:60}')
+    int missingPlaceholderCacheMaxAgeSeconds = 60
+
+    /**
+     * Rate-limiter for derivative-unavailable WARN logs. A burst of rejected/timed-out
+     * derivative loads must not spam the logs: one WARN per (requestType, exception) per window.
+     */
+    private final Cache<String, Boolean> derivativeUnavailableLogCache =
+            Caffeine.newBuilder().expireAfterWrite(60, TimeUnit.SECONDS).build()
 
     static AtomicLong boundaryCounter = new AtomicLong(0)
 
@@ -267,12 +285,28 @@ class ImageController implements MetricsSupport {
         try {
             serveImage(loadImageInfo.call(), sendAnalytics, requestType, noRedirect)
         } catch (ImageStoreService.DerivativeLoadTimeout e) {
+            logDerivativeUnavailableOnce(requestType, SC_GATEWAY_TIMEOUT, e)
             serveDerivativeUnavailableImage(requestType, SC_GATEWAY_TIMEOUT)
         } catch (ImageStoreService.DerivativeLoadRejected e) {
+            logDerivativeUnavailableOnce(requestType, SC_SERVICE_UNAVAILABLE, e)
             serveDerivativeUnavailableImage(requestType, SC_SERVICE_UNAVAILABLE)
         } catch (ImageStoreService.GenerateDerivativeTimeout e) {
+            logDerivativeUnavailableOnce(requestType, SC_SERVICE_UNAVAILABLE, e)
             serveDerivativeUnavailableImage(requestType, SC_SERVICE_UNAVAILABLE)
         }
+    }
+
+    /**
+     * Emit a single WARN per (requestType, exception) per 60s window so an overloaded or
+     * timed-out derivative load is observable without log-spamming on a burst.
+     */
+    private void logDerivativeUnavailableOnce(String requestType, int status, RuntimeException cause) {
+        String key = "${requestType}:${cause.class.simpleName}"
+        if (derivativeUnavailableLogCache.getIfPresent(key) != null) {
+            return
+        }
+        derivativeUnavailableLogCache.put(key, Boolean.TRUE)
+        log.warn("Derivative unavailable: type={} status={} (derivative loader overloaded/timed out): {}", requestType, status, cause.message)
     }
 
     private void serveDerivativeUnavailableImage(String requestType, int status) {
@@ -291,7 +325,10 @@ class ImageController implements MetricsSupport {
             if (!imageIdentifier || !imageInfo.exists) {
                 incrementCounter('image.serve.notfound', 'Image not found requests', [type: requestType])
                 if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
-                    sendMissingImage(requestType)
+                    // Permanently-missing derivative placeholder 404. The short max-age lets a CDN
+                    // briefly cache the placeholder to absorb a burst, while must-revalidate forces
+                    // a browser to re-check after expiry so it recovers quickly once storage is fixed.
+                    sendMissingImage(requestType, SC_NOT_FOUND, false, missingPlaceholderCacheMaxAgeSeconds)
                 } else {
                     render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
                 }
@@ -456,7 +493,7 @@ class ImageController implements MetricsSupport {
      * Serve a placeholder image with a 404 status code.
      * @param requestType The type of request, one of 'tile', 'original', 'thumbnail-large', 'thumbnail-square', 'thumbnail'
      */
-    private void sendMissingImage(String requestType, int status = SC_NOT_FOUND, boolean noCache = false) {
+    private void sendMissingImage(String requestType, int status = SC_NOT_FOUND, boolean noCache = false, Integer cacheMaxAge = null) {
         Resource ph
         switch (requestType) {
             case 'tile':
@@ -490,6 +527,11 @@ class ImageController implements MetricsSupport {
                 response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
                 response.setHeader('Pragma', 'no-cache')
                 response.setDateHeader('Expires', 0)
+            } else if (cacheMaxAge != null) {
+                // public: a CDN may cache briefly (anti-hammering). must-revalidate: after max-age
+                // the browser revalidates rather than serving a stale placeholder, so recovery is
+                // visible as soon as the underlying image exists again.
+                response.setHeader('Cache-Control', "public, max-age=${cacheMaxAge}, must-revalidate")
             }
             def len = ph.contentLength()
             response.contentType = 'image/png'

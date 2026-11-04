@@ -2,6 +2,10 @@ package au.org.ala.images
 
 import au.org.ala.web.AuthService
 import au.org.ala.web.IAuthService
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import grails.plugins.cacheheaders.CacheHeadersService
 import grails.testing.gorm.DataTest
 import grails.testing.web.controllers.ControllerUnitTest
@@ -12,6 +16,7 @@ import org.grails.spring.beans.factory.InstanceFactoryBean
 import org.grails.web.util.GrailsApplicationAttributes
 import org.grails.web.util.WebUtils
 import org.jasig.cas.client.authentication.AttributePrincipalImpl
+import org.slf4j.LoggerFactory
 import org.springframework.core.io.ClassPathResource
 import org.springframework.core.io.Resource
 import spock.lang.Shared
@@ -289,6 +294,114 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         new ImageStoreService.DerivativeLoadTimeout('timed out')              | 504    | 'thumbnail' | false
         new ImageStoreService.DerivativeLoadRejected('overloaded')            | 503    | 'tile'      | false
         new ImageStoreService.GenerateDerivativeTimeout('generator saturated') | 503    | 'thumbnail' | true
+    }
+
+    def "permanently missing thumbnail (negative-cache hit) serves placeholder 404 with a short cache TTL"() {
+        given:
+        String identifier = UUID.randomUUID().toString()
+        ClassPathResource placeholderResource = new ClassPathResource('images/no-image-thumbnail.png')
+        byte[] placeholder = placeholderResource.inputStream.bytes
+        params.id = identifier
+        controller.imageStoreService = Mock(ImageStoreService)
+        controller.analyticsService = Mock(AnalyticsService)
+        controller.missingImageThumbnail = placeholderResource
+
+        when:
+        controller.proxyImageThumbnail()
+
+        then: 'the service reports a negative-cache hit (shouldExist=true, image derivative)'
+        1 * controller.imageStoreService.thumbnailImageInfo(identifier, '', _) >> {
+            new ImageInfo(exists: false, shouldExist: true, imageIdentifier: identifier, contentType: 'image/jpeg')
+        }
+        response.status == 404
+        response.contentType == 'image/png'
+        response.contentAsByteArray == placeholder
+        response.getHeader('Cache-Control') == 'public, max-age=60, must-revalidate'
+        response.getHeader('Pragma') == null
+        0 * controller.analyticsService._
+    }
+
+    def "permanently missing thumbnail placeholder respects the configured cacheMaxAge knob"() {
+        given:
+        String identifier = UUID.randomUUID().toString()
+        ClassPathResource placeholderResource = new ClassPathResource('images/no-image-thumbnail.png')
+        params.id = identifier
+        controller.imageStoreService = Mock(ImageStoreService)
+        controller.analyticsService = Mock(AnalyticsService)
+        controller.missingImageThumbnail = placeholderResource
+        controller.missingPlaceholderCacheMaxAgeSeconds = 5
+
+        when:
+        controller.proxyImageThumbnail()
+
+        then:
+        1 * controller.imageStoreService.thumbnailImageInfo(identifier, '', _) >> {
+            new ImageInfo(exists: false, shouldExist: true, imageIdentifier: identifier, contentType: 'image/jpeg')
+        }
+        response.status == 404
+        response.getHeader('Cache-Control') == 'public, max-age=5, must-revalidate'
+        0 * controller.analyticsService._
+    }
+
+    def "a burst of rejected derivative loads emits exactly one WARN per (type, exception) while every response stays a 503 placeholder"() {
+        given:
+        int burst = 8
+        ClassPathResource placeholderResource = new ClassPathResource('images/no-image-thumbnail.png')
+        byte[] placeholder = placeholderResource.inputStream.bytes
+        controller.analyticsService = Mock(AnalyticsService)
+        controller.missingImageThumbnail = placeholderResource
+        Logger controllerLogger = (Logger) LoggerFactory.getLogger(ImageController)
+        def appender = new ListAppender<ILoggingEvent>()
+        appender.start()
+        controllerLogger.addAppender(appender)
+
+        when: 'a burst of thumbnail requests each reject the derivative load'
+        burst.times { int i ->
+            def id = UUID.randomUUID().toString()
+            params.id = id
+            controller.imageStoreService = Stub(ImageStoreService) {
+                thumbnailImageInfo(_, _, _) >> { throw new ImageStoreService.DerivativeLoadRejected('overloaded') }
+            }
+            controller.proxyImageThumbnail()
+            assert response.status == 503
+            assert response.contentType == 'image/png'
+            assert response.contentAsByteArray == placeholder
+            assert response.getHeader('Cache-Control') == 'no-store, no-cache, must-revalidate'
+            response.reset()
+            response.resetBuffer()
+        }
+
+        then: 'exactly one WARN was emitted for the (thumbnail, DerivativeLoadRejected) pair'
+        def warns = appender.list.findAll { it.level == Level.WARN }
+        warns.size() == 1
+        warns[0].formattedMessage.contains('thumbnail')
+        warns[0].formattedMessage.contains('503')
+        warns[0].formattedMessage.contains('overloaded')
+
+        cleanup:
+        controllerLogger.detachAppender(appender)
+        appender?.stop()
+    }
+
+    def "non-image missing derivative keeps the header-less plain-text 404"() {
+        given:
+        String identifier = UUID.randomUUID().toString()
+        params.id = identifier
+        controller.imageStoreService = Mock(ImageStoreService)
+        controller.analyticsService = Mock(AnalyticsService)
+
+        when:
+        controller.proxyImageThumbnail()
+
+        then: 'contentType is not an image so the header-less text render is used'
+        1 * controller.imageStoreService.thumbnailImageInfo(identifier, '', _) >> {
+            new ImageInfo(exists: false, shouldExist: false, imageIdentifier: identifier, contentType: 'application/octet-stream')
+        }
+        response.status == 404
+        response.contentType == 'text/plain;charset=utf-8'
+        response.text == 'Image not found'
+        response.getHeader('Cache-Control') == null
+        0 * controller.analyticsService._
     }
 
     def "derivative timeout keeps gateway timeout when placeholder metadata fails"() {
