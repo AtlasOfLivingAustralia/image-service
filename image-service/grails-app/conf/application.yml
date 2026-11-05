@@ -345,10 +345,10 @@ aws:
         upload:
             ingest:
                 # Original-image ingest: how long the blocking body waits for the transfer manager
-                # to subscribe before failing. SDK default is 10s, which was losing originals under load.
+                # to subscribe before failing. SDK default is 10s
                 subscribe:
                     timeout:
-                        seconds: 60
+                        seconds: 10
                 # Max wait for the upload to finish once the body is written; on timeout the upload is
                 # cancelled (freeing client capacity) and the failure is retried like other transient errors.
                 completion:

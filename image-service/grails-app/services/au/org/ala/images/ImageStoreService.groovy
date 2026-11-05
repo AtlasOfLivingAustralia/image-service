@@ -1,6 +1,7 @@
 package au.org.ala.images
 
 import au.org.ala.images.metrics.MetricsSupport
+import au.org.ala.images.storage.S3UploadHealth
 import au.org.ala.images.storage.StorageOperations
 import au.org.ala.images.thumb.IImageThumbnailer
 import au.org.ala.images.thumb.ThumbDefinition
@@ -292,7 +293,7 @@ class ImageStoreService implements MetricsSupport {
      */
     private static boolean isIngestUploadRetryable(Throwable throwable) {
         for (Throwable cause = throwable; cause != null; cause = cause.cause) {
-            if (isSubscribeTimeout(cause) || cause instanceof IOException) {
+            if (S3UploadHealth.isSubscribeTimeout(cause) || cause instanceof IOException) {
                 return true
             }
             if (cause instanceof AwsServiceException) {
@@ -310,12 +311,6 @@ class ImageStoreService implements MetricsSupport {
             }
         }
         return false
-    }
-
-    private static boolean isSubscribeTimeout(Throwable throwable) {
-        return throwable instanceof IllegalStateException &&
-                throwable.message != null &&
-                throwable.message ==~ /(?s).*was not made within .* seconds.*/
     }
 
     private static long ingestRetryBackoffMs(int attempt, long baseDelayMs) {
