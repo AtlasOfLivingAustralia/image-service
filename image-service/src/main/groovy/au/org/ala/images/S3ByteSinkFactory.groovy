@@ -108,7 +108,7 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                         // body is never subscribed within subscribeTimeout. Log a rich, single diagnostic
                         // line that lets us tell from logs whether the SAME manager/client is reused
                         // across failures, cancel the orphaned upload, then rethrow.
-                        if (isStuckSubscription(stuckState)) {
+                        if (S3UploadHealth.isSubscribeTimeout(stuckState)) {
                             recordStuckSubscription(path, uploadFuture)
                         }
                         // Otherwise the orphaned request stays queued in the client waiting for a body
@@ -207,11 +207,14 @@ class S3ByteSinkFactory implements ByteSinkFactory {
                             }
                         }
 
+                        private boolean closed = false
+
                         @Override
                         void close() throws IOException {
-                            if (aborted) {
+                            if (aborted || closed) {
                                 return
                             }
+                            closed = true
                             super.close()
                             // once the file output is closed we can send it to S3 and then delete the temp file
                             def reqBuilder = PutObjectRequest.builder()

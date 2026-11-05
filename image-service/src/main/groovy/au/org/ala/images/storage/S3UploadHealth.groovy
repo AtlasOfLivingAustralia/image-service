@@ -83,4 +83,10 @@ final class S3UploadHealth {
         Thread current = Thread.currentThread()
         return current == null ? 'unknown' : current.getName()
     }
+
+    static boolean isSubscribeTimeout(Throwable throwable) {
+        return throwable instanceof IllegalStateException &&
+                throwable.message != null &&
+                throwable.message ==~ /(?s).*was not made within .* seconds.*/
+    }
 }

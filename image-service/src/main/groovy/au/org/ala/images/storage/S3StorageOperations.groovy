@@ -171,8 +171,8 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
 
     // How long BlockingInputStreamAsyncRequestBody.writeInputStream waits for the transfer
     // manager to subscribe the request body before failing the original-image ingest upload.
-    // The SDK default of 10s is too short under load and was permanently losing originals.
-    private static final int ingestSubscribeTimeoutSeconds = positiveConfig('aws.s3.upload.ingest.subscribe.timeout.seconds', 'au.org.ala.images.s3.upload.ingest.subscribe.timeout', 60)
+    // The default is 10s which matches the AWS S3 client default
+    private static final int ingestSubscribeTimeoutSeconds = positiveConfig('aws.s3.upload.ingest.subscribe.timeout.seconds', 'au.org.ala.images.s3.upload.ingest.subscribe.timeout', 10)
     // Upper bound on waiting for an ingest upload to finish once its body has been written; the
     // upload is cancelled on timeout so a wedged request cannot block the caller forever.
     private static final int ingestCompletionTimeoutSeconds = positiveConfig('aws.s3.upload.ingest.completion.timeout.seconds', 'au.org.ala.images.s3.upload.ingest.completion.timeout', 300)
@@ -1587,7 +1587,12 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
                 } catch (ExecutionException failed) {
                     progress.reportFailure(failed, S3UploadHealth.describe(transferManager, null, uploadFuture))
                     throw failed
+                } catch (InterruptedException interrupted) {
+                    uploadFuture.cancel(true)
+                    Thread.currentThread().interrupt()
+                    throw interrupted
                 }
+
                 log.debug("Uploaded {} to S3 {}:{} with result etag {}", absolutePath, region, bucket, result.response().eTag())
             }
         } catch (Exception exception) {
