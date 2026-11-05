@@ -7,6 +7,12 @@
 }
 
 </style>
+<auth:ifLoggedIn>
+<button id="btnAttachTag" class="btn btn-sm btn-outline-dark">
+    <i class="fa fa-plus"></i> Add Tag
+</button>
+</auth:ifLoggedIn>
+
 <g:if test="${tags}">
 <h4>Tags</h4>
 

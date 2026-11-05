@@ -18,7 +18,8 @@
             justify-content: center;
         }
         </style>
-        <asset:stylesheet src="ala/images-client.css"/>
+        <asset:stylesheet src="application.css" />
+        <asset:stylesheet src="ala/images-client.css" />
         <asset:javascript src="ala/images-client.js"/>
     </head>
 
@@ -138,7 +139,11 @@
 
             $(document).ready(function () {
 
-                imgvwr.bindTooltips("a.fieldHelp");
+                $("a.fieldHelp").each(function() {
+                    new bootstrap.Tooltip(this, {
+                        container: 'body'
+                    });
+                });
 
                 $(".btnDeleteStagedFile").on('click', function (e) {
                     e.preventDefault();

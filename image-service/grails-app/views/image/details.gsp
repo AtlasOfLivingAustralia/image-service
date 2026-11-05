@@ -268,7 +268,32 @@
                 imgvwr.areYouSure(options);
             });
 
-            imgvwr.bindImageTagTooltips();
+            $(".image-info-button").each(function() {
+                var element = this;
+                var imageId = $(element).closest("[imageId]").attr("imageId");
+                if (imageId) {
+                    var popover = new bootstrap.Popover(element, {
+                        content: 'Loading...',
+                        html: true,
+                        trigger: 'hover',
+                        container: 'body',
+                        sanitize: false
+                    });
+
+                    element.addEventListener('show.bs.popover', function() {
+                        $.ajax("${createLink(absolute: true, controller:'image', action:"imageTooltipFragment")}/" + imageId).then(function(content) {
+                            popover.setContent({
+                                '.popover-body': content
+                            });
+                        },
+                        function(xhr, status, error) {
+                            popover.setContent({
+                                '.popover-body': status + ": " + error
+                            });
+                        });
+                    });
+                }
+            });
 
             loadTags();
         });
