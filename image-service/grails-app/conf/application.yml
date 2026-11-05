@@ -392,12 +392,24 @@ placeholder:
         original: "classpath:images/no-image-fullsize.png"
     missing:
         thumbnail: "classpath:images/200px-Document_icon.svg.png"
+        cacheMaxAge: 60
 
 derivative:
     loader:
+        # Derivative (thumbnail/tile) on-demand loader pool. threads = concurrent derivative loads;
+        # queueCapacity = waiting tasks before admission control engages.
         threads: 4
         queueCapacity: 100
         timeoutSeconds: 30
+        # CallerBlocksPolicy admission timeout: a submit blocks up to this long for a queue slot
+        # before a 503. Composes with timeoutSeconds for worst-case HTTP latency (submitTimeout + loadTimeout).
+        submitTimeoutSeconds: 5
+
+image:
+    store:
+        thumbnail:
+            negativeCache:
+                ttlSeconds: 60
 
 openapi:
     title: Image Service API

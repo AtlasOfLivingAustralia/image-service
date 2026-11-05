@@ -25,6 +25,7 @@ import grails.web.mapping.LinkGenerator
 import groovy.transform.Immutable
 import groovy.transform.NamedVariant
 import groovy.util.logging.Slf4j
+import io.micrometer.core.instrument.Gauge
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.io.inputstream.ZipInputStream
 import net.lingala.zip4j.model.FileHeader
@@ -36,6 +37,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.web.multipart.MultipartFile
 
 import javax.annotation.PostConstruct
@@ -55,6 +57,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.function.BiFunction
@@ -121,6 +124,9 @@ class ImageStoreService implements MetricsSupport {
     @Value('${images.disableCache:false}')
     boolean disableCache = false
 
+    @Value('${image.store.thumbnail.negativeCache.ttlSeconds:60}')
+    int thumbnailNegativeCacheTtlSeconds = 60
+
 
     @Value('${tiling.onDemand.enabled:false}')
     boolean onDemandTilingEnabled = false
@@ -142,18 +148,63 @@ class ImageStoreService implements MetricsSupport {
     AsyncCache<Pair<String, String>, ImageInfo> thumbnailCache
     AsyncCache<Pair<String, Point>, ImageInfo> tileCache
     Cache<String, ImageInfo> originalCache
+    // Thumbnails whose original is missing from storage (FileNotFoundException); short TTL so a storage fix recovers.
+    Cache<Pair<String, String>, Boolean> thumbnailNegativeCache
 
     @PostConstruct
     @NotTransactional
     def init() {
-        thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).executor(derivativeLoaderExecutor).buildAsync()
-        tileCache = Caffeine.from(tileLookupCacheConfig).executor(derivativeLoaderExecutor).buildAsync()
+        thumbnailCache = Caffeine.from(thumbnailLookupCacheConfig).buildAsync()
+        tileCache = Caffeine.from(tileLookupCacheConfig).buildAsync()
         originalCache = Caffeine.from(originalLookupCacheConfig).build()
+        thumbnailNegativeCache = Caffeine.newBuilder().expireAfterWrite(thumbnailNegativeCacheTtlSeconds, TimeUnit.SECONDS).build()
+        registerDerivativeLoaderMetrics()
+    }
+
+    /**
+     * Exposes the derivative-loader thread pool's queue depth, active thread count and completed
+     * task count as Micrometer gauges so operators can see loader saturation/backlog. The gauges
+     * re-read the live {@link ThreadPoolExecutor} on every scrape, so they cost nothing between
+     * observations. No-op when no MeterRegistry is present or the executor is not a Spring
+     * {@link ThreadPoolTaskExecutor} (eg the inline test executor).
+     */
+    private void registerDerivativeLoaderMetrics() {
+        if (!meterRegistry) {
+            log.debug('No MeterRegistry available; derivative loader executor metrics will not be recorded')
+            return
+        }
+        ThreadPoolExecutor derivativeLoaderPool = unwrapDerivativeLoaderThreadPool()
+        if (!derivativeLoaderPool) {
+            log.debug('derivativeLoaderExecutor is not a ThreadPoolTaskExecutor ({}); executor metrics will not be recorded', derivativeLoaderExecutor?.class?.name)
+            return
+        }
+        Gauge.builder('imagestore.derivative.loader.queue.depth', derivativeLoaderPool, { pool -> pool.queue.size() } as java.util.function.ToDoubleFunction<ThreadPoolExecutor>)
+                .description('Derivative loader executor queued (waiting) task count')
+                .register(meterRegistry)
+        Gauge.builder('imagestore.derivative.loader.active', derivativeLoaderPool, { pool -> pool.activeCount } as java.util.function.ToDoubleFunction<ThreadPoolExecutor>)
+                .description('Derivative loader executor active (running) thread count')
+                .register(meterRegistry)
+        Gauge.builder('imagestore.derivative.loader.completed', derivativeLoaderPool, { pool -> pool.completedTaskCount } as java.util.function.ToDoubleFunction<ThreadPoolExecutor>)
+                .description('Derivative loader executor completed task count')
+                .register(meterRegistry)
+    }
+
+    private ThreadPoolExecutor unwrapDerivativeLoaderThreadPool() {
+        if (!(derivativeLoaderExecutor instanceof ThreadPoolTaskExecutor)) {
+            return null
+        }
+        try {
+            return ((ThreadPoolTaskExecutor) derivativeLoaderExecutor).threadPoolExecutor
+        } catch (IllegalStateException executorNotInitialised) {
+            log.debug('derivativeLoaderExecutor ThreadPoolExecutor not yet initialised: {}', executorNotInitialised.message)
+            return null
+        }
     }
 
     @NotTransactional
     def clearThumbnailLookupCache() {
         thumbnailCache.invalidateAll()
+        thumbnailNegativeCache.invalidateAll()
     }
 
     @NotTransactional
@@ -505,7 +556,22 @@ class ImageStoreService implements MetricsSupport {
                 return ImageStoreService.this.retrieveImageInputStream(image)
             }
         }
-        return generateThumbnailsImpl(byteSource, image.imageIdentifier, image.storageLocation.asStandaloneStorageOperations())
+        // Ingest/eager path only: bound thumbnail generation concurrency with the semaphore so a
+        // burst of background-ingest tasks cannot stampede the CPU. The on-demand derivative path
+        // deliberately does NOT use this semaphore — the derivativeLoaderExecutor pool is its sole
+        // concurrency limiter (a second gate here could serialize the pool threads when storage is slow).
+        if (!thumbnailSemaphore.tryAcquire(thumbnailConcurrencyTimeout, TimeUnit.SECONDS)) {
+            incrementCounter('imagestore.thumbnail.timeout', 'Thumbnail generation timeouts', [type: 'all'])
+            throw new GenerateDerivativeTimeout("Could not acquire thumbnail semaphore to thumb image ${image.imageIdentifier} in ${thumbnailConcurrencyTimeout}s")
+        }
+        try {
+            return generateThumbnailsImpl(byteSource, image.imageIdentifier, image.storageLocation.asStandaloneStorageOperations())
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt()
+            throw new IllegalStateException("Interrupted while thumbnailing image ${image.imageIdentifier}", ie)
+        } finally {
+            thumbnailSemaphore.release()
+        }
     }
 
     @NotTransactional
@@ -555,24 +621,20 @@ class ImageStoreService implements MetricsSupport {
                 thumbDefs.add(ThumbDefinition.centreCrop(650, "thumbnail_centre_crop_large"))
             }
 
+            // No thumbnailSemaphore here: this runs on the derivativeLoaderExecutor pool (on-demand
+            // path) which is the sole concurrency limiter. The eager ingest path guards separately in
+            // generateImageThumbnails(Image).
             List<ThumbnailingResult> results
-            if (thumbnailSemaphore.tryAcquire(thumbnailConcurrencyTimeout, TimeUnit.SECONDS)) {
-                try {
-                    results = t.generateThumbnails(
-                            byteSource,
-                            operations.thumbnailByteSinkFactory(imageIdentifier),
-                            thumbDefs
-                    )
-                    incrementCounter('imagestore.thumbnail.success', 'Successful thumbnail generations', [type: type ?: 'all'])
-                } catch (Exception e) {
-                    incrementCounter('imagestore.thumbnail.error', 'Thumbnail generation errors', [type: type ?: 'all', error: e.class.simpleName])
-                    throw e
-                } finally {
-                    thumbnailSemaphore.release()
-                }
-            } else {
-                incrementCounter('imagestore.thumbnail.timeout', 'Thumbnail generation timeouts', [type: type ?: 'all'])
-                throw new GenerateDerivativeTimeout("Could not acquire thumbnail semaphore to thumb image ${imageIdentifier} in ${thumbnailConcurrencyTimeout}s")
+            try {
+                results = t.generateThumbnails(
+                        byteSource,
+                        operations.thumbnailByteSinkFactory(imageIdentifier),
+                        thumbDefs
+                )
+                incrementCounter('imagestore.thumbnail.success', 'Successful thumbnail generations', [type: type ?: 'all'])
+            } catch (Exception e) {
+                incrementCounter('imagestore.thumbnail.error', 'Thumbnail generation errors', [type: type ?: 'all', error: e.class.simpleName])
+                throw e
             }
 
             auditService.log(imageIdentifier, "Thumbnails created", "N/A")
@@ -749,14 +811,17 @@ class ImageStoreService implements MetricsSupport {
         type = normaliseThumbnailType(type)
         def key = Pair.of(imageIdentifier, type)
         def loader = this.&ensureThumbnailExistsCacheLoader.curry(dataResourceUid).curry(operations)
-        BiFunction<Pair<String, String>, Executor, CompletableFuture<ImageInfo>> mappingFunction =
-                { Pair<String, String> k, Executor exec -> submitDerivativeLoad(loader, k, exec) } as BiFunction<Pair<String, String>, Executor, CompletableFuture<ImageInfo>>
 
         // TODO undefined behaviour if already loading when invalidate is called.
         if (refresh) {
             thumbnailCache.synchronous().invalidate(key)
+            thumbnailNegativeCache.invalidate(key)
         }
-        return (disableCache ? loader.call(key) : awaitDerivativeLoad(thumbnailCache, key, mappingFunction)) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
+        if (!disableCache && thumbnailNegativeCache.getIfPresent(key)) {
+            incrementCounter('imagestore.thumbnail.negativecache.hit', 'Thumbnail negative cache hits', [type: type ?: 'default'])
+            return new ImageInfo(exists: false, imageIdentifier: imageIdentifier, shouldExist: true, contentType: type == 'square' ? 'image/png' : 'image/jpeg')
+        }
+        return (disableCache ? loader.call(key) : awaitDerivativeLoad(thumbnailCache, key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: imageIdentifier, contentType: type == 'square' ? 'image/png' : 'image/jpeg', shouldExist: true)
     }
 
     private ImageInfo ensureThumbnailExistsCacheLoader(String dataResourceUid, StorageOperations operations, Pair<String, String> pair) {
@@ -768,6 +833,8 @@ class ImageStoreService implements MetricsSupport {
             if (!exists) {
                 def results = generateImageThumbnail(imageIdentifierArg, operations, typeArg)
                 if (results.size() > 0) {
+                    // A concurrent request may have negatively cached this key while we generated
+                    thumbnailNegativeCache.invalidate(pair)
                     // Create the ImageThumbnail records asynchronously so we don't block any http requests
                     // waiting on the thumbnail to be generated
                     ImageThumbnail.async.task {
@@ -801,8 +868,17 @@ class ImageStoreService implements MetricsSupport {
                         }
                     }
                 } else {
-                    log.warn("Thumbnail generation for image ${imageIdentifierArg} of type ${typeArg} reported success but no thumbnails were returned")
-                    // probably not an image file
+                    // Generation ran but produced zero thumbnails. Distinguish the expected case
+                    // (audio/document content, for which no thumbnails are expected) from a genuine
+                    // image that failed to produce any thumbnail. The discriminator is the DB
+                    // mimeType via isActuallyAnImage: true -> image, false -> audio/doc, null ->
+                    // not found (treated as an image so a real problem still surfaces as a WARN).
+                    Boolean actuallyAnImage = storageLocationService.isActuallyAnImage(imageIdentifierArg)
+                    if (actuallyAnImage == Boolean.FALSE) {
+                        log.debug("No thumbnails generated for ${imageIdentifierArg} of type ${typeArg}: not an image, no thumbnails expected")
+                    } else {
+                        log.warn("Thumbnail generation for image ${imageIdentifierArg} of type ${typeArg} produced no results for an image")
+                    }
                 }
                 info = operations.thumbnailImageInfo(imageIdentifierArg, typeArg)
 
@@ -823,7 +899,13 @@ class ImageStoreService implements MetricsSupport {
         } catch (e) {
             def rootCause = ExceptionUtils.getRootCause(e)
             if (rootCause instanceof FileNotFoundException) {
-                log.warn("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because ${e.message}")
+                if (disableCache) {
+                    log.warn("Original image ${imageIdentifierArg} not found in storage; cannot generate thumbnail of type ${typeArg}: ${e.message}")
+                } else {
+                    thumbnailNegativeCache.put(pair, Boolean.TRUE)
+                    incrementCounter('imagestore.thumbnail.negativecache.store', 'Thumbnail negative cache stores', [type: typeArg ?: 'default'])
+                    log.warn("Original image ${imageIdentifierArg} not found in storage; cannot generate thumbnail of type ${typeArg}. Suppressing repeat attempts for ${thumbnailNegativeCacheTtlSeconds}s: ${e.message}")
+                }
             } else if (rootCause instanceof IIOException && rootCause.message?.contains('Unsupported marker type 0x13')) {
                 log.warn("Error generating thumbnail for image ${imageIdentifierArg} of type ${typeArg} because the image appears to be corrupt: ${e.message}")
             } else {
@@ -847,8 +929,6 @@ class ImageStoreService implements MetricsSupport {
         }
 
         def loader = this.&ensureTileExistsCacheLoader.curry(zoomLevels).curry(operations)
-        BiFunction<Pair<String, Point>, Executor, CompletableFuture<ImageInfo>> mappingFunction =
-                { Pair<String, Point> k, Executor exec -> submitDerivativeLoad(loader, k, exec) } as BiFunction<Pair<String, Point>, Executor, CompletableFuture<ImageInfo>>
         def originKey = Pair.of(identifier, new Point(0,0,z))
         def key = Pair.of(identifier, new Point(x, y, z))
 
@@ -863,14 +943,14 @@ class ImageStoreService implements MetricsSupport {
 
         if (onDemandTilingEnabled) {
             // experimental: With on-demand tiling, attempt to fetch/generate exactly the requested tile
-            def tileInfo = (disableCache ? loader.call(key) : awaitDerivativeLoad(tileCache, key, mappingFunction)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png')
+            def tileInfo = (disableCache ? loader.call(key) : awaitDerivativeLoad(tileCache, key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png')
             tileInfo.dataResourceUid = dataResourceUid
             return tileInfo
         } else {
             // Regular behaviour:
             // First check the origin tile for the zoom level, if it doesn't exist then we can generate
             // the whole set of tiles for the level
-            def originInfo = (disableCache ? loader.call(originKey) : awaitDerivativeLoad(tileCache, originKey, mappingFunction)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
+            def originInfo = (disableCache ? loader.call(originKey) : awaitDerivativeLoad(tileCache, originKey, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: true, contentType: 'image/png')
 
             // then if the origin was requested, return the origin info
             // or if the origin doesn't exist then any tile for the given zoom level won't exist either
@@ -880,7 +960,7 @@ class ImageStoreService implements MetricsSupport {
                 return originInfo
             } else {
                 // otherwise now we get the info for the tile that was actually requested and cache it
-                def tileInfo = (disableCache ? loader.call(key) : awaitDerivativeLoad(tileCache, key, mappingFunction)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
+                def tileInfo = (disableCache ? loader.call(key) : awaitDerivativeLoad(tileCache, key, loader)) ?: new ImageInfo(exists: false, imageIdentifier: identifier, shouldExist: false, contentType: 'image/png') // shouldExist is actually unknown here because we don't know the tile bounds
                 tileInfo.dataResourceUid = dataResourceUid
                 return tileInfo
             }
@@ -1235,22 +1315,16 @@ class ImageStoreService implements MetricsSupport {
         }
     }
 
-    private CompletableFuture<ImageInfo> submitDerivativeLoad(Closure<ImageInfo> loader, Object key, Executor executor) {
-        try {
-            return CompletableFuture.supplyAsync({ loader.call(key) }, executor)
-        } catch (RejectedExecutionException e) {
-            CompletableFuture<ImageInfo> rejectedLoad = new CompletableFuture<>()
-            rejectedLoad.completeExceptionally(e)
-            return rejectedLoad
-        }
-    }
-
-    private <K> ImageInfo awaitDerivativeLoad(AsyncCache<K, ImageInfo> cache, K key, BiFunction<K, Executor, CompletableFuture<ImageInfo>> mappingFunction) {
-        CompletableFuture<ImageInfo> future
-        try {
-            future = cache.get(key, mappingFunction)
-        } catch (RejectedExecutionException e) {
-            throw new DerivativeLoadRejected("Derivative loader is overloaded for ${key}", e)
+    /**
+     * Submits {@code loader} for {@code key} to the derivative loader, coalescing concurrent requests for the
+     * same key. The submit (which may block in CallerBlocksPolicy) happens outside the cache's map computation
+     * so it never holds Caffeine locks.
+     */
+    private <K> ImageInfo awaitDerivativeLoad(AsyncCache<K, ImageInfo> cache, K key, Closure<ImageInfo> loader) {
+        CompletableFuture<ImageInfo> placeholder = new CompletableFuture<>()
+        CompletableFuture<ImageInfo> future = cache.get(key, { k, e -> placeholder } as BiFunction<K, Executor, CompletableFuture<ImageInfo>>)
+        if (future.is(placeholder)) {
+            submitDerivativeLoad(cache, key, loader, placeholder, derivativeLoaderExecutor)
         }
 
         try {
@@ -1271,5 +1345,35 @@ class ImageStoreService implements MetricsSupport {
             }
             throw new IllegalStateException("Derivative loader failed for ${key}", cause)
         }
+    }
+
+    private <K> void submitDerivativeLoad(AsyncCache<K, ImageInfo> cache, K key, Closure<ImageInfo> loader, CompletableFuture<ImageInfo> result, Executor executor) {
+        try {
+            executor.execute({
+                try {
+                    result.complete(loader.call(key))
+                } catch (Throwable t) {
+                    result.completeExceptionally(t)
+                }
+            } as Runnable)
+        } catch (RejectedExecutionException e) {
+            cache.asMap().remove(key, result)
+            result.completeExceptionally(e)
+            String poolState = describePoolState(executor)
+            log.debug('Derivative load rejected for {} ({})', key, poolState)
+            throw new DerivativeLoadRejected("Derivative loader is overloaded for ${key} (${poolState})", e)
+        }
+    }
+
+    private static String describePoolState(Executor executor) {
+        if (executor instanceof ThreadPoolTaskExecutor) {
+            try {
+                ThreadPoolExecutor pool = ((ThreadPoolTaskExecutor) executor).threadPoolExecutor
+                return "poolSize=${pool.poolSize} activeCount=${pool.activeCount} queueSize=${pool.queue.size()} queueRemainingCapacity=${pool.queue.remainingCapacity()} maximumPoolSize=${pool.maximumPoolSize}"
+            } catch (IllegalStateException ignored) {
+                // executor not initialised
+            }
+        }
+        return "executor ${executor?.class?.name}"
     }
 }
