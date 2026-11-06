@@ -233,6 +233,7 @@ environments:
               inbox: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-incoming'
           exportDir: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-exports'
           batchUpload: '/home/travis/build/AtlasOfLivingAustralia/image-service/temp-uploads'
+      aws.s3.upload.ingest.subscribe.timeout.seconds: 60
     ghactions:
       info:
         app:
@@ -257,6 +258,7 @@ environments:
           inbox: '${RUNNER_TEMP}/temp-incoming'
         exportDir: '${RUNNER_TEMP}/temp-exports'
         batchUpload: '${RUNNER_TEMP}/temp-uploads'
+      aws.s3.upload.ingest.subscribe.timeout.seconds: 60
     production:
         hibernate:
 #            dialect: gpc.pgext.hibernate.PostgresqlExtensionsDialect
