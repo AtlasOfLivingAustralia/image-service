@@ -106,7 +106,8 @@ dependencies {
     implementation "software.amazon.awssdk:s3-transfer-manager"
     implementation "software.amazon.awssdk:sts"
     implementation "software.amazon.awssdk:auth"
-    implementation("software.amazon.awssdk.crt:aws-crt:0.47.3")
+    // crt-java 0.48.x pulls in aws-c-s3 stream read-ordering fix (#656) + async pause/resume machinery that address the shared-S3TransferManager stuck-subscribe failure (aws-sdk-java-v2#4893); bom 2.51.2 bundles aws-crt 0.48.2, pin 0.48.3 explicitly
+    implementation("software.amazon.awssdk.crt:aws-crt:0.48.3")
 
     // AWS SDK requires Apache HTTP Client v5.6+ but Grails/Spring Boot pin it to 5.1, so force it here:
     // TODO Review on Grails/Spring Boot/AWS SDK upgrades
@@ -214,6 +215,8 @@ dependencies {
     testImplementation enforcedPlatform('io.zonky.test.postgres:embedded-postgres-binaries-bom:11.19.0')
 //    testImplementation "com.opentable.components:otj-pg-embedded:1.0.1" // required transitive dependency from the plugin.
     testImplementation 'cloud.localstack:localstack-utils:0.2.23'
+    testImplementation platform('org.testcontainers:testcontainers-bom:1.21.4')
+    testImplementation 'org.testcontainers:testcontainers' // s3FaultTest (local S3 + toxiproxy)
     // TEMP: Keep AWS SDK v1 full in tests during migration (Localstack utils may depend on it)
     testImplementation "com.amazonaws:aws-java-sdk:1.12.418"
     testImplementation 'com.palantir.docker.compose:docker-compose-junit-jupiter:2.3.0'
@@ -291,6 +294,47 @@ springBoot {
 
 test {
     testLogging.showStandardStreams = Boolean.getBoolean('testLogging')
+    exclude 'au/org/ala/images/storage/s3local/**'
+}
+
+// S3 fault-injection tests against the local S3 + toxiproxy stack (see s3-local/README.md).
+// Forwards -Pau.org.ala.images.s3.*=... / -Ps3local.*=... (or -D) into the test JVM.
+tasks.register('s3FaultTest', Test) {
+    description = 'Runs S3 upload fault-injection tests against a local S3 behind toxiproxy'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include 'au/org/ala/images/storage/s3local/**'
+    outputs.upToDateWhen { false }
+    testLogging.showStandardStreams = true
+    systemProperty 's3local.enabled', 'true'
+    def dumpDir = layout.buildDirectory.dir('s3-local')
+    doFirst {
+        systemProperty 's3local.dumpDir', dumpDir.get().asFile.absolutePath
+    }
+    // Faster-failing defaults than production; override per run.
+    def defaults = [
+            'au.org.ala.images.s3.timeouts.call'      : '5',
+            'au.org.ala.images.s3.timeouts.eviction'  : '3',
+            'au.org.ala.images.s3.crt.max-concurrency': '8',
+    ]
+    def forwarded = [:]
+    forwarded.putAll(defaults)
+    [System.getProperties(), project.properties].each { Map props ->
+        props.each { k, v ->
+            if (k instanceof String && (k.startsWith('au.org.ala.images.s3.') || k.startsWith('s3local.')) && v != null) {
+                forwarded[k] = v.toString()
+            }
+        }
+    }
+    systemProperties forwarded
+}
+
+// -PlocalS3=true runs the app against s3-local/docker-compose.yml (overlay config s3-local/local-s3.yml)
+if (project.hasProperty('localS3') && project.property('localS3') != 'false') {
+    tasks.matching { it.name in ['bootRun', 'run'] }.configureEach {
+        systemProperty 'spring.config.additional-location', "optional:file:${file('s3-local/local-s3.yml').absolutePath}"
+    }
 }
 
 publishing {

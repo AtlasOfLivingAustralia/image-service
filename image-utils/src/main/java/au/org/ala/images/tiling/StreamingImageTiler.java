@@ -1,5 +1,8 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+import java.io.OutputStream;
+
 import au.org.ala.images.optimisation.CommandExecutor;
 import com.google.common.io.ByteSink;
 import org.slf4j.Logger;
@@ -284,12 +287,17 @@ public class StreamingImageTiler implements IImageTiler {
                                int level, int col, int tmsRow) throws IOException {
         CommandExecutor.ExecResult res;
         try (OutputStream outputStream = tileSink.openStream()) {
-            res = execTilePipeline(levelFile, outputStream, suffix, left, top, width, height);
-        }
-        if (res.exitCode != 0) {
-            throw new IOException(String.format(
-                    "vips tile pipeline failed at level %d tile %d/%d: %s",
-                    level, col, tmsRow, res.stderr));
+            try {
+                res = execTilePipeline(levelFile, outputStream, suffix, left, top, width, height);
+                if (res.exitCode != 0) {
+                    throw new IOException(String.format(
+                            "vips tile pipeline failed at level %d tile %d/%d: %s",
+                            level, col, tmsRow, res.stderr));
+                }
+            } catch (Throwable t) {
+                AbortableOutputStream.abortQuietly(outputStream, t);
+                throw t;
+            }
         }
     }
 

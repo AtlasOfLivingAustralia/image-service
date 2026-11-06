@@ -1,0 +1,57 @@
+# Local S3 for development: Versity S3 gateway behind Toxiproxy (for optional fault injection).
+#
+#   app / tests --> toxiproxy :8666 --> versitygw (S3) :7070
+#
+# MinIO no longer publishes free Docker images, so Versity S3 Gateway (posix backend) is used.
+# Ports and credentials MUST stay in sync with S3LocalEnvironment (Testcontainers mode) and local-s3.yml.
+#
+#   docker compose -f s3-local/docker-compose.yml up -d                 # S3 + toxiproxy only
+#   docker compose -f s3-local/docker-compose.yml --profile app up -d   # + Elasticsearch for the full app
+name: image-service-s3-local
+
+services:
+  s3:
+    image: versity/versitygw:v1.10.0
+    command: ["--access", "localdev", "--secret", "localdev-secret", "--port", ":7070", "posix", "/data"]
+    ports:
+      - "7070:7070"   # direct S3 (bypasses fault injection; use for inspection)
+    tmpfs:
+      - /data
+
+  create-bucket:
+    image: amazon/aws-cli:2.17.0
+    depends_on: [s3]
+    environment:
+      AWS_ACCESS_KEY_ID: localdev
+      AWS_SECRET_ACCESS_KEY: localdev-secret
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for i in $$(seq 1 30); do
+          aws --endpoint-url http://s3:7070 s3api head-bucket --bucket image-service 2>/dev/null && exit 0
+          aws --endpoint-url http://s3:7070 s3api create-bucket --bucket image-service 2>/dev/null && exit 0
+          sleep 1
+        done
+        exit 1
+    restart: "no"
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    depends_on: [s3]
+    ports:
+      - "8474:8474"   # toxiproxy HTTP API (see toxic.sh)
+      - "8666:8666"   # proxied S3 endpoint - point the app/tests here
+    volumes:
+      - ./toxiproxy.json:/config/toxiproxy.json:ro
+
+  elasticsearch:
+    profiles: [app]
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.29
+    environment:
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - discovery.type=single-node
+      - cluster.routing.allocation.disk.threshold_enabled=false
+    ports:
+      - "9200:9200"

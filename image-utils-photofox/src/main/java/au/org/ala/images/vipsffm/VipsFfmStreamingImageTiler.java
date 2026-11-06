@@ -1,5 +1,7 @@
 package au.org.ala.images.vipsffm;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import app.photofox.vipsffm.VImage;
 import app.photofox.vipsffm.Vips;
 import app.photofox.vipsffm.VipsOption;
@@ -437,17 +439,22 @@ public class VipsFfmStreamingImageTiler implements IImageTiler {
         try {
             VImage outputImage = prepareImageForOutput(tileImage, width, height);
             long tOpen0 = System.nanoTime();
-            OutputStream outputStream = tileSink.openStream();
-            metrics.sinkOpenCloseNanos.add(System.nanoTime() - tOpen0);
-            long tEncode0 = System.nanoTime();
-            TimedOutputStream timed = new TimedOutputStream(outputStream, metrics.sinkWriteNanos);
-            try {
-                outputImage.writeToStream(timed, encodeSuffix);
-            } finally {
-                long tClose0 = System.nanoTime();
-                timed.close();
-                metrics.sinkOpenCloseNanos.add(System.nanoTime() - tClose0);
+            long tEncode0;
+            long tClose0 = 0;
+            try (OutputStream outputStream = tileSink.openStream()) {
+                metrics.sinkOpenCloseNanos.add(System.nanoTime() - tOpen0);
+                tEncode0 = System.nanoTime();
+                TimedOutputStream timed = new TimedOutputStream(outputStream, metrics.sinkWriteNanos);
+                try {
+                    outputImage.writeToStream(timed, encodeSuffix);
+                    timed.flush();
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
+                }
+                tClose0 = System.nanoTime();
             }
+            metrics.sinkOpenCloseNanos.add(System.nanoTime() - tClose0);
             metrics.encodeWallNanos.add(System.nanoTime() - tEncode0);
         } catch (IOException e) {
             throw e;
