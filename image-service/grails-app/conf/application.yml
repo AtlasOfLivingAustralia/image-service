@@ -208,6 +208,7 @@ environments:
                 inbox: '/tmp/image-service/incoming'
             exportDir: '/tmp/image-service/exports'
             batchUpload: '/tmp/image-service/uploads'
+        aws.s3.upload.ingest.subscribe.timeout.seconds: 60
     travis:
       info:
         app:
