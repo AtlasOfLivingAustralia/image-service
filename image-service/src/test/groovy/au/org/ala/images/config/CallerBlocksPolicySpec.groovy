@@ -58,7 +58,9 @@ class CallerBlocksPolicySpec extends Specification {
         pool.prestartAllCoreThreads()
         def policy = new CallerBlocksPolicy("Test pool", 1)
         def releaseFirst = new CountDownLatch(1)
-        pool.execute({ releaseFirst.await(10, TimeUnit.SECONDS) } as Runnable)
+        def firstStarted = new CountDownLatch(1)
+        pool.execute({ firstStarted.countDown(); releaseFirst.await(10, TimeUnit.SECONDS) } as Runnable)
+        assert firstStarted.await(5, TimeUnit.SECONDS)
         pool.execute({ } as Runnable) // fill the queue slot
         assert pool.queue.remainingCapacity() == 0
 
