@@ -106,8 +106,6 @@ dependencies {
     implementation "software.amazon.awssdk:s3-transfer-manager"
     implementation "software.amazon.awssdk:sts"
     implementation "software.amazon.awssdk:auth"
-    // crt-java 0.48.x pulls in aws-c-s3 stream read-ordering fix (#656) + async pause/resume machinery that address the shared-S3TransferManager stuck-subscribe failure (aws-sdk-java-v2#4893); bom 2.51.2 bundles aws-crt 0.48.2, pin 0.48.3 explicitly
-    implementation("software.amazon.awssdk.crt:aws-crt:0.48.3")
 
     // AWS SDK requires Apache HTTP Client v5.6+ but Grails/Spring Boot pin it to 5.1, so force it here:
     // TODO Review on Grails/Spring Boot/AWS SDK upgrades
