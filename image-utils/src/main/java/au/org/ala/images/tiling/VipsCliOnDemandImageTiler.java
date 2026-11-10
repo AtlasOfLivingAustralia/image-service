@@ -1,5 +1,8 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+import java.io.OutputStream;
+
 import au.org.ala.images.optimisation.CommandExecutor;
 import com.google.common.io.ByteSink;
 import org.slf4j.Logger;
@@ -93,10 +96,15 @@ public class VipsCliOnDemandImageTiler implements IOnDemandImageTiler {
             outputHeight = subsample == 1 ? srcH : (int) Math.ceil(srcH / (double) subsample);
             CommandExecutor.ExecResult res;
             try (OutputStream outputStream = byteSink.openStream()) {
-                res = execPipeline(bis, outputStream, suffix, srcX, srcY, srcW, srcH, scale, subsample, outputWidth, outputHeight);
-            }
-            if (res.exitCode != 0) {
-                throw new IOException("vips pipe failed: " + res.stderr);
+                try {
+                    res = execPipeline(bis, outputStream, suffix, srcX, srcY, srcW, srcH, scale, subsample, outputWidth, outputHeight);
+                    if (res.exitCode != 0) {
+                        throw new IOException("vips pipe failed: " + res.stderr);
+                    }
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
+                }
             }
 
             return TileGenerationResult.success();

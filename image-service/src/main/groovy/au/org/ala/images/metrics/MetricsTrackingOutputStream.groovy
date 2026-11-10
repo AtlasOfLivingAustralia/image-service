@@ -1,5 +1,6 @@
 package au.org.ala.images.metrics
 
+import au.org.ala.images.util.AbortableOutputStream
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import io.micrometer.core.instrument.MeterRegistry
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeUnit
  */
 @CompileStatic
 @Slf4j
-class MetricsTrackingOutputStream extends FilterOutputStream {
+class MetricsTrackingOutputStream extends FilterOutputStream implements AbortableOutputStream {
     
     private final MeterRegistry meterRegistry
     private final String bucket
@@ -38,22 +39,34 @@ class MetricsTrackingOutputStream extends FilterOutputStream {
     
     @Override
     void write(int b) throws IOException {
-        super.write(b)
+        out.write(b)
         bytesWritten++
     }
     
     @Override
     void write(byte[] b) throws IOException {
-        super.write(b)
-        bytesWritten += b.length
+        write(b, 0, b.length)
     }
     
     @Override
     void write(byte[] b, int off, int len) throws IOException {
-        super.write(b, off, len)
+        // Delegate the whole range; FilterOutputStream would write (and count) byte by byte.
+        out.write(b, off, len)
         bytesWritten += len
     }
     
+    @Override
+    void abort(Throwable cause) {
+        if (closed) {
+            return
+        }
+        closed = true
+        AbortableOutputStream.abortQuietly(out, cause)
+        if (meterRegistry != null) {
+            meterRegistry.counter("s3.upload.aborted", "bucket", bucket, "region", region, "type", operationType).increment()
+        }
+    }
+
     @Override
     void close() throws IOException {
         if (!closed) {
