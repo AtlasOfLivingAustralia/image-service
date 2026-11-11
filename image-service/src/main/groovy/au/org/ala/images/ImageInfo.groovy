@@ -11,6 +11,8 @@ class ImageInfo {
     String contentType
     String extension
     URI redirectUri
+    // when redirectUri stops being valid (e.g. presigned URLs), null if it does not expire
+    Date redirectExpires
     // takes an optional single Range parameter
     Closure<InputStream> inputStreamSupplier
     boolean shouldExist // whether the requested image should actually exist (ie the image record exists but the bytes don't)
