@@ -55,6 +55,7 @@ class ImageController implements MetricsSupport {
     def collectoryService
     def authService
     def analyticsService
+    def redirectCacheHeadersService
 
     @Value('${placeholder.sound.thumbnail}')
     Resource audioThumbnail
@@ -332,14 +333,9 @@ class ImageController implements MetricsSupport {
         }
 
         if (!noRedirect && imageInfo.redirectUri) {
-            if (disableCache) {
-                // Replace any cache headers with no-cache headers
-                response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
-                response.setHeader('Pragma', 'no-cache')
-                response.setDateHeader('Expires', 0)
-            }
             URI uri = imageInfo.redirectUri
             if (uri) {
+                redirectCacheHeadersService.apply(response, imageInfo, disableCache || noCache || params.containsKey('i'))
                 response.status = SC_FOUND
                 response.setHeader('Location', uri.toString())
                 return

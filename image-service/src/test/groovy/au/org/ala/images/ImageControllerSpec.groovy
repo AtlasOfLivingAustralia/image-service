@@ -36,6 +36,7 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
     Closure doWithSpring() {{ ->
         imageService(ImageService)
         cacheHeadersService(CacheHeadersService)
+        redirectCacheHeadersService(RedirectCacheHeadersService)
     }}
 
     @Override
@@ -294,6 +295,43 @@ class ImageControllerSpec extends Specification implements ControllerUnitTest<Im
         new ImageStoreService.DerivativeLoadTimeout('timed out')              | 504    | 'thumbnail' | false
         new ImageStoreService.DerivativeLoadRejected('overloaded')            | 503    | 'tile'      | false
         new ImageStoreService.GenerateDerivativeTimeout('generator saturated') | 503    | 'thumbnail' | true
+    }
+
+    @Unroll
+    def "redirect cache headers: #description"() {
+        given:
+        String identifier = UUID.randomUUID().toString()
+        params.id = identifier
+        if (invalidate) {
+            params.i = ''
+        }
+        controller.imageStoreService = Mock(ImageStoreService)
+        controller.analyticsService = Mock(AnalyticsService)
+        controller.disableCache = disableCache
+        Date redirectExpires = expiresInSeconds == null ? null : new Date(System.currentTimeMillis() + expiresInSeconds * 1000L)
+
+        when:
+        controller.proxyImageThumbnail()
+
+        then:
+        1 * controller.imageStoreService.thumbnailImageInfo(identifier, '', _) >> new ImageInfo(
+                exists: true, imageIdentifier: identifier, length: 10, etag: 'abc', lastModified: dateUploaded,
+                contentType: 'image/jpeg', extension: 'jpg',
+                redirectUri: new URI('https://example.org/thumb.jpg'), redirectExpires: redirectExpires)
+        response.status == 302
+        response.getHeader('Location') == 'https://example.org/thumb.jpg'
+        response.getHeader('Cache-Control') ==~ cacheControl
+        response.getHeader('ETag') == null
+        response.getHeader('Last-Modified') == null
+
+        where:
+        description                       | expiresInSeconds | invalidate | disableCache || cacheControl
+        'public url'                      | null             | false      | false        || /public, max-age=3600/
+        'presigned url'                   | 3600             | false      | false        || /private, max-age=300/
+        'presigned url near expiry'       | 160              | false      | false        || /private, max-age=(99|100)/
+        'presigned url within margin'     | 30               | false      | false        || /no-store, no-cache, must-revalidate/
+        'invalidate param'                | null             | true       | false        || /no-store, no-cache, must-revalidate/
+        'disableCache'                    | null             | false      | true         || /no-store, no-cache, must-revalidate/
     }
 
     def "permanently missing thumbnail serves placeholder 404 with Cache-Control '#cacheControl'"() {

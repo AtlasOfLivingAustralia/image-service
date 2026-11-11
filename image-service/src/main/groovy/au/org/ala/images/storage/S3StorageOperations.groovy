@@ -60,6 +60,7 @@ import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.services.s3.model.*
 
 import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.CompletionException
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -127,6 +128,8 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
     private Function<S3AsyncClient, S3TransferManager> transferManagerFactoryForTesting
 
     private volatile S3TransferManager legacyS3TransferManager
+
+    private static final Duration PRESIGNED_REDIRECT_DURATION = Duration.ofHours(1)
 
     private static final int maxConnections = Holders.getConfig().getProperty('aws.s3.max.connections', Integer, Integer.getInteger('au.org.ala.images.s3.max.connections', 500))
     private static final int maxErrorRetry = Holders.getConfig().getProperty('aws.s3.max.retry', Integer, Integer.getInteger('au.org.ala.images.s3.max.retry', 3))
@@ -1125,10 +1128,9 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
             S3Utilities utils = getUtilities()
             def url = utils.getUrl(GetUrlRequest.builder().bucket(bucket).key(path).build())
             url.toURI()
-        } else if (privateAcl) {
-            // Presign with AWS SDK v2 for 1 hour
+        } else if (redirectIsPresigned()) {
             def presignReq = GetObjectPresignRequest.builder()
-                    .signatureDuration(Duration.ofHours(1))
+                    .signatureDuration(PRESIGNED_REDIRECT_DURATION)
                     .getObjectRequest { b -> b.bucket(bucket).key(path) }
                     .build()
             def presigned = s3Presigner.withCloseable {
@@ -1141,6 +1143,17 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
             def url = utils.getUrl(GetUrlRequest.builder().bucket(bucket).key(path).build())
             url.toURI()
         }
+    }
+
+    private boolean redirectIsPresigned() {
+        !cloudfrontDomain && !publicRead && privateAcl
+    }
+
+    /**
+     * Captured before presigning so the reported expiry is never later than the real signature expiry.
+     */
+    private Date redirectExpiry() {
+        redirectIsPresigned() ? Date.from(Instant.now().plus(PRESIGNED_REDIRECT_DURATION)) : null
     }
 
     def updateACL() {
@@ -1674,6 +1687,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
             def head = headObjectAsyncAware(bkt, pth)
             def contentLength = head.contentLength()
             Date lastMod = head.lastModified() != null ? Date.from(head.lastModified()) : null
+            Date redirectExpires = supportsRedirect ? redirectExpiry() : null
             return new ImageInfo(
                     exists: true,
                     length: contentLength,
@@ -1682,6 +1696,7 @@ class S3StorageOperations implements StorageOperations, AutoCloseable {
                     contentType: head.contentType(),
                     extension: FilenameUtils.getExtension(path),
                     redirectUri: supportsRedirect ? redirectLocation(path) : null,
+                    redirectExpires: redirectExpires,
                     inputStreamSupplier: { Range range -> inputStream(path, range ?: Range.emptyRange(contentLength)) }
             )
         } catch (CompletionException e) {

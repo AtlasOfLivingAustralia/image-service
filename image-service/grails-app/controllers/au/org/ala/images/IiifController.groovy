@@ -36,6 +36,7 @@ class IiifController implements MetricsSupport {
 
     GrailsApplication grailsApplication
     IiifImageService iiifImageService
+    RedirectCacheHeadersService redirectCacheHeadersService
 
     private static final String CONTEXT = 'http://iiif.io/api/image/3/context.json'
     private static final String PROTOCOL = 'http://iiif.io/api/image'
@@ -193,19 +194,24 @@ class IiifController implements MetricsSupport {
             }
 
             enableCors()
+
+            def imageInfo = result.imageInfo
+
+            // Redirect before applying the image's cache headers: those describe the bytes (never expires,
+            // ETag) and must not be attached to a redirect whose target can move or expire.
+            if (!noRedirect && imageInfo.redirectUri) {
+                incrementCounter('iiif.render.redirect', 'IIIF render redirects', [format: format ?: 'unknown'])
+                redirectCacheHeadersService.apply(response, imageInfo, disableCache || invalidate)
+                response.status = HttpServletResponse.SC_FOUND
+                response.setHeader('Location', imageInfo.redirectUri.toString())
+                return
+            }
+
             applyCacheHeaders(disableCache, grailsApplication.config.getProperty('images.cache.headers', Boolean, true), result.etag, result.lastModified)
 
             if (!disableCache && !checkForModified(result.etag, result.lastModified)) {
                 incrementCounter('iiif.render.notmodified', 'IIIF render not modified (304)', [format: format ?: 'unknown'])
                 response.sendError(HttpServletResponse.SC_NOT_MODIFIED)
-                return
-            }
-
-            def imageInfo = result.imageInfo
-
-            if (!noRedirect && imageInfo.redirectUri) {
-                incrementCounter('iiif.render.redirect', 'IIIF render redirects', [format: format ?: 'unknown'])
-                response.sendRedirect(imageInfo.redirectUri.toString())
                 return
             }
 
