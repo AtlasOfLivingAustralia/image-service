@@ -2,11 +2,13 @@ package au.org.ala.images
 
 import au.org.ala.web.AlaSecured
 import au.org.ala.web.CASRoles
+import au.org.ala.web.SSO
 import grails.converters.JSON
 import org.apache.commons.lang3.StringUtils
 
 import java.util.regex.Pattern
 
+@SSO(disabledByFeatureFlag = 'images.search.anonymousAccess')
 class SearchController {
 
     def searchService

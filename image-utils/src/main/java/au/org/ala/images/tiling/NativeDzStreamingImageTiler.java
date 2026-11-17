@@ -1,5 +1,7 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import au.org.ala.images.jna.InputStreamVipsSource;
 import au.org.ala.images.jna.NativeLibraryDetector;
 import au.org.ala.images.jna.NativeDzTilerBridgeLoader;
@@ -95,7 +97,12 @@ public class NativeDzStreamingImageTiler implements IImageTiler {
 
                     byte[] tileBytes = data.getByteArray(0, (int) length);
                     try (OutputStream os = sink.openStream()) {
-                        os.write(tileBytes);
+                        try {
+                            os.write(tileBytes);
+                        } catch (Throwable t) {
+                            AbortableOutputStream.abortQuietly(os, t);
+                            throw t;
+                        }
                     }
                     return 0;
                 } catch (Exception e) {

@@ -82,3 +82,31 @@ Effects when `images.disableCache = true`:
 - `ImageStoreService` will bypass the Caffeine caches for thumbnail and tile lookups; results will not be cached in memory.
 
 By default, `images.disableCache` is `false`.
+
+### Redirects to storage and presigned URLs
+
+When a storage location has redirects enabled, the image and IIIF endpoints answer with a `302` to the storage URL instead of streaming the bytes (add `?nr` to opt out per request). The redirect gets its own `Cache-Control`, separate from the image bytes:
+
+- CloudFront / public URLs: `public, max-age=<images.redirect.cache.maxAgeSeconds>` (default 3600)
+- Presigned S3 URLs (`privateAcl` without CloudFront or `publicRead`, valid for 1 hour): `private, max-age=<the smaller of images.redirect.cache.presignedMaxAgeSeconds (default 300) and the time left before the URL expires minus images.redirect.cache.expirySafetyMarginSeconds (default 60)>`
+- `?i`, `images.disableCache=true`, or a presigned URL that is about to expire: `no-store`
+
+**Important: keep the in-memory lookup caches shorter than the presigned URL TTL.** `ImageStoreService` caches lookup results, including the redirect URL, in Caffeine caches configured by:
+
+- `image.store.lookup.cache.originalConfig`
+- `image.store.lookup.cache.thumbnailsConfig`
+- `image.store.lookup.cache.tilesConfig`
+
+The defaults (`maximumSize=10000`) have **no time-based expiry**, so with presigned redirects a cached entry can keep handing out a URL that has already expired (clients get `403` from S3). If you use presigned redirects, add an expiry comfortably below the 1 hour signature lifetime, e.g.:
+
+```
+image:
+  store:
+    lookup:
+      cache:
+        originalConfig: maximumSize=10000,expireAfterWrite=30m
+        thumbnailsConfig: maximumSize=10000,expireAfterWrite=30m
+        tilesConfig: maximumSize=10000,expireAfterWrite=30m
+```
+
+Use `expireAfterWrite`, not `expireAfterAccess`: an entry that keeps being read would otherwise never expire. Public and CloudFront URLs don't expire, so this doesn't apply to them.

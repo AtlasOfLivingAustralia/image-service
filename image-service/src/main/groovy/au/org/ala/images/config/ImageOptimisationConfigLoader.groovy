@@ -5,7 +5,6 @@ import groovy.transform.CompileStatic
 import groovy.transform.CompileDynamic
 import groovy.util.logging.Slf4j
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.stereotype.Component
 
 import javax.annotation.PostConstruct
 
@@ -20,10 +19,12 @@ import javax.annotation.PostConstruct
  * It does this in a @PostConstruct method and modifies the existing bean instance,
  * so that other beans that have already had ImageOptimisationConfig injected
  * will see the updated values.
+ *
+ * Registered via {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}
+ * because Grails does not component-scan the application package.
  */
 @Slf4j
 @CompileStatic
-@Component
 class ImageOptimisationConfigLoader {
 
     @Autowired

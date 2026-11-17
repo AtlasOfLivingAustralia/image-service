@@ -1,5 +1,8 @@
 package au.org.ala.images.vipsffm;
 
+import au.org.ala.images.util.AbortableOutputStream;
+import java.io.OutputStream;
+
 import app.photofox.vipsffm.VImage;
 import app.photofox.vipsffm.VipsOption;
 import app.photofox.vipsffm.enums.VipsCompassDirection;
@@ -109,7 +112,12 @@ public class VipsFfmOnDemandImageTiler implements IOnDemandImageTiler {
             String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg[Q=85]";
             VImage outputImage = prepareImageForOutput(workingImage);
             try (var outputStream = byteSink.openStream()) {
-                outputImage.writeToStream(outputStream, suffix);
+                try {
+                    outputImage.writeToStream(outputStream, suffix);
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
+                }
             }
 
             return TileGenerationResult.success();

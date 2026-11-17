@@ -1,5 +1,7 @@
 package au.org.ala.images.thumb;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import au.org.ala.images.util.ByteSinkFactory;
 import au.org.ala.images.util.DefaultImageReaderSelectionStrategy;
 import au.org.ala.images.util.FileByteSinkFactory;
@@ -334,7 +336,15 @@ public class ImageThumbnailer implements IImageThumbnailer {
                 if (thumbImage != null) {
                     boolean result = false;
                     try (OutputStream thumbOutputStream = destination.openStream()) {
-                        result = ImageIO.write(thumbImage, isPNG ? "PNG" : "JPG", thumbOutputStream);
+                        try {
+                            result = ImageIO.write(thumbImage, isPNG ? "PNG" : "JPG", thumbOutputStream);
+                            if (!result) {
+                                AbortableOutputStream.abortQuietly(thumbOutputStream, new IOException("ImageIO failed to write thumbnail"));
+                            }
+                        } catch (Throwable t) {
+                            AbortableOutputStream.abortQuietly(thumbOutputStream, t);
+                            throw t;
+                        }
                     }
                     thumbImage.flush();
                     if (result) {

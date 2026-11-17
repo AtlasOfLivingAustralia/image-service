@@ -1,5 +1,7 @@
 package au.org.ala.images.vipsffm;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import app.photofox.vipsffm.VImage;
 import app.photofox.vipsffm.VipsOption;
 import au.org.ala.images.thumb.IImageThumbnailer;
@@ -86,7 +88,12 @@ public class VipsFfmStreamingImageThumbnailer implements IImageThumbnailer {
             // Save to target (streaming output).
             String suffix = thumbDef.getName().endsWith(".png") ? ".png" : ".jpg[Q=85]";
             try (OutputStream outputStream = destination.openStream()) {
-                thumb.writeToStream(outputStream, suffix);
+                try {
+                    thumb.writeToStream(outputStream, suffix);
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
+                }
             }
 
             // Get actual dimensions.

@@ -1,5 +1,7 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import au.org.ala.images.ffm.InputStreamVipsSourceFFM;
 import au.org.ala.images.ffm.NativeDzTilerBridgeLoaderFFM;
 import au.org.ala.images.ffm.NativeDzTilerLibraryFFM;
@@ -106,7 +108,12 @@ public class FfmNativeDzStreamingImageTiler implements IImageTiler {
                             ByteSink sink = columnSink.getTileSink(y);
                             byte[] tileBytes = toByteArray(data, length);
                             try (OutputStream os = sink.openStream()) {
-                                os.write(tileBytes);
+                                try {
+                                    os.write(tileBytes);
+                                } catch (Throwable t) {
+                                    AbortableOutputStream.abortQuietly(os, t);
+                                    throw t;
+                                }
                             }
                             return 0;
                         } catch (Exception e) {
