@@ -267,9 +267,7 @@
                 };
                 imgvwr.areYouSure(options);
             });
-
             imgvwr.bindImageTagTooltips();
-
             loadTags();
         });
 
