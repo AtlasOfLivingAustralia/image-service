@@ -18,12 +18,12 @@ import io.swagger.v3.oas.annotations.parameters.RequestBody
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import org.apache.http.HttpStatus
-import grails.plugins.csv.CSVWriter
+import com.opencsv.CSVWriter
 import org.springframework.web.multipart.MultipartFile
 
-import javax.servlet.http.HttpServletRequest
-import javax.ws.rs.Consumes
-import javax.ws.rs.Produces
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.ws.rs.Consumes
+import jakarta.ws.rs.Produces
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPOutputStream
 
@@ -2341,20 +2341,17 @@ class WebServiceController implements MetricsSupport {
             response.contentType = "text/csv"
 
             def bos = new OutputStreamWriter(response.outputStream)
+            def writer = new CSVWriter(bos)
 
-            def writer = new CSVWriter(bos, {
-                for (int i = 0; i < harvestResults.columnHeaders.size(); ++i) {
-                    def col = harvestResults.columnHeaders[i]
-                    "${col}" {
-                        it[col] ?: ""
-                    }
-                }
-            })
+            def headers = harvestResults.columnHeaders as String[]
+            writer.writeNext(headers)
 
-            harvestResults.data.each {
-                writer << it
+            harvestResults.data.each { rowMap ->
+                def row = headers.collect { col -> rowMap[col]?.toString() ?: "" } as String[]
+                writer.writeNext(row)
             }
 
+            writer.flush()
             bos.flush()
             bos.close()
         } else {

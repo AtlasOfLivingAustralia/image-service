@@ -10,8 +10,7 @@ import groovy.util.logging.Slf4j
 import org.javaswift.joss.client.factory.AuthenticationMethod
 import org.springframework.beans.factory.annotation.Autowired
 
-import javax.annotation.PostConstruct
-import javax.annotation.PreDestroy
+import jakarta.annotation.PreDestroy
 import java.util.concurrent.ConcurrentHashMap
 
 /**

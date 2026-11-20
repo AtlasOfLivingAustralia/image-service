@@ -29,8 +29,7 @@ class ImagesTagLib {
         def bodyContent = body.call()
         def crumbLabel = attrs.crumbLabel ?: attrs.title
 
-        sitemesh.captureContent(tag:'page-header') {
-
+        grailsLayout.captureContent(tag: 'page-header') {
             def crumbList = []
             def keyIndex = 1
 

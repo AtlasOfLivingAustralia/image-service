@@ -6,7 +6,7 @@ import groovy.transform.CompileDynamic
 import groovy.util.logging.Slf4j
 import org.springframework.beans.factory.annotation.Autowired
 
-import javax.annotation.PostConstruct
+import jakarta.annotation.PostConstruct
 
 /**
  * Loads ImageOptimisationConfig from grailsApplication.config manually

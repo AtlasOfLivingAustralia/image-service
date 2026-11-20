@@ -53,8 +53,8 @@ import org.springframework.orm.hibernate5.HibernateOptimisticLockingFailureExcep
 import org.springframework.transaction.TransactionStatus
 import org.springframework.web.multipart.MultipartFile
 
-import javax.annotation.PostConstruct
-import javax.annotation.PreDestroy
+import jakarta.annotation.PostConstruct
+import jakarta.annotation.PreDestroy
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -983,7 +983,11 @@ unnest(all_urls) AS unnest_url;
     }
 
     def hasImageCaseFriendlyProperty(Image image, String propertyName) {
-        imagePropertyMap.get(propertyName.toLowerCase())
+        if (!propertyName) return null
+        if (!imagePropertyMap) {
+            initImagePropertyMap()
+        }
+        imagePropertyMap?.get(propertyName.toLowerCase())
     }
 
     def schedulePostIngestTasks(Long imageId, String identifier, String fileName, String uploaderId, Map<String, Object> extractedMetadata = null) {

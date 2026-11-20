@@ -7,7 +7,6 @@ import grails.testing.gorm.DomainUnitTest
 import org.javaswift.joss.client.factory.AuthenticationMethod
 import org.junit.jupiter.api.extension.RegisterExtension
 
-
 class SwiftStorageLocationSpec extends StorageLocationSpec implements DomainUnitTest<SwiftStorageLocation> {
 
     @RegisterExtension

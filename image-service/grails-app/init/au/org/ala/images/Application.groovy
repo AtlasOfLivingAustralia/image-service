@@ -10,8 +10,14 @@ import org.springframework.context.annotation.Bean
 import org.springframework.core.task.TaskExecutor
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 
-import javax.annotation.PostConstruct
+import jakarta.annotation.PostConstruct
 import javax.imageio.ImageIO
+import java.awt.Color
+import java.lang.reflect.Constructor
+import java.lang.reflect.InvocationTargetException
+import java.util.ServiceLoader
+import java.util.concurrent.Executor
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.RejectedExecutionHandler
 
 @Slf4j

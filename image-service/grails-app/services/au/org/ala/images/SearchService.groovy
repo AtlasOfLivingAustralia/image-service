@@ -4,7 +4,7 @@ import au.org.ala.images.metrics.MetricsSupport
 import grails.web.servlet.mvc.GrailsParameterMap
 import org.springframework.web.context.request.RequestContextHolder
 
-import javax.servlet.http.HttpSession
+import jakarta.servlet.http.HttpSession
 import java.lang.reflect.Field
 import java.util.regex.Pattern
 

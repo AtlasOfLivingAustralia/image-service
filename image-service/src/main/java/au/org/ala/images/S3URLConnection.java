@@ -18,6 +18,9 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 
 /**
@@ -174,7 +177,18 @@ public class S3URLConnection extends URLConnection {
     @Override
     public long getExpiration() {
         ensureConnected();
-        return object.response().expires() != null ? object.response().expires().toEpochMilli() : 0L;
+        String expires = object.response().expiresString();
+        if (Strings.isBlank(expires)) {
+            return 0L;
+        }
+        try {
+            return ZonedDateTime.parse(expires, DateTimeFormatter.RFC_1123_DATE_TIME)
+                    .toInstant()
+                    .toEpochMilli();
+        } catch (DateTimeParseException e) {
+            log.debug("Unable to parse S3 Expires header: {}", expires, e);
+            return 0L;
+        }
     }
 
     @Override

@@ -11,7 +11,7 @@ import groovy.util.logging.Slf4j
 import org.apache.commons.io.FilenameUtils
 import org.springframework.beans.factory.annotation.Value
 
-import javax.annotation.PostConstruct
+import jakarta.annotation.PostConstruct
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse as JavaHttpResponse

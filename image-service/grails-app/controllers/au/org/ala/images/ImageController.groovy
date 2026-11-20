@@ -20,24 +20,24 @@ import org.apache.commons.io.IOUtils
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
 
-import javax.servlet.http.HttpServletRequest
-import javax.ws.rs.Path
-import javax.ws.rs.Produces
 import java.util.concurrent.TimeUnit
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.ws.rs.Path
+import jakarta.ws.rs.Produces
 import java.util.concurrent.atomic.AtomicLong
 
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.PATH
 import static io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY
-import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST
-import static javax.servlet.http.HttpServletResponse.SC_FOUND
-import static javax.servlet.http.HttpServletResponse.SC_GATEWAY_TIMEOUT
-import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND
-import static javax.servlet.http.HttpServletResponse.SC_NOT_MODIFIED
-import static javax.servlet.http.HttpServletResponse.SC_OK
-import static javax.servlet.http.HttpServletResponse.SC_PARTIAL_CONTENT
-import static javax.servlet.http.HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE
-import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE
+import static jakarta.servlet.http.HttpServletResponse.SC_BAD_REQUEST
+import static jakarta.servlet.http.HttpServletResponse.SC_FOUND
+import static jakarta.servlet.http.HttpServletResponse.SC_GATEWAY_TIMEOUT
+import static jakarta.servlet.http.HttpServletResponse.SC_NOT_FOUND
+import static jakarta.servlet.http.HttpServletResponse.SC_NOT_MODIFIED
+import static jakarta.servlet.http.HttpServletResponse.SC_OK
+import static jakarta.servlet.http.HttpServletResponse.SC_PARTIAL_CONTENT
+import static jakarta.servlet.http.HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE
+import static jakarta.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE
 
 @Slf4j
 class ImageController implements MetricsSupport {
@@ -56,6 +56,7 @@ class ImageController implements MetricsSupport {
     def authService
     def analyticsService
     def redirectCacheHeadersService
+    def httpCacheService
 
     @Value('${placeholder.sound.thumbnail}')
     Resource audioThumbnail
@@ -359,7 +360,7 @@ class ImageController implements MetricsSupport {
                         response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
                     }
                     if (cacheHeaders) {
-                        cache(shared: true, neverExpires: true)
+                        httpCacheService.cache(response, [shared: true, neverExpires: true])
                     }
                     response.sendError(SC_NOT_MODIFIED)
                     return
@@ -437,7 +438,7 @@ class ImageController implements MetricsSupport {
         } catch (Exception e) {
             log.error("Exception serving image", e)
             recordError('serveImage', [type: requestType, error: e.class.simpleName])
-            cache(false)
+            httpCacheService.cache(response, false)
             if (response.containsHeader(HEADER_LAST_MODIFIED)) {
                 response.setHeader(HEADER_LAST_MODIFIED, '')
             }
@@ -465,7 +466,7 @@ class ImageController implements MetricsSupport {
             response.setDateHeader(HEADER_LAST_MODIFIED, lastMod.time)
         }
         if (cacheHeadersEnabled) {
-            cache(shared: true, neverExpires: true)
+            httpCacheService.cache(response, [shared: true, neverExpires: true])
         }
     }
 

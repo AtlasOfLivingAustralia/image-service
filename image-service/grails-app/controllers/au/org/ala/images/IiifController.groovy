@@ -14,9 +14,9 @@ import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import org.springframework.beans.factory.annotation.Value
 
-import javax.ws.rs.Produces
+import jakarta.ws.rs.Produces
 
-import javax.servlet.http.HttpServletResponse
+import jakarta.servlet.http.HttpServletResponse
 import org.apache.commons.io.IOUtils
 
 /**
