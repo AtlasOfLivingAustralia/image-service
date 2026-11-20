@@ -2,7 +2,7 @@ package au.org.ala.images
 
 import org.springframework.beans.factory.annotation.Value
 
-import javax.servlet.http.HttpServletResponse
+import jakarta.servlet.http.HttpServletResponse
 
 /**
  * Cache headers for 302 redirects to storage, shared by ImageController and IiifController.
