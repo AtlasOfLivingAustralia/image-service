@@ -1,5 +1,7 @@
 package au.org.ala.images.thumb;
 
+import au.org.ala.images.util.AbortableOutputStream;
+
 import au.org.ala.images.optimisation.CommandExecutor;
 import au.org.ala.images.util.ByteSinkFactory;
 import com.google.common.io.ByteSink;
@@ -77,10 +79,17 @@ public class StreamingImageThumbnailer implements IImageThumbnailer {
             }
 
             try (OutputStream outputStream = destination.openStream()) {
-                CommandExecutor.ExecResult result = commandExecutor.exec("vips".equals(tool) ? "vips" : "magick", args, workDir, inputStream, timeoutSeconds, outputStream);
+                CommandExecutor.ExecResult result;
+                try {
+                    result = commandExecutor.exec("vips".equals(tool) ? "vips" : "magick", args, workDir, inputStream, timeoutSeconds, outputStream);
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
+                }
 
                 if (result.exitCode != 0) {
                     log.warn("Tool {} failed with exit code {}: {}", tool, result.exitCode, result.stderr);
+                    AbortableOutputStream.abortQuietly(outputStream, new IOException("Tool " + tool + " failed with exit code " + result.exitCode));
                     return null;
                 }
 

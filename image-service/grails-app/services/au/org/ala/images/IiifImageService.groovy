@@ -2,6 +2,7 @@ package au.org.ala.images
 
 import au.org.ala.images.iiif.IiifImageProcessor
 import au.org.ala.images.storage.StorageOperations
+import au.org.ala.images.util.AbortableOutputStream
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 import com.google.common.io.ByteSource
@@ -171,8 +172,15 @@ class IiifImageService {
             }
             // this image-utils call doesn't support a bytesinkfactory, so we're doing it ourselves
             // TODO should thumbnail_+type come from the StoragePathStrategy?
-            def result = operations.thumbnailByteSinkFactory(identifier).getByteSinkForNames('thumbnail_'+type).openBufferedStream().withStream { out ->
-                iiifImageProcessor.process(byteSource, region, size, rotation, quality, format, out)
+            try (OutputStream stream = operations.thumbnailByteSinkFactory(identifier).getByteSinkForNames('thumbnail_'+type).openStream()) {
+                try {
+                    def out = new BufferedOutputStream(stream)
+                    iiifImageProcessor.process(byteSource, region, size, rotation, quality, format, out)
+                    out.flush()
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(stream, t)
+                    throw t
+                }
             }
             // Don't save an ImageThumbnail record for this generated thumbnail.  The thumbnail table needs to be addressable
             // through the main Image Controller.

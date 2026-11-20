@@ -1,5 +1,8 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+import java.io.OutputStream;
+
 import au.org.ala.images.optimisation.CommandExecutor;
 import com.google.common.io.ByteSink;
 import org.slf4j.Logger;
@@ -87,11 +90,15 @@ public class MagickCliOnDemandImageTiler implements IOnDemandImageTiler {
 
             CommandExecutor.ExecResult res;
             try (OutputStream outputStream = byteSink.openStream()) {
-                res = commandExecutor.exec(magickCommand, buildMagickArgs(srcX, srcY, srcW, srcH, targetWidth, targetHeight), null, bis, 60, outputStream);
-            }
-                
-            if (res.exitCode != 0) {
-                throw new IOException("magick crop failed: " + res.stderr);
+                try {
+                    res = commandExecutor.exec(magickCommand, buildMagickArgs(srcX, srcY, srcW, srcH, targetWidth, targetHeight), null, bis, 60, outputStream);
+                    if (res.exitCode != 0) {
+                        throw new IOException("magick crop failed: " + res.stderr);
+                    }
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
+                }
             }
 
             return TileGenerationResult.success();

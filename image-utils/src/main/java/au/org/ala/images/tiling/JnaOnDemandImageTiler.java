@@ -1,5 +1,8 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+import java.io.OutputStream;
+
 import au.org.ala.images.jna.InputStreamVipsSource;
 import au.org.ala.images.jna.NativeLibraryDetector;
 import au.org.ala.images.jna.OutputStreamVipsTarget;
@@ -167,8 +170,13 @@ public class JnaOnDemandImageTiler implements IOnDemandImageTiler {
             try (OutputStream outputStream = byteSink.openStream();
                  OutputStreamVipsTarget vipsTarget = new OutputStreamVipsTarget(vips, outputStream)) {
                 String suffix = tileFormat == TileFormat.PNG ? ".png" : ".jpg";
-                if (vips.vips_image_write_to_target(outputImage, suffix, vipsTarget.getTarget(), (Object) null) != 0) {
-                    throw new IOException("vips_image_write_to_target failed: " + vips.vips_error_buffer());
+                try {
+                    if (vips.vips_image_write_to_target(outputImage, suffix, vipsTarget.getTarget(), (Object) null) != 0) {
+                        throw new IOException("vips_image_write_to_target failed: " + vips.vips_error_buffer());
+                    }
+                } catch (Throwable t) {
+                    AbortableOutputStream.abortQuietly(outputStream, t);
+                    throw t;
                 }
             }
         } finally {

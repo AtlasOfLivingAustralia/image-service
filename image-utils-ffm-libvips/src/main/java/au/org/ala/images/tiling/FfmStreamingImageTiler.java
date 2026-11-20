@@ -1,5 +1,8 @@
 package au.org.ala.images.tiling;
 
+import au.org.ala.images.util.AbortableOutputStream;
+import java.io.OutputStream;
+
 import au.org.ala.images.ffm.InputStreamVipsSourceFFM;
 import au.org.ala.images.ffm.NativeLibraryDetectorFFM;
 import au.org.ala.images.ffm.OutputStreamVipsTargetFFM;
@@ -387,11 +390,18 @@ public class FfmStreamingImageTiler implements IImageTiler {
         try {
             MemorySegment outputImage = prepareImageForOutput(tileImage, width, height, arena);
             try {
-                try (OutputStreamVipsTargetFFM target = new OutputStreamVipsTargetFFM(vips, tileSink.openStream())) {
-                    if (vips.vipsImageWriteToTarget(outputImage, encodeSuffix, target.getTarget()) != 0) {
-                        String error = vips.vipsErrorBuffer();
-                        vips.vipsErrorClear();
-                        throw new IOException("vips_image_write_to_target failed: " + error);
+                // The target does not close the stream, so the stream must be its own resource or the upload never completes.
+                try (OutputStream outputStream = tileSink.openStream();
+                     OutputStreamVipsTargetFFM target = new OutputStreamVipsTargetFFM(vips, outputStream)) {
+                    try {
+                        if (vips.vipsImageWriteToTarget(outputImage, encodeSuffix, target.getTarget()) != 0) {
+                            String error = vips.vipsErrorBuffer();
+                            vips.vipsErrorClear();
+                            throw new IOException("vips_image_write_to_target failed: " + error);
+                        }
+                    } catch (Throwable t) {
+                        AbortableOutputStream.abortQuietly(outputStream, t);
+                        throw t;
                     }
                 }
             } finally {

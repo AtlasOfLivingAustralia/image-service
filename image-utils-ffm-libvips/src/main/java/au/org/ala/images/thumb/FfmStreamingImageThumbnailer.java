@@ -1,5 +1,8 @@
 package au.org.ala.images.thumb;
 
+import au.org.ala.images.util.AbortableOutputStream;
+import java.io.OutputStream;
+
 import au.org.ala.images.ffm.InputStreamVipsSourceFFM;
 import au.org.ala.images.ffm.NativeLibraryDetectorFFM;
 import au.org.ala.images.ffm.OutputStreamVipsTargetFFM;
@@ -106,12 +109,19 @@ public class FfmStreamingImageThumbnailer implements IImageThumbnailer {
 
             try {
                 String suffix = thumbDef.getName().endsWith(".png") ? ".png" : ".jpg[Q=85]";
-                try (OutputStreamVipsTargetFFM vipsTarget = new OutputStreamVipsTargetFFM(vips, destination.openStream())) {
-                    int writeResult = vips.vipsImageWriteToTarget(outputImage, suffix, vipsTarget.getTarget());
-                    if (writeResult != 0) {
-                        String error = vips.vipsErrorBuffer();
-                        vips.vipsErrorClear();
-                        throw new IOException("libvips write to target failed: " + error);
+                // The target does not close the stream, so the stream must be its own resource or the upload never completes.
+                try (OutputStream outputStream = destination.openStream();
+                     OutputStreamVipsTargetFFM vipsTarget = new OutputStreamVipsTargetFFM(vips, outputStream)) {
+                    try {
+                        int writeResult = vips.vipsImageWriteToTarget(outputImage, suffix, vipsTarget.getTarget());
+                        if (writeResult != 0) {
+                            String error = vips.vipsErrorBuffer();
+                            vips.vipsErrorClear();
+                            throw new IOException("libvips write to target failed: " + error);
+                        }
+                    } catch (Throwable t) {
+                        AbortableOutputStream.abortQuietly(outputStream, t);
+                        throw t;
                     }
                 }
 

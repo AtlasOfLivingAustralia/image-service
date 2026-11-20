@@ -39,7 +39,7 @@ dependencies {
 
     implementation 'com.drewnoakes:metadata-extractor:2.18.0'
     implementation 'org.imgscalr:imgscalr-lib:4.2'
-    implementation 'com.google.guava:guava:32.1.1-jre'
+    api 'com.google.guava:guava:33.8.0-jre' // Guava types are returned by public methods.
 
     // JNA for native library access (libvips, etc)
     implementation 'net.java.dev.jna:jna:5.14.0'
@@ -49,7 +49,7 @@ dependencies {
     testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.11.4'
     testFixturesImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
     testFixturesImplementation 'org.apache.groovy:groovy:4.0.22'
-    testFixturesImplementation 'com.google.guava:guava:32.1.1-jre'
+//    testFixturesImplementation 'com.google.guava:guava:33.8.0-jre'
     testImplementation 'org.spockframework:spock-core:2.4-groovy-4.0'
     testImplementation 'org.apache.groovy:groovy:4.0.22'
     testRuntimeOnly 'net.bytebuddy:byte-buddy:1.14.9'

@@ -3,6 +3,8 @@ package au.org.ala.images
 import au.org.ala.images.metrics.MetricsSupport
 import au.org.ala.web.AlaSecured
 import au.org.ala.web.CASRoles
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
 import grails.converters.JSON
 import grails.converters.XML
 import groovy.util.logging.Slf4j
@@ -18,6 +20,7 @@ import org.apache.commons.io.IOUtils
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
 
+import java.util.concurrent.TimeUnit
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.ws.rs.Path
 import jakarta.ws.rs.Produces
@@ -52,6 +55,7 @@ class ImageController implements MetricsSupport {
     def collectoryService
     def authService
     def analyticsService
+    def redirectCacheHeadersService
     def httpCacheService
 
     @Value('${placeholder.sound.thumbnail}')
@@ -95,6 +99,13 @@ class ImageController implements MetricsSupport {
 
     @Value('${images.disableCache:false}')
     boolean disableCache = false
+
+    @Value('${placeholder.missing.cacheMaxAge:60}')
+    int missingPlaceholderCacheMaxAgeSeconds = 60
+
+    // One derivative-unavailable WARN per (requestType, exception) per window
+    private final Cache<String, Boolean> derivativeUnavailableLogCache =
+            Caffeine.newBuilder().expireAfterWrite(60, TimeUnit.SECONDS).build()
 
     static AtomicLong boundaryCounter = new AtomicLong(0)
 
@@ -268,12 +279,23 @@ class ImageController implements MetricsSupport {
         try {
             serveImage(loadImageInfo.call(), sendAnalytics, requestType, noRedirect)
         } catch (ImageStoreService.DerivativeLoadTimeout e) {
+            logDerivativeUnavailableOnce(requestType, SC_GATEWAY_TIMEOUT, e)
             serveDerivativeUnavailableImage(requestType, SC_GATEWAY_TIMEOUT)
         } catch (ImageStoreService.DerivativeLoadRejected e) {
+            logDerivativeUnavailableOnce(requestType, SC_SERVICE_UNAVAILABLE, e)
             serveDerivativeUnavailableImage(requestType, SC_SERVICE_UNAVAILABLE)
         } catch (ImageStoreService.GenerateDerivativeTimeout e) {
+            logDerivativeUnavailableOnce(requestType, SC_SERVICE_UNAVAILABLE, e)
             serveDerivativeUnavailableImage(requestType, SC_SERVICE_UNAVAILABLE)
         }
+    }
+
+    private void logDerivativeUnavailableOnce(String requestType, int status, RuntimeException cause) {
+        String key = "${requestType}:${cause.class.simpleName}"
+        if (derivativeUnavailableLogCache.asMap().putIfAbsent(key, Boolean.TRUE) != null) {
+            return
+        }
+        log.warn("Derivative unavailable: type={} status={} (derivative loader overloaded/timed out): {}", requestType, status, cause.message)
     }
 
     private void serveDerivativeUnavailableImage(String requestType, int status) {
@@ -292,7 +314,7 @@ class ImageController implements MetricsSupport {
             if (!imageIdentifier || !imageInfo.exists) {
                 incrementCounter('image.serve.notfound', 'Image not found requests', [type: requestType])
                 if (imageInfo.shouldExist && imageInfo.contentType.startsWith('image')) {
-                    sendMissingImage(requestType)
+                    sendMissingImage(requestType, SC_NOT_FOUND, false, missingPlaceholderCacheMaxAgeSeconds)
                 } else {
                     render(text: "Image not found", status: SC_NOT_FOUND, contentType: 'text/plain')
                 }
@@ -312,14 +334,9 @@ class ImageController implements MetricsSupport {
         }
 
         if (!noRedirect && imageInfo.redirectUri) {
-            if (disableCache) {
-                // Replace any cache headers with no-cache headers
-                response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
-                response.setHeader('Pragma', 'no-cache')
-                response.setDateHeader('Expires', 0)
-            }
             URI uri = imageInfo.redirectUri
             if (uri) {
+                redirectCacheHeadersService.apply(response, imageInfo, disableCache || noCache || params.containsKey('i'))
                 response.status = SC_FOUND
                 response.setHeader('Location', uri.toString())
                 return
@@ -457,7 +474,7 @@ class ImageController implements MetricsSupport {
      * Serve a placeholder image with a 404 status code.
      * @param requestType The type of request, one of 'tile', 'original', 'thumbnail-large', 'thumbnail-square', 'thumbnail'
      */
-    private void sendMissingImage(String requestType, int status = SC_NOT_FOUND, boolean noCache = false) {
+    private void sendMissingImage(String requestType, int status = SC_NOT_FOUND, boolean noCache = false, Integer cacheMaxAge = null) {
         Resource ph
         switch (requestType) {
             case 'tile':
@@ -491,6 +508,8 @@ class ImageController implements MetricsSupport {
                 response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
                 response.setHeader('Pragma', 'no-cache')
                 response.setDateHeader('Expires', 0)
+            } else if (cacheMaxAge != null) {
+                response.setHeader('Cache-Control', "public, max-age=${cacheMaxAge}, must-revalidate")
             }
             def len = ph.contentLength()
             response.contentType = 'image/png'
